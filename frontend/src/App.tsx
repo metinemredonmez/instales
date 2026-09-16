@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
+import { NowSpeaking } from "@/components/domain/NowSpeaking"
 import { RadarPage } from "@/pages/RadarPage"
 import { StockPage } from "@/pages/StockPage"
 import { FundPage } from "@/pages/FundPage"
@@ -47,6 +48,8 @@ export default function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
         </Route>
       </Routes>
+      {/* Narration widget: global so a note keeps reading while the user moves between pages */}
+      <NowSpeaking />
     </AppShell>
   )
 }

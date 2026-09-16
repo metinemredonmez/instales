@@ -64,6 +64,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </NavLink>
   )
 
+  // Group eyebrow: only when the sidebar shows labels; icon-only mode keeps just the divider.
+  const group = (key: Key, first = false) => (
+    <>
+      {!first && <div className="my-2 border-t border-border/70" />}
+      {wide && <div className={cn("hidden px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 lg:block", first && "pt-1")}>{t(key)}</div>}
+    </>
+  )
+
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
@@ -116,12 +124,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto flex max-w-[1600px]">
         {/* Left menu: icons on md, icons + labels on lg; sticky under the header. */}
         <aside className={cn("sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-14 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/70 px-2 py-4 md:flex", wide && "lg:w-52 lg:px-3")}>
+          {group("nav.group.market", true)}
           {NAV.map(item)}
-          <div className="my-2 border-t border-border/70" />
+          {group("nav.group.personal")}
           {MINE.map(item)}
           {user?.role === "ADMIN" && (
             <>
-              <div className="my-2 border-t border-border/70" />
+              {group("nav.group.system")}
               {item({ to: "/admin", key: "nav.admin", icon: Shield })}
             </>
           )}

@@ -14,6 +14,9 @@ export const tr = {
   "nav.logout": "Çıkış",
   "nav.collapse": "Menüyü daralt",
   "nav.expand": "Menüyü genişlet",
+  "nav.group.market": "Piyasa",
+  "nav.group.personal": "Kişisel",
+  "nav.group.system": "Sistem",
   "common.show": "Göster",
   "lang.label": "Dil",
   "market.label": "Piyasa",
@@ -297,6 +300,9 @@ export const tr = {
   "tts.preparing": "Hazırlanıyor…",
   "tts.listen": "Dinle",
   "tts.stop": "Durdur",
+  "tts.now": "Okunuyor",
+  "tts.pause": "Duraklat",
+  "tts.resume": "Devam et",
 
   // freshness / pipeline / ticker
   "fresh.label": "Veri tazeliği",
@@ -316,6 +322,9 @@ export const tr = {
   "ticker.stockPage": "Hisse sayfası",
   "ticker.kapDisclosure": "KAP bildirimi",
   "ticker.linkTitle": "Tıkla: kaynağa git · Sağ tık: kartı sabitle",
+  "ticker.langTr": "Türkçe",
+  "ticker.langEn": "İngilizce",
+  "ticker.sourceLangNote": "{lang} kaynak · yayınlandığı gibi, çevrilmedi",
 
   // login
   "login.pitch": "Fonların hangi hisseleri topladığını, azalttığını, yeni pozisyon açtığını ve terk ettiğini tek ekrandan takip et. Her rakam KAP kaynağına kadar izlenebilir.",
