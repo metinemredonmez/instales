@@ -15,7 +15,8 @@ CACHE = BACKEND_ROOT / "media" / "tts"
 
 def _path(text: str, provider: str, voice: str) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
-    return CACHE / f"{provider}-{voice[:12]}-{hashlib.sha1(text.encode()).hexdigest()[:20]}.mp3"
+    tuning = f"{settings.elevenlabs_speed}{settings.elevenlabs_stability}{settings.elevenlabs_style}{settings.elevenlabs_speaker_boost}" if provider == "elevenlabs" else ""
+    return CACHE / f"{provider}-{voice[:12]}-{hashlib.sha1((text + tuning).encode()).hexdigest()[:20]}.mp3"
 
 
 def pick_voice(lang: str = "tr", gender: str = "female") -> str:
@@ -73,6 +74,11 @@ def voice_allowed(lang: str, voice_id: str) -> bool:
 OPENAI_VOICES = {"female": "nova", "male": "onyx"}
 
 
+def _voice_settings() -> dict:
+    return {"stability": settings.elevenlabs_stability, "similarity_boost": 0.75, "style": settings.elevenlabs_style,
+            "use_speaker_boost": settings.elevenlabs_speaker_boost, "speed": settings.elevenlabs_speed}
+
+
 def provider() -> str | None:
     if settings.elevenlabs_api_key:
         return "elevenlabs"
@@ -94,7 +100,7 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female", voice_id: st
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
             headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
             json={"text": text, "model_id": "eleven_multilingual_v2", "language_code": "en" if lang == "en" else "tr",
-                  "voice_settings": {"stability": settings.elevenlabs_stability, "similarity_boost": 0.75, "speed": settings.elevenlabs_speed}},
+                  "voice_settings": _voice_settings()},
             timeout=120,
         )
     else:
@@ -107,6 +113,49 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female", voice_id: st
     r.raise_for_status()
     out.write_bytes(r.content)
     return out
+
+
+def cached_path(text: str, lang: str = "tr", gender: str = "female", voice_id: str | None = None) -> Path | None:
+    """The cache file for this text/voice if it already exists (no network)."""
+    p = provider()
+    if p is None:
+        return None
+    voice = (voice_id or pick_voice(lang, gender)) if p == "elevenlabs" else OPENAI_VOICES.get(gender, settings.openai_tts_voice)
+    out = _path(text, p, voice)
+    return out if out.exists() else None
+
+
+def stream(text: str, lang: str = "tr", gender: str = "female", voice_id: str | None = None):
+    """Yield MP3 chunks as ElevenLabs produces them (first audio within ~1 s instead of after the whole text),
+    while writing the same bytes to the cache so the next play is instant. OpenAI has no streaming here → whole file."""
+    p = provider()
+    if p is None:
+        return
+    if p != "elevenlabs":
+        path = synthesize(text, lang, gender, voice_id)
+        if path:
+            yield path.read_bytes()
+        return
+    voice = voice_id or pick_voice(lang, gender)
+    out = _path(text, p, voice)
+    if out.exists():
+        yield out.read_bytes()
+        return
+    part = out.with_suffix(".part")
+    with httpx.stream(
+        "POST",
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream",
+        headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
+        json={"text": text, "model_id": "eleven_multilingual_v2", "language_code": "en" if lang == "en" else "tr",
+              "voice_settings": _voice_settings()},
+        timeout=httpx.Timeout(120, connect=15),
+    ) as r:
+        r.raise_for_status()
+        with part.open("wb") as fh:
+            for chunk in r.iter_bytes(chunk_size=8192):
+                fh.write(chunk)
+                yield chunk
+    part.replace(out)
 
 
 # ---------------------------------------------------------------- spoken script

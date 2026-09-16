@@ -23,6 +23,27 @@ router = APIRouter(prefix="/api/v1", tags=["intelligence"], dependencies=[Depend
 ticket_router = APIRouter(prefix="/api/v1", tags=["intelligence"])
 
 
+def _warm_audio_later(note) -> None:
+    """Synthesise the default voices for a just-written note in a background thread (never blocks the request)."""
+    import threading
+
+    from instilens.ai.tts import note_text, provider, synthesize
+
+    if note is None or provider() is None:
+        return
+    text = note_text(note, session=None)
+    lang = note.lang
+
+    def run() -> None:
+        for g in ("female", "male"):
+            try:
+                synthesize(text, lang=lang, gender=g)
+            except Exception:  # noqa: BLE001 — warming is best-effort
+                continue
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _ai_budget(request: Request, user: User) -> None:
     """Paid model calls: per-user hourly cap (ASVS 7.17 — expensive endpoints get their own budget)."""
     if not hit(f"ai:{user.id}", settings.ai_requests_per_hour, 3600):
@@ -99,6 +120,7 @@ def get_stock_ai(symbol: str, request: Request, market: str = MarketParam, refre
         note = stock_assessment(session, market, symbol, force=refresh, lang=lang)
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
+    _warm_audio_later(note)
     if note is None:
         raise HTTPException(404, "no assessment available (unknown symbol or AI disabled)")
     return note_json(note)
@@ -116,26 +138,33 @@ def get_brief(request: Request, market: str = MarketParam, refresh: bool = False
         note = daily_brief(session, market, force=refresh, lang=lang)
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
+    if refresh:
+        _warm_audio_later(note)
     return note_json(note)
 
 
 @ticket_router.get("/ai-notes/{note_id}/audio")
 def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female|male)$"), voice: str | None = Query(None, max_length=64), user: User = Depends(ticket_user), session: Session = Depends(get_session)):
-    """MP3 narration of an AI note. Voice follows the note's language and the chosen gender."""
-    from fastapi.responses import FileResponse
+    """MP3 narration of an AI note. Cached → file (seekable). Not cached → streamed while ElevenLabs synthesises,
+    so playback starts within a second or two instead of after the whole note is rendered."""
+    from fastapi.responses import FileResponse, StreamingResponse
 
-    from instilens.ai.tts import note_text, synthesize, voice_allowed
+    from instilens.ai.tts import cached_path, note_text, provider, stream, voice_allowed
     from instilens.domain.models import AiNote
 
     note = session.get(AiNote, note_id)
     if note is None:
         raise HTTPException(404, "note not found")
+    if provider() is None:
+        raise HTTPException(404, "tts not configured")
     if voice and not voice_allowed(note.lang, voice):
         raise HTTPException(400, "voice not available for this language")
-    path = synthesize(note_text(note, session), lang=note.lang, gender=gender, voice_id=voice)
-    if path is None:
-        raise HTTPException(404, "tts not configured")
-    return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")
+    text = note_text(note, session)
+    cached = cached_path(text, lang=note.lang, gender=gender, voice_id=voice)
+    if cached:
+        return FileResponse(cached, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")
+    return StreamingResponse(stream(text, lang=note.lang, gender=gender, voice_id=voice), media_type="audio/mpeg",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @router.get("/live-tv")

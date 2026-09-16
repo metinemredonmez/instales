@@ -92,9 +92,9 @@ def get_or_create(session: Session, version: str, actor: str | None) -> Release:
         raise ReleaseError("version must be major.minor.patch")
     rel = session.scalar(select(Release).where(Release.version == version))
     if rel:
-        if rel.status != "DRAFT":
-            raise ReleaseError(f"{version} is {rel.status.lower()}; uploads only go to drafts")
-        return rel
+        if rel.status == "WITHDRAWN":
+            raise ReleaseError(f"{version} was withdrawn; use a new version")
+        return rel  # DRAFT or PUBLISHED: a platform built later still joins the same version
     last = latest_version(session)
     if last and (compare(version, last) or 0) < 0:
         raise ReleaseError(f"version cannot go backwards (latest is {last})")
