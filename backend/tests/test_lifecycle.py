@@ -490,3 +490,25 @@ def test_password_reset_also_verifies_the_address(client, session, outbox):
     client.post("/api/v1/auth/forgot", json={"email": "emre@example.com"})
     r = client.post("/api/v1/auth/reset", json={"token": _token_from(outbox, "/reset"), "new_password": "battery staple horse"})
     assert r.status_code == 200 and r.json()["user"]["email_verified"] is True
+
+
+def test_onesignal_targets_prefixed_external_id(monkeypatch):
+    """OneSignal blocks bare ids such as "1"; the alias must carry the prefix the web SDK logs in with."""
+    from instilens.config import settings
+    from instilens.services import notify
+
+    seen = {}
+
+    class _R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"id": "n1"}
+
+    monkeypatch.setattr(settings, "onesignal_app_id", "app")
+    monkeypatch.setattr(settings, "onesignal_rest_api_key", "key")
+    monkeypatch.setattr(notify.httpx, "post", lambda url, json, headers, timeout: seen.update(json) or _R())
+    assert notify.send_onesignal("1", "t", "b", "/") is True
+    assert seen["include_aliases"] == {"external_id": ["instilens-1"]}
+    assert notify.onesignal_external_id("1") not in {"1", "0", "null", "undefined"}

@@ -133,13 +133,20 @@ def send_push(session: Session, owner_id: str, title: str, body: str, link: str)
 LAST_ONESIGNAL_ERROR: dict[str, str] = {}  # owner_id → last failure reason (surfaced by /push/test)
 
 
+def onesignal_external_id(owner_id: str) -> str:
+    """OneSignal alias for a user. Bare ids like "1" are on OneSignal's blocklist ("external_id is blocked"), so the
+    id is prefixed; the web SDK logs in with the same value — keep in sync with oneSignalExternalId() in
+    frontend/src/lib/onesignal.ts."""
+    return f"instilens-{owner_id}"
+
+
 def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
-    """OneSignal push to the user (identified by external_id = our user id, set by OneSignal.login on the web).
+    """OneSignal push to the user (identified by external_id = onesignal_external_id(), set by OneSignal.login on the web).
     Every failure path is logged and remembered so the settings page can say WHY a test did not arrive."""
     if not (settings.onesignal_app_id and settings.onesignal_rest_api_key):
         LAST_ONESIGNAL_ERROR[owner_id] = "not configured"
         return False
-    payload = {"app_id": settings.onesignal_app_id, "include_aliases": {"external_id": [owner_id]}, "target_channel": "push",
+    payload = {"app_id": settings.onesignal_app_id, "include_aliases": {"external_id": [onesignal_external_id(owner_id)]}, "target_channel": "push",
                "headings": {"en": title, "tr": title}, "contents": {"en": body, "tr": body}, "url": link,
                "chrome_web_icon": f"{settings.public_url}/icon-192.png", "firefox_icon": f"{settings.public_url}/icon-192.png"}
     last = ""
@@ -154,7 +161,7 @@ def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
             data = r.json()
             errors = data.get("errors")
             if errors:
-                # typical: {"invalid_aliases": {"external_id": ["1"]}} → the browser never linked this user id
+                # typical: {"invalid_aliases": {"external_id": ["instilens-1"]}} → the browser never linked this user id
                 log.warning("onesignal rejected user %s: %s", owner_id, errors)
                 LAST_ONESIGNAL_ERROR[owner_id] = f"no subscription for this user ({errors})"[:200]
                 return False

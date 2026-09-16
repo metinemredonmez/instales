@@ -1,5 +1,5 @@
 import { api } from "./api"
-import { evictForeignWorker, loadOneSignal, oneSignalCall, waitFor } from "./onesignal"
+import { evictForeignWorker, loadOneSignal, oneSignalCall, oneSignalExternalId, waitFor } from "./onesignal"
 
 function b64ToUint8(b64: string) {
   const pad = "=".repeat((4 - (b64.length % 4)) % 4)
@@ -36,7 +36,7 @@ export async function enablePush(userId?: number | null): Promise<PushEnableResu
     loadOneSignal(appId)
     return oneSignalCall(async (os) => {
       await evictForeignWorker()
-      if (userId) await os.login(String(userId))
+      if (userId) await os.login(oneSignalExternalId(userId))
       await os.Notifications.requestPermission()
       if (!os.Notifications.permission) return "denied" as const
       await os.User.PushSubscription.optIn()
@@ -44,7 +44,7 @@ export async function enablePush(userId?: number | null): Promise<PushEnableResu
       // landed. One logout/login cycle re-sends identity + subscription before we give up.
       if (await waitFor(() => !!os.User.onesignalId, 6000)) return "ok" as const
       await os.logout()
-      if (userId) await os.login(String(userId))
+      if (userId) await os.login(oneSignalExternalId(userId))
       return (await waitFor(() => !!os.User.onesignalId, 8000)) ? ("ok" as const) : ("nouser" as const)
     }, "disabled", 8000, "sdk")
   }

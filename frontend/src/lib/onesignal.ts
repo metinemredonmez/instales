@@ -37,6 +37,10 @@ export const waitFor = async (cond: () => boolean, ms: number, step = 250) => {
   return cond()
 }
 
+/** Alias sent with OneSignal.login — prefixed because bare ids ("1") are blocked upstream; mirrors
+ * onesignal_external_id() in backend/src/instilens/services/notify.py. */
+export const oneSignalExternalId = (userId: number | string) => `instilens-${userId}`
+
 let loaded = false
 export const oneSignalLoaded = () => loaded
 export function loadOneSignal(appId: string) {

@@ -18,7 +18,7 @@ import { BellMenu } from "@/components/domain/BellMenu"
 import { UpdateBanner } from "@/components/domain/UpdateBanner"
 import { LiveTvWidget } from "@/components/domain/LiveTvWidget"
 import { registerSw } from "@/lib/push"
-import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
+import { loadOneSignal, oneSignalExternalId, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
 
 // ⌘ on Apple keyboards, Ctrl elsewhere — only the hint; the palette listens for both.
@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     api.pushPublicKey().then((k) => {
       if (k.onesignal_app_id) {
         loadOneSignal(k.onesignal_app_id)
-        if (user) withOneSignal((os) => os.login(String(user.id)))
+        if (user) withOneSignal((os) => os.login(oneSignalExternalId(user.id)))
       } else registerSw().catch(() => {})
     }).catch(() => {})
   }, [user])
