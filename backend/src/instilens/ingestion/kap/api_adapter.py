@@ -161,20 +161,26 @@ class KapApiAdapter:
 
     # ------------------------------------------------------------------ mapping
     def _transaction(self, idx: int, row: dict) -> RawDisclosure | None:
-        d = self.detail(idx, "html")
+        d = self.detail(idx, "data")
         sender = d.get("senderTitle") or d.get("behalfSenderTitle") or ""
         if self.pys_only and "PORTFÖY" not in sender.upper():
             return None
         html = _html_of(d)
         text = html_mod.unescape(re.sub(r"<[^>]+>", "|", html))
-        companies = _bracket_list(text, "İlgili Şirketler") or [s.get("code") if isinstance(s, dict) else str(s) for s in (d.get("relatedStocks") or [])][:1]
-        funds = _bracket_list(text, "İlgili Fonlar")
+        related = [x.get("code") if isinstance(x, dict) else str(x) for x in (d.get("relatedStocks") or [])]
+        # relatedStocks mixes the subject company and the funds; funds are 3-letter TEFAS codes, the company is not.
+        sender_codes = {c.upper() for c in (d.get("senderExchCodes") or [])}
+        companies = _bracket_list(text, "İlgili Şirketler") or [c for c in related if len(c) > 3 and c.upper() not in sender_codes]
+        funds = _bracket_list(text, "İlgili Fonlar") or [c for c in related if len(c) == 3]
         if not funds and d.get("behalfFundCode"):
             funds = [d["behalfFundCode"]]
         if not companies:
             return None
-        rows, before, after = _rows_from_html(html)
-        numbers_from = "table"
+        rows, before, after = rows_from_data(d)
+        numbers_from = "data"
+        if not rows:
+            rows, before, after = _rows_from_html(html)
+            numbers_from = "table"
         if not rows:
             rows, before, after = rows_from_prose(text)
             numbers_from = "prose"
@@ -189,7 +195,8 @@ class KapApiAdapter:
                 "subject_symbol": companies[0].upper(), "related_companies": [c.upper() for c in companies],
                 "related_fund_codes": [f.upper() for f in funds], "rows": rows,
                 "ownership_before_pct": before, "ownership_after_pct": after,
-                "amends_source_id": str(d["relatedDisclosureIndex"]) if d.get("relatedDisclosureIndex") else None,
+                "amends_source_id": str(d["relatedDisclosureIndex"]) if d.get("relatedDisclosureIndex") and is_correction(d) else None,
+                "is_correction": is_correction(d),
                 "numbers_from": numbers_from, "attachment_count": len(d.get("attachmentUrls") or []),
             },
         )
@@ -215,6 +222,74 @@ class KapApiAdapter:
             market=Market.TR, source=Source.KAP, source_id=str(idx), kind=DisclosureKind.KAP_PORTFOLIO_REPORT,
             published_at=published, raw_uri=d.get("link") or f"https://www.kap.org.tr/tr/Bildirim/{idx}", payload=payload,
         )
+
+
+# ---------------------------------------------------------------------- structured ("data") format
+
+
+def flatten_report_items(detail: dict) -> list[dict]:
+    """Walk presentation[].content.ReportItem recursively → [{name, context, value, measures}]."""
+    out: list[dict] = []
+
+    def walk(item):
+        if isinstance(item, list):
+            for x in item:
+                walk(x)
+            return
+        if not isinstance(item, dict):
+            return
+        name = item.get("name")
+        values = item.get("Values", {}).get("Value") if isinstance(item.get("Values"), dict) else None
+        if name and values is not None:
+            for v in values if isinstance(values, list) else [values]:
+                if not isinstance(v, dict):
+                    continue
+                m = v.get("Measures", {}).get("Measure") if isinstance(v.get("Measures"), dict) else None
+                measures = m if isinstance(m, list) else ([m] if m else [])
+                out.append({"name": name, "context": v.get("contextId"), "value": v.get("value"), "measures": {x.get("measureName"): x.get("measureValueName") for x in measures if isinstance(x, dict)}})
+        walk(item.get("ReportItem"))
+
+    for p in detail.get("presentation") or []:
+        walk((p.get("content") or {}).get("ReportItem"))
+    return out
+
+
+def rows_from_data(detail: dict):
+    """Share-transaction line items → rows/before/after. Column names matched loosely (taxonomy wording varies)."""
+    from instilens.ingestion.kap.public_adapter import _num, _pct
+
+    by_ctx: dict[str, dict] = {}
+    for it in flatten_report_items(detail):
+        if it["measures"].get("LanguageOptionAxis") == "EnglishMember":
+            continue
+        n = (it["name"] or "").lower()
+        if any(k in n for k in ("transactiondate", "purchased", "sold", "netnominal", "ratioofshares", "ratioofvoting", "beginningofday", "endofday")):
+            by_ctx.setdefault(it["context"] or "", {})[n] = it["value"]
+    rows, before, after = [], None, None
+    for ctx in sorted(by_ctx):
+        c = by_ctx[ctx]
+        date_v = next((v for k, v in c.items() if "transactiondate" in k), None)
+        if not date_v or not re.search(r"\d{2}[./]\d{2}[./]\d{4}", str(date_v)):
+            continue
+        d = datetime.strptime(re.search(r"\d{2}[./]\d{2}[./]\d{4}", str(date_v)).group(0).replace(".", "/"), "%d/%m/%Y").date().isoformat()
+        buy = _num(str(next((v for k, v in c.items() if "purchased" in k), "0") or "0"))
+        sell = _num(str(next((v for k, v in c.items() if "sold" in k), "0") or "0"))
+        b = next((v for k, v in c.items() if "ratioofsharesowned" in k and "beginning" in k), None)
+        e = next((v for k, v in c.items() if "ratioofsharesowned" in k and "end" in k), None)
+        before = before or (_pct(str(b)) if b else None)
+        after = _pct(str(e)) if e else after
+        if buy:
+            rows.append({"transaction_date": d, "side": "ALIS", "nominal": buy})
+        if sell:
+            rows.append({"transaction_date": d, "side": "SATIS", "nominal": sell})
+    return rows, before, after
+
+
+def is_correction(detail: dict) -> bool:
+    return any(
+        "correction" in (it["name"] or "").lower() and str(it["value"]).lower().startswith("evet")
+        for it in flatten_report_items(detail)
+    ) or detail.get("disclosureReason") in ("CORRECTION", "DUZELTME")
 
 
 # ---------------------------------------------------------------------- helpers (pure)
@@ -291,7 +366,19 @@ def probe(base_url: str, api_key: str, api_secret: str, dump: Callable[[str, obj
     dump("lastDisclosureIndex", last)
     page = a.list_from(max(last - 60, 1))
     dump("disclosures", page[:5])
-    tx = next((r for r in page if (r.get("title") or "").strip() == TX_TITLE), page[0] if page else None)
+    tx = None
+    cursor = max(last - 60, 1)
+    for _ in range(8):  # walk back up to ~400 disclosures looking for a share-transaction filing
+        tx = next((r for r in page if (r.get("title") or "").strip() == TX_TITLE), None)
+        if tx:
+            break
+        cursor = max(cursor - 50, 1)
+        page = a.list_from(cursor)
     if tx:
-        dump("disclosureDetail(html)", a.detail(int(tx["disclosureIndex"]), "html"))
-        dump("disclosureDetail(data)", a.detail(int(tx["disclosureIndex"]), "data"))
+        detail = a.detail(int(tx["disclosureIndex"]), "data")
+        dump("tx_index", tx["disclosureIndex"])
+        dump("tx_detail(data)", detail)
+        dump("tx_rows_parsed", rows_from_data(detail))
+        dump("tx_items", [(i["name"], i["value"]) for i in flatten_report_items(detail)][:40])
+    else:
+        dump("tx", "no Pay Alım Satım Bildirimi found in the scanned range")
