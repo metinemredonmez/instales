@@ -47,7 +47,8 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female") -> Path | No
         r = httpx.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
             headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
-            json={"text": text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
+            json={"text": text, "model_id": "eleven_multilingual_v2", "language_code": "en" if lang == "en" else "tr",
+                  "voice_settings": {"stability": settings.elevenlabs_stability, "similarity_boost": 0.75, "speed": settings.elevenlabs_speed}},
             timeout=120,
         )
     else:
@@ -62,21 +63,90 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female") -> Path | No
     return out
 
 
-def note_text(note) -> str:
+# ---------------------------------------------------------------- spoken script
+_SIGNALS = {
+    "tr": {"NEGATIVE_DIVERGENCE": "negatif ayrışma", "POSITIVE_DIVERGENCE": "pozitif ayrışma", "ACCUMULATION": "birikim",
+           "DISTRIBUTION": "dağıtım", "NEW_POSITION_CLUSTER": "yeni pozisyon kümesi", "EXIT_CLUSTER": "çıkış kümesi",
+           "INFERRED": "türetilmiş", "GROUPED": "gruplu", "EXACT": "kesin", "NEW": "yeni giriş", "ADD": "artırma", "REDUCE": "azaltma", "EXIT": "tam çıkış", "HOLD": "tutma"},
+    "en": {"NEGATIVE_DIVERGENCE": "negative divergence", "POSITIVE_DIVERGENCE": "positive divergence", "ACCUMULATION": "accumulation",
+           "DISTRIBUTION": "distribution", "NEW_POSITION_CLUSTER": "new-position cluster", "EXIT_CLUSTER": "exit cluster",
+           "INFERRED": "inferred", "GROUPED": "grouped", "EXACT": "exact", "NEW": "new entry", "ADD": "increase", "REDUCE": "reduction", "EXIT": "full exit", "HOLD": "hold"},
+}
+_UNITS_TR = [(r"\bmn\s*TL\b", "milyon lira"), (r"\bmn\s*\$", "milyon dolar"), (r"\bmilyar\s*TL\b", "milyar lira"), (r"\bbn\b", "milyar"), (r"\bmn\b", "milyon"),
+             (r"\bTL\b", "lira"), (r"\bUSD\b", "dolar"), (r"\$(\d)", r"\1 dolar "), (r"\b13F\b", "on üç F"), (r"\bKAP\b", "KAP"), (r"\bBoJ\b", "Japonya Merkez Bankası"),
+             (r"\bTCMB\b", "Merkez Bankası"), (r"\bFed\b", "Fed")]
+_UNITS_EN = [(r"\bmn\b", "million"), (r"\bbn\b", "billion"), (r"\bTL\b", "lira"), (r"\b13F\b", "thirteen F")]
+
+
+def _spell(sym: str) -> str:
+    """Tickers with no vowel are unreadable as words: spell them ('K C H O L')."""
+    return " ".join(sym) if not any(c in "AEIOUÖÜİ" for c in sym) else sym.capitalize()
+
+
+def spoken_text(note, names: dict[str, str] | None = None) -> str:
+    """Turn the written note into something a TTS voice can read naturally in the note's language:
+    tickers → company names (or spelled out), enum constants → words, citations dropped, symbols → words."""
+    import re
+
+    lang = "en" if note.lang == "en" else "tr"
+    names = names or {}
+    prefix = "Watch" if lang == "en" else "İzlenecek"
+    parts = [note.data.get("headline", "")] if note.data else []
+    parts.append(note.content)
+    parts += [f"{prefix}: {w}." for w in (note.data or {}).get("watch", [])]
+    t = " ".join(p if p.rstrip().endswith((".", "!", "?", ":")) else p.rstrip() + "." for p in parts if p)  # pause between blocks
+    t = re.sub(r"\s*\[(kap|n):\d+\]", "", t)  # citations are for the screen
+    for k, v in _SIGNALS[lang].items():
+        t = re.sub(rf"\b{k}\b", v, t)
+    for pat, rep in (_UNITS_TR if lang == "tr" else _UNITS_EN):
+        t = re.sub(pat, rep, t)
+    if lang == "tr":
+        t = re.sub(r"[+]\s?%\s?([\d.,]+)", r"artı yüzde \1", t)
+        t = re.sub(r"[-−]\s?%\s?([\d.,]+)", r"eksi yüzde \1", t)
+        t = re.sub(r"%\s?([\d.,]+)", r"yüzde \1", t)
+        t = re.sub(r"(?<![\w])[+]\s?(\d)", r"artı \1", t)
+        t = re.sub(r"(?<![\w])[-−]\s?(\d)", r"eksi \1", t)
+        t = t.replace("→", " ile ").replace("/", " bölü ").replace("&", " ve ")
+    else:
+        t = re.sub(r"[+]\s?%?\s?([\d.,]+)%?", r"plus \1 percent", t) if "%" in t else t
+        t = t.replace("→", " to ").replace("&", " and ")
+
+    def ticker(m: re.Match) -> str:
+        s = m.group(0)
+        if s in names:
+            return names[s]
+        return _spell(s) if len(s) >= 3 and s.isupper() else s
+
+    known = set(names) | set((note.data or {}).get("inputs", {}).get("_symbols", []))
+    t = re.sub(r"\b[A-Z][A-Z0-9]{2,5}\b", lambda m: ticker(m) if (m.group(0) in known or not any(c in "AEIOU" for c in m.group(0))) else m.group(0), t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def note_text(note, session=None) -> str:
     """The exact text the audio endpoint narrates — keep in sync with routes/v1.get_note_audio."""
-    prefix = "Watch" if note.lang == "en" else "İzlenecek"
-    watch = " ".join(f"{prefix}: {w}." for w in (note.data or {}).get("watch", []))
-    return f"{note.content} {watch}"
+    names: dict[str, str] = {}
+    if session is not None:
+        from sqlalchemy import select
+
+        from instilens.domain.models import Instrument
+
+        market = getattr(note, "market_code", "TR")
+        for sym, name in session.execute(select(Instrument.symbol, Instrument.name).where(Instrument.market_code == market)):
+            if name and name != sym:
+                names[sym] = name
+    return spoken_text(note, names)
 
 
-def warm(note) -> int:
+def warm(note, session=None) -> int:
     """Pre-synthesise both voices for a note so the first 'Listen' click is instant. Returns files produced."""
     if provider() is None or note is None:
         return 0
     n = 0
+    text = note_text(note, session)
     for gender in ("female", "male"):
         try:
-            if synthesize(note_text(note), lang=note.lang, gender=gender):
+            if synthesize(text, lang=note.lang, gender=gender):
                 n += 1
         except Exception:  # noqa: BLE001 — cache warming must never break the job
             continue

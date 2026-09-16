@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     # Text-to-speech for AI notes (optional). ElevenLabs preferred for Turkish; OpenAI as alternative.
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str = "pFZP5JQG7iQjIQuC4Bku"  # fallback voice (Lily)
+    elevenlabs_speed: float = 0.88  # 0.7–1.2; finance narration reads better slightly under 1.0
+    elevenlabs_stability: float = 0.6
     # Per language × gender; empty = fall back to elevenlabs_voice_id. Pick Turkish voices in the library.
     elevenlabs_voice_tr_female: str = ""
     elevenlabs_voice_tr_male: str = ""

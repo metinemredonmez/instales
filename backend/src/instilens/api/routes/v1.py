@@ -130,7 +130,7 @@ def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female
     note = session.get(AiNote, note_id)
     if note is None:
         raise HTTPException(404, "note not found")
-    path = synthesize(note_text(note), lang=note.lang, gender=gender)
+    path = synthesize(note_text(note, session), lang=note.lang, gender=gender)
     if path is None:
         raise HTTPException(404, "tts not configured")
     return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")

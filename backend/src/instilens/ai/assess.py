@@ -30,7 +30,10 @@ it matters (GROUPED = allocation across the funds is unknown, INFERRED = derived
 thin, say so in one sentence rather than padding; (6) write in the language requested by the user prompt —
 Turkish or English — including `headline`, `highlights`, `watch` and `confidence_note`; (7) `headline` is one
 line with the single most important number; `highlights` are 3 short, number-bearing items; `text` is the full
-narrative — write it as 3-5 short paragraphs separated by blank lines, not one block."""
+narrative — write it as 3-5 short paragraphs separated by blank lines, not one block; (8) the note is also read
+aloud: never paste enum constants (write "negatif ayrışma" / "negative divergence", "kesin / gruplu / türetilmiş"
+or "exact / grouped / inferred"), name the company once after a ticker when you first mention it (e.g. "KCHOL
+(Koç Holding)"), and prefer "yüzde 9,7" style over "%9,7" in Turkish prose."""
 
 LANGS = ("tr", "en")
 

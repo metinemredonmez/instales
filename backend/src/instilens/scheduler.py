@@ -87,7 +87,7 @@ def briefs() -> None:
                 note_en = daily_brief(s, market, force=True, lang="en")  # English, so EN users don't wait on first open
                 log.info("%s brief %s, delivered %s", market, "ok" if note else "skipped", deliver_brief(s, note) if note and market == "TR" else 0)
                 s.flush()
-                log.info("%s tts warmed: %s files", market, warm(note) + warm(note_en))
+                log.info("%s tts warmed: %s files", market, warm(note, s) + warm(note_en, s))
             except Exception as exc:
                 log.warning("brief %s failed: %s", market, exc)
 
