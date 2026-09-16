@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, Eye, RefreshCw, Sparkles, Zap } from "lucide-react"
+import { ChevronDown, Eye, RefreshCw, Sparkles, X, Zap } from "lucide-react"
 import { useState } from "react"
 import { api, type AiNote, type Market } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -29,16 +29,17 @@ export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?:
   return (
     <div className={cn("rounded-lg border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card", open ? "p-4" : "px-4 py-2.5")}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <button onClick={toggleOpen} aria-expanded={open} className="inline-flex items-center gap-2 hover:text-foreground">
+        <span className="inline-flex items-center gap-2">
           <Sparkles className="size-3.5 text-primary" /> <span className="font-semibold text-foreground">{title}</span>
-          <ChevronDown className={cn("size-3.5 transition", !open && "-rotate-90")} />
-        </button>
+        </span>
         <span>· {fmtDateTime(note.created_at)}</span><span className="hidden sm:inline">· {note.model}</span>
         {!open && <span className="hidden min-w-0 flex-1 truncate md:inline">— {note.headline || note.content}</span>}
         <span className="ml-auto" />
         {open && <SpeakButton noteId={note.id} title={note.headline || title} text={`${note.content} ${note.watch.map((w) => `${t("ai.watch")}: ${w}.`).join(" ")}`} lang={note.lang} />}
         {open && user?.role === "ADMIN" && <button onClick={refresh} disabled={busy} className="inline-flex items-center gap-1 hover:text-foreground"><RefreshCw className={cn("size-3", busy && "animate-spin")} /> {t("common.refresh")}</button>}
-        {!open && <button onClick={toggleOpen} className="shrink-0 rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent">{t("common.show")}</button>}
+        <button onClick={toggleOpen} aria-expanded={open} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground hover:bg-accent">
+          {open ? <><X className="size-3.5" /> {t("common.close")}</> : <><ChevronDown className="size-3.5" /> {t("common.show")}</>}
+        </button>
       </div>
       {open && note.headline && <div className="mt-3 text-lg font-semibold leading-snug tracking-tight">{note.headline}</div>}
       {open && note.highlights?.length > 0 && (
