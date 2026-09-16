@@ -44,7 +44,7 @@ export function NotifySettingsCard() {
               <div className="font-medium">📱 {t("notify.push.title")}</div>
               <div className="text-[11px] text-muted-foreground">{t("notify.push.howto")} {!pushSupported() && t("notify.push.noHttps")}</div>
             </div>
-            <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? t("common.off") : t("common.on")}</Button>
+            <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? t("notify.push.turnOff") : t("notify.push.turnOn")}</Button>
           </div>
           {pushMsg && <div className="mt-2 text-xs text-muted-foreground">{pushMsg}</div>}
           <Button size="sm" variant="ghost" className="mt-1" onClick={() => pushTest.mutate()}>{t("notify.push.test")}{pushTest.data ? ` (vapid ${pushTest.data.sent} · onesignal ${pushTest.data.onesignal ? "ok" : "—"})` : ""}</Button>

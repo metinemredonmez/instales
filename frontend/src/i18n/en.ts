@@ -341,6 +341,8 @@ export const en: Record<Key, string> = {
   "notify.push.denied": "Browser permission denied",
   "notify.push.unsupported": "This device/browser doesn't support it (HTTPS required)",
   "notify.push.noKey": "No push key configured on the server",
+  "notify.push.turnOff": "Turn off",
+  "notify.push.turnOn": "Turn on",
   "notify.push.test": "Send test to device",
   "notify.telegram.noToken": "no bot token configured on the server",
   "notify.telegram.howto": "Send /start to the bot on Telegram; get your chat id from @userinfobot.",

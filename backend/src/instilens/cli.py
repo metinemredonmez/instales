@@ -51,7 +51,7 @@ def users_set_role(email: str, role: str) -> None:
 @db_app.command("init")
 def db_init() -> None:
     init_db(get_engine())
-    typer.echo(f"schema created at {settings.database_url}")
+    typer.echo(f"schema created at {_safe_url(settings.database_url)}")
 
 
 def _adapter(market: str):
@@ -267,3 +267,10 @@ def releases_prune() -> None:
                 else:
                     seen.add(key)
         typer.echo(f"removed {removed} stale artifact(s)")
+
+
+def _safe_url(url: str) -> str:
+    """Database URL without the password — this line ends up in deploy logs."""
+    import re as _re
+
+    return _re.sub(r"://([^:/@]+):[^@]*@", r"://\1:***@", url)

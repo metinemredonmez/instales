@@ -51,7 +51,3 @@ pm2 save >/dev/null
 
 IP=$(hostname -I | awk '{print $1}')
 echo
-echo "web  → http://$IP:8088      api docs → http://$IP:8088/docs"
-echo "admin: cd $ROOT/backend && .venv/bin/instilens users create you@mail.com --name You --role ADMIN --plan PRO_PLUS"
-echo "first data: cd $ROOT/backend && .venv/bin/instilens run   (then the scheduler keeps it fresh)"
-echo "firewall: open TCP 8088 (Hetzner Cloud Firewall / ufw allow 8088)"

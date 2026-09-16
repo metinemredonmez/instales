@@ -352,6 +352,8 @@ export const tr = {
   "notify.push.denied": "Tarayıcı izni reddedildi",
   "notify.push.unsupported": "Bu cihaz/tarayıcı desteklemiyor (HTTPS gerekir)",
   "notify.push.noKey": "Sunucuda push anahtarı tanımlı değil",
+  "notify.push.turnOff": "Kapat",
+  "notify.push.turnOn": "Aç",
   "notify.push.test": "Cihaza test gönder",
   "notify.telegram.noToken": "sunucuda bot token tanımlı değil",
   "notify.telegram.howto": "Telegram'da bota /start yaz; chat id'ni @userinfobot ile öğrenebilirsin.",

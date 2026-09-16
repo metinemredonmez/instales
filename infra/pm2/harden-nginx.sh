@@ -22,19 +22,19 @@ add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" alway
 # desktop installers are uploaded through /api/v1/public/desktop/ci/upload (up to ~400 MB)
 client_max_body_size 500m;
 CONF
-# include once, right after the 443 server's server_name line
-if ! grep -q "instilens-app-headers.conf" "$SITE"; then
-  # certbot writes `server_name` BEFORE `listen 443 ssl`, so anchor on the listen line itself (server context)
-  awk -v inc="    include /etc/nginx/snippets/instilens-app-headers.conf;" '
-    {print}
-    /listen[[:space:]]+443/ && !done {print inc; done=1}
-  ' "$SITE" > "$SITE.tmp" && mv "$SITE.tmp" "$SITE"
-fi
+# Put the include right after `listen 443 ssl` (server context). Older runs of this script placed it in the :80
+# redirect block, so first strip every existing include line, then insert once in the right place.
+sed -i '/instilens-app-headers.conf;/d' "$SITE"
+awk -v inc="    include /etc/nginx/snippets/instilens-app-headers.conf;" '
+  {print}
+  /listen[[:space:]]+443/ && !done {print inc; done=1}
+' "$SITE" > "$SITE.tmp" && mv "$SITE.tmp" "$SITE"
 # tokens never appear in URLs any more, but keep query strings out of the access log anyway
 if ! grep -q "log_format noquery" /etc/nginx/nginx.conf; then
   sed -i 's|http {|http {\n    log_format noquery '"'"'$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent "$http_referer" "$http_user_agent"'"'"';|' /etc/nginx/nginx.conf
 fi
 grep -q "access_log .*noquery" "$SITE" || sed -i "0,/listen 443/s|listen 443|access_log /var/log/nginx/$DOMAIN.access.log noquery;\n    listen 443|" "$SITE"
 nginx -t && systemctl reload nginx
-nginx -T 2>/dev/null | grep -q "instilens-app-headers.conf" || { echo "!! include not active — check $SITE"; exit 1; }
+sleep 1
+curl -s -o /dev/null -D - "https://$DOMAIN/" 2>/dev/null | grep -qi "content-security-policy" || { echo "!! CSP header still missing on https://$DOMAIN/ — check $SITE"; exit 1; }
 echo "✓ headers + CSP active on https://$DOMAIN — open the app once and check the browser console for CSP reports"
