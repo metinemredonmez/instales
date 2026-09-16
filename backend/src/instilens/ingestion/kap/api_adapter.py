@@ -42,8 +42,16 @@ class KapApiAdapter:
         start_index: int | None = None,
         known_source_ids: set[str] | None = None,
         client: httpx.Client | None = None,
+        auth_header: str | None = None,
     ) -> None:
-        self.client = client or httpx.Client(base_url=base_url.rstrip("/"), auth=(api_key, api_secret), timeout=45, headers={"Accept": "application/json"})
+        # The portal issues a ready-made `Authorization` header value per user (visible in API Traffic logs).
+        # When given, it wins; otherwise fall back to Basic key:secret as the OpenAPI spec declares.
+        headers = {"Accept": "application/json"}
+        if auth_header:
+            headers["Authorization"] = auth_header if " " in auth_header else f"Bearer {auth_header}"
+        self.client = client or httpx.Client(
+            base_url=base_url.rstrip("/"), auth=None if auth_header else (api_key, api_secret), timeout=45, headers=headers
+        )
         self.min_interval = 60.0 / max(rate_per_min, 1)
         self.max_calls, self.pys_only, self.start_index = max_calls, pys_only, start_index
         self.known = known_source_ids or set()
@@ -231,9 +239,9 @@ def _time(value) -> datetime:
         return datetime.now()
 
 
-def probe(base_url: str, api_key: str, api_secret: str, dump: Callable[[str, object], None]) -> None:
-    """One-off connectivity check used by `instilens kap-test`: 3 calls, dumps raw JSON for inspection."""
-    a = KapApiAdapter(base_url, api_key, api_secret)
+def probe(base_url: str, api_key: str, api_secret: str, dump: Callable[[str, object], None], auth_header: str | None = None) -> None:
+    """One-off connectivity check used by `instilens kap-test`: 4 calls, dumps raw JSON for inspection."""
+    a = KapApiAdapter(base_url, api_key, api_secret, auth_header=auth_header)
     last = a.last_index()
     dump("lastDisclosureIndex", last)
     page = a.list_from(max(last - 60, 1))

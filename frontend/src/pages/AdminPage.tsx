@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth"
 import { fmtDateTime } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
+import { PipelineButton } from "@/components/domain/PipelineButton"
 
 export function AdminPage() {
   const { user } = useAuth()
@@ -21,7 +22,7 @@ export function AdminPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h1 className="text-2xl font-semibold tracking-tight">Admin</h1><p className="text-sm text-muted-foreground">Kullanıcılar ve entity review (otomatik oluşturulmuş, doğrulanmamış kayıtlar).</p></div>
-        <Button variant="outline" size="sm" onClick={() => outcomes.mutate()} disabled={outcomes.isPending}>Sinyal outcome'larını hesapla{outcomes.data ? ` (${outcomes.data.updated})` : ""}</Button>
+        <div className="flex flex-wrap items-center gap-2"><PipelineButton /><Button variant="outline" size="sm" onClick={() => outcomes.mutate()} disabled={outcomes.isPending}>Sinyal outcome'larını hesapla{outcomes.data ? ` (${outcomes.data.updated})` : ""}</Button></div>
       </div>
       <Section title="Kullanıcılar" hint={`${users.data?.length ?? 0}`}>
         <table className="w-full text-sm">

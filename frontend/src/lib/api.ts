@@ -65,6 +65,8 @@ export interface Review {
   failed_disclosures: { id: number; source: string; source_id: string; kind: string; error: string | null }[]
 }
 
+export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
+
 export interface Radar {
   as_of: string | null
   window_days?: number
@@ -277,6 +279,8 @@ export const api = {
   adminReview: () => get<Review>("/admin/review"),
   adminVerify: (body: { kind: "instrument" | "fund" | "institution"; id: number; name?: string }) => send<{ ok: boolean }>("POST", "/admin/review/verify", body),
   adminComputeOutcomes: () => send<{ updated: number }>("POST", "/admin/outcomes/compute"),
+  adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
+  adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
   fund: (code: string) => get<FundDetail>(`/funds/${code}`),
   events: (market: Market, limit = 50) => get<TxEvent[]>("/events", { market, limit }),

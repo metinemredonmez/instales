@@ -8,6 +8,7 @@ import { Section, Stat } from "@/components/layout/Section"
 import { Flow, ScorePill, SignalBadge, ConfidenceBadge } from "@/components/domain/badges"
 import { EventRow } from "@/components/domain/EventRow"
 import { FreshnessBar } from "@/components/domain/Freshness"
+import { PipelineButton } from "@/components/domain/PipelineButton"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -52,7 +53,7 @@ export function RadarPage() {
           ))}
         </div>
       </div>
-      <FreshnessBar market={market} />
+      <div className="flex flex-wrap items-center justify-between gap-2"><FreshnessBar market={market} /><PipelineButton /></div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Net kurumsal giriş" value={<Flow value={totalIn} market={market} className="text-2xl" />} sub={`${r.accumulated.length} hisse toplanıyor`} />
@@ -147,7 +148,8 @@ function Empty({ market }: { market: string }) {
   return (
     <div className="rounded-lg border border-dashed border-border p-10 text-center">
       <div className="text-lg font-semibold">Henüz veri yok</div>
-      <p className="mt-1 text-sm text-muted-foreground">Backend'de <code>instilens run</code> çalıştırın{market === "US" ? " (SEC 13F fixture'ları fixtures/sec altında)" : ""}.</p>
+      <p className="mt-1 text-sm text-muted-foreground">İlk veri çekimi yapılmadı{market === "US" ? " (SEC 13F)" : " (KAP)"}. Admin isen aşağıdaki butonla başlat; değilsen yöneticiye haber ver.</p>
+      <PipelineButton size="default" className="mt-4 justify-center" />
     </div>
   )
 }

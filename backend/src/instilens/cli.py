@@ -189,8 +189,8 @@ def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
 
     from instilens.ingestion.kap.api_adapter import probe
 
-    if not (settings.kap_api_key and settings.kap_api_secret):
-        raise typer.BadParameter("set INSTILENS_KAP_API_KEY and INSTILENS_KAP_API_SECRET in backend/.env")
+    if not settings.kap_api_auth_header and not (settings.kap_api_key and settings.kap_api_secret):
+        raise typer.BadParameter("set INSTILENS_KAP_API_AUTH_HEADER (or KEY+SECRET) in backend/.env")
     results: dict = {}
 
     def dump(name: str, value) -> None:
@@ -198,7 +198,7 @@ def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
         typer.echo(f"✓ {name}: {str(value)[:160]}")
 
     try:
-        probe(settings.kap_api_base_url, settings.kap_api_key, settings.kap_api_secret, dump)
+        probe(settings.kap_api_base_url, settings.kap_api_key or "", settings.kap_api_secret or "", dump, auth_header=settings.kap_api_auth_header)
     finally:
         with open(out, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=1, default=str)
