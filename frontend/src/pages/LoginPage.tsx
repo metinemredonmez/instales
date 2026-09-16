@@ -46,12 +46,12 @@ export function LoginPage() {
           <span className="text-[11px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">Istanbul · Estd 2027</span>
         </div>
         <div className="relative my-auto max-w-xl">
-          <GradientWordmark className="w-full max-w-lg" />
-          <div className="mt-4 text-[13px] font-semibold uppercase tracking-[0.42em] text-muted-foreground">See where smart money moves.</div>
-          <h1 className="mt-12 text-4xl font-semibold leading-[1.1] tracking-tight xl:text-5xl">
+          <GradientWordmark className="w-full max-w-[420px]" />
+          <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.42em] text-muted-foreground">See where smart money moves.</div>
+          <h1 className="mt-10 max-w-md text-[26px] font-semibold leading-[1.15] tracking-tight xl:text-[30px]">
             {lang === "tr" ? <>Profesyonel para <span className="text-primary">nereye</span> gidiyor?</> : <>See <span className="text-primary">where</span> smart money moves.</>}
           </h1>
-          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">{t("login.pitch")}</p>
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground">{t("login.pitch")}</p>
           <ul className="mt-10 grid gap-3 sm:grid-cols-3">
             {features.map(([ti, d], i) => {
               const Icon = [Radar, Gauge, TrendingDown][i]
