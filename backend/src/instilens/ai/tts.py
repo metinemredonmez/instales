@@ -15,7 +15,7 @@ CACHE = BACKEND_ROOT / "media" / "tts"
 
 def _path(text: str, provider: str, voice: str) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
-    tuning = f"{settings.elevenlabs_speed}{settings.elevenlabs_stability}{settings.elevenlabs_style}{settings.elevenlabs_speaker_boost}" if provider == "elevenlabs" else ""
+    tuning = f"{settings.elevenlabs_model}{settings.elevenlabs_speed}{settings.elevenlabs_stability}{settings.elevenlabs_style}{settings.elevenlabs_speaker_boost}{settings.elevenlabs_paragraph_pause_s}" if provider == "elevenlabs" else ""
     return CACHE / f"{provider}-{voice[:12]}-{hashlib.sha1((text + tuning).encode()).hexdigest()[:20]}.mp3"
 
 
@@ -99,7 +99,7 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female", voice_id: st
         r = httpx.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
             headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
-            json={"text": text, "model_id": "eleven_multilingual_v2", "language_code": "en" if lang == "en" else "tr",
+            json={"text": text, "model_id": settings.elevenlabs_model, "language_code": "en" if lang == "en" else "tr",
                   "voice_settings": _voice_settings()},
             timeout=120,
         )
@@ -146,7 +146,7 @@ def stream(text: str, lang: str = "tr", gender: str = "female", voice_id: str | 
         "POST",
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream",
         headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
-        json={"text": text, "model_id": "eleven_multilingual_v2", "language_code": "en" if lang == "en" else "tr",
+        json={"text": text, "model_id": settings.elevenlabs_model, "language_code": "en" if lang == "en" else "tr",
               "voice_settings": _voice_settings()},
         timeout=httpx.Timeout(120, connect=15),
     ) as r:
@@ -173,6 +173,71 @@ _UNITS_TR = [(r"\bmn\s*TL\b", "milyon lira"), (r"\bmn\s*\$", "milyon dolar"), (r
 _UNITS_EN = [(r"\bmn\b", "million"), (r"\bbn\b", "billion"), (r"\bTL\b", "lira"), (r"\b13F\b", "thirteen F")]
 
 
+# ---- numbers → words (TTS engines stumble on "344,6" and "10.150.110"; words are read cleanly)
+_TR_ONES = ["", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+_TR_TENS = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
+_TR_SCALE = ["", "bin", "milyon", "milyar", "trilyon"]
+
+
+def _tr_below_1000(n: int) -> str:
+    parts = []
+    h, r = divmod(n, 100)
+    if h:
+        parts.append("yüz" if h == 1 else f"{_TR_ONES[h]} yüz")
+    t, o = divmod(r, 10)
+    if t:
+        parts.append(_TR_TENS[t])
+    if o:
+        parts.append(_TR_ONES[o])
+    return " ".join(parts)
+
+
+def tr_number_words(n: int) -> str:
+    if n == 0:
+        return "sıfır"
+    groups, i, out = [], 0, []
+    while n:
+        n, g = divmod(n, 1000)
+        groups.append(g)
+    for i, g in enumerate(groups):
+        if not g:
+            continue
+        words = "" if (g == 1 and i == 1) else _tr_below_1000(g)  # "bin", not "bir bin"
+        out.append(f"{words} {_TR_SCALE[i]}".strip() if i < len(_TR_SCALE) else str(g))
+    return " ".join(reversed(out))
+
+
+def _en_number_words(n: int) -> str:
+    from num2words import num2words
+
+    return num2words(n, lang="en").replace(",", "").replace("-", " ")
+
+
+def numbers_to_words(text: str, lang: str) -> str:
+    import re
+
+    if lang == "tr":
+        pat = re.compile(r"(?<![\w,])(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?(?![\w.])")
+
+        def rep(m: re.Match) -> str:
+            whole = int(m.group(1).replace(".", ""))
+            words = tr_number_words(whole)
+            if m.group(2):
+                frac = m.group(2)
+                words += " virgül " + (tr_number_words(int(frac)) if len(frac) <= 2 and not frac.startswith("0") else " ".join(_TR_ONES[int(c)] if c != "0" else "sıfır" for c in frac))
+            return words
+    else:
+        pat = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?![\w,])")
+
+        def rep(m: re.Match) -> str:
+            words = _en_number_words(int(m.group(1).replace(",", "")))
+            if m.group(2):
+                words += " point " + " ".join(_en_number_words(int(c)) for c in m.group(2))
+            return words
+
+    return pat.sub(rep, text)
+
+
 def _spell(sym: str) -> str:
     """Tickers with no vowel are unreadable as words: spell them ('K C H O L')."""
     return " ".join(sym) if not any(c in "AEIOUÖÜİ" for c in sym) else sym.capitalize()
@@ -185,11 +250,16 @@ def spoken_text(note, names: dict[str, str] | None = None) -> str:
 
     lang = "en" if note.lang == "en" else "tr"
     names = names or {}
-    prefix = "Watch" if lang == "en" else "İzlenecek"
-    parts = [note.data.get("headline", "")] if note.data else []
-    parts.append(note.content)
-    parts += [f"{prefix}: {w}." for w in (note.data or {}).get("watch", [])]
-    t = " ".join(p if p.rstrip().endswith((".", "!", "?", ":")) else p.rstrip() + "." for p in parts if p)  # pause between blocks
+    data = note.data or {}
+    spoken = (data.get("spoken") or "").strip()
+    if spoken:
+        parts = [spoken]  # the anchor-style script the model wrote for the voice
+    else:
+        prefix = "Watch" if lang == "en" else "İzlenecek"
+        parts = [data.get("headline", ""), note.content] + [f"{prefix}: {w}." for w in data.get("watch", [])]
+    # Breathing room: a break tag between paragraphs (ElevenLabs honours <break time="…s" /> in v2/v3).
+    blocks = [b.strip() for p in parts if p for b in p.split("\n\n") if b.strip()]
+    t = " PARAGRAPHBREAK ".join(b if b.endswith((".", "!", "?", ":")) else b + "." for b in blocks)  # placeholder: tags go in last
     t = re.sub(r"\s*\[(kap|n):\d+\]", "", t)  # citations are for the screen
     for k, v in _SIGNALS[lang].items():
         t = re.sub(rf"\b{k}\b", v, t)
@@ -203,8 +273,13 @@ def spoken_text(note, names: dict[str, str] | None = None) -> str:
         t = re.sub(r"(?<![\w])[-−]\s?(\d)", r"eksi \1", t)
         t = t.replace("→", " ile ").replace("/", " bölü ").replace("&", " ve ")
     else:
-        t = re.sub(r"[+]\s?%?\s?([\d.,]+)%?", r"plus \1 percent", t) if "%" in t else t
+        t = re.sub(r"\$\s?([\d.,]+)\s*(billion|million|thousand|bn|mn|k)?", lambda m: f"{m.group(1)} {({'bn': 'billion', 'mn': 'million', 'k': 'thousand'}.get(m.group(2) or '', m.group(2) or '')).strip()} dollars".replace("  ", " "), t)
+        t = re.sub(r"([\d.,]+)\s?%", r"\1 percent", t)
+        t = re.sub(r"(?<![\w])[+]\s?(\d)", r"plus \1", t)
+        t = re.sub(r"(?<![\w])[-−]\s?(\d)", r"minus \1", t)
         t = t.replace("→", " to ").replace("&", " and ")
+
+    t = numbers_to_words(t, lang)
 
     def ticker(m: re.Match) -> str:
         s = m.group(0)
@@ -215,7 +290,8 @@ def spoken_text(note, names: dict[str, str] | None = None) -> str:
     known = set(names) | set((note.data or {}).get("inputs", {}).get("_symbols", []))
     t = re.sub(r"\b[A-Z][A-Z0-9]{2,5}\b", lambda m: ticker(m) if (m.group(0) in known or not any(c in "AEIOU" for c in m.group(0))) else m.group(0), t)
     t = re.sub(r"\s+", " ", t).strip()
-    return t
+    pause = f'<break time="{settings.elevenlabs_paragraph_pause_s:.1f}s" />' if settings.elevenlabs_paragraph_pause_s > 0 else ""
+    return t.replace("PARAGRAPHBREAK", pause).replace("  ", " ")
 
 
 def note_text(note, session=None) -> str:

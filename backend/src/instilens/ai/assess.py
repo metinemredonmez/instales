@@ -30,10 +30,14 @@ it matters (GROUPED = allocation across the funds is unknown, INFERRED = derived
 thin, say so in one sentence rather than padding; (6) write in the language requested by the user prompt —
 Turkish or English — including `headline`, `highlights`, `watch` and `confidence_note`; (7) `headline` is one
 line with the single most important number; `highlights` are 3 short, number-bearing items; `text` is the full
-narrative — write it as 3-5 short paragraphs separated by blank lines, not one block; (8) the note is also read
-aloud: never paste enum constants (write "negatif ayrışma" / "negative divergence", "kesin / gruplu / türetilmiş"
-or "exact / grouped / inferred"), name the company once after a ticker when you first mention it (e.g. "KCHOL
-(Koç Holding)"), and prefer "yüzde 9,7" style over "%9,7" in Turkish prose."""
+narrative — write it as 3-5 short paragraphs separated by blank lines, not one block; (8) never paste enum
+constants (write "negatif ayrışma" / "negative divergence", "kesin / gruplu / türetilmiş" or "exact / grouped /
+inferred"), name the company once after a ticker when you first mention it (e.g. "KCHOL (Koç Holding)"); (9)
+`spoken` is a separate NARRATION SCRIPT of the same facts, written to be read aloud by a voice: how a calm,
+experienced finance-radio anchor would tell it to a listener — greet briefly, one idea per sentence, natural
+connectors ("öte yandan", "buna karşılık", "meanwhile"), round numbers the way people say them ("yaklaşık 345
+milyon lira", "about 9 billion dollars"), say company names not tickers, never read citations or codes, end with
+the one thing to watch. Same numbers as `text`, just spoken."""
 
 LANGS = ("tr", "en")
 
@@ -46,6 +50,7 @@ class Note(BaseModel):
     headline: str = Field("", max_length=90, description="one punchy line: the single most important flow of the period, with its number")
     highlights: list[str] = Field(default_factory=list, max_length=3, description="up to 3 short items (≤ 80 chars), each with a number from the data")
     text: str = Field(max_length=1800)
+    spoken: str = Field("", max_length=2200, description="the same content as a narration script for a finance-radio anchor: warm, conversational, short sentences with natural connectors, numbers rounded the way a person says them (e.g. 'yaklaşık üç yüz kırk beş milyon lira' → write digits, the reader converts), company names instead of tickers, no citations, no enum codes, 3-5 short paragraphs separated by blank lines")
     watch: list[str] = Field(default_factory=list, max_length=4, description="what to watch next, short items")
     headline_ids: list[int] = Field(default_factory=list)
     confidence_note: str = Field("", max_length=200)
@@ -71,7 +76,7 @@ def _write(session: Session, kind: str, market: str, subject: str, day: date, pr
     if r.stop_reason == "refusal" or r.parsed_output is None:
         return None
     note = _cached(session, kind, market, subject, day, lang)
-    payload = {"headline": r.parsed_output.headline, "highlights": r.parsed_output.highlights, "watch": r.parsed_output.watch,
+    payload = {"headline": r.parsed_output.headline, "highlights": r.parsed_output.highlights, "spoken": r.parsed_output.spoken, "watch": r.parsed_output.watch,
                "headline_ids": r.parsed_output.headline_ids, "confidence_note": r.parsed_output.confidence_note, "inputs": data}
     if note is None:
         note = AiNote(kind=kind, market_code=market, subject=subject, as_of=day, lang=lang, content=r.parsed_output.text, data=payload, model=r.model)

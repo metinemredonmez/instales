@@ -90,10 +90,12 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str = "pFZP5JQG7iQjIQuC4Bku"  # fallback voice (Lily)
     # Voice settings that sounded best in Emre's other product (fal-app): stability 0.5, style 0.5, speaker boost.
-    elevenlabs_speed: float = 0.9  # 0.7–1.2; finance narration reads better slightly under 1.0
-    elevenlabs_stability: float = 0.5
-    elevenlabs_style: float = 0.45  # 0 = flat, 1 = very expressive
+    elevenlabs_model: str = "eleven_multilingual_v2"  # or eleven_v3 (most expressive), eleven_turbo_v2_5 (fast)
+    elevenlabs_speed: float = 0.92  # 0.7–1.2; finance narration reads better slightly under 1.0
+    elevenlabs_stability: float = 0.4  # lower = livelier intonation, higher = flatter and more consistent
+    elevenlabs_style: float = 0.55  # 0 = flat, 1 = very expressive
     elevenlabs_speaker_boost: bool = True
+    elevenlabs_paragraph_pause_s: float = 0.9  # breathing room between paragraphs
     # Per language × gender; empty = fall back to elevenlabs_voice_id. Pick Turkish voices in the library.
     elevenlabs_voice_tr_female: str = ""
     elevenlabs_voice_tr_male: str = ""

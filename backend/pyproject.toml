@@ -22,6 +22,7 @@ dependencies = [
   "feedparser>=6.0.14",
   "pywebpush>=2.5.0",
   "python-multipart>=0.0.32",
+  "num2words>=0.5.14",
 ]
 
 [project.optional-dependencies]
