@@ -51,8 +51,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Sidebar: labels or icons only — the user's choice, remembered.
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("instilens.sidebar") !== "icons" } catch { return true } })
   const toggleWide = () => setWide((w) => { try { localStorage.setItem("instilens.sidebar", w ? "icons" : "wide") } catch { /* ignore */ } return !w })
-  const [tv, setTv] = useState(() => { try { return localStorage.getItem("instilens.tv.open") === "1" } catch { return false } })
-  const toggleTv = () => setTv((o) => { try { localStorage.setItem("instilens.tv.open", o ? "0" : "1") } catch { /* ignore */ } return !o })
+  // Live TV never auto-opens on load — only position/size/channel are remembered (in the widget itself).
+  const [tv, setTv] = useState(false)
+  const toggleTv = () => setTv((o) => !o)
 
   const item = ({ to, key, icon: Icon, end }: NavItem) => (
     <NavLink
