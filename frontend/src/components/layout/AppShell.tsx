@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom"
-import { Activity, Building2, GitCompare, LogOut, Moon, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
-import { useEffect } from "react"
+import { Activity, Bell, Building2, GitCompare, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Mark } from "@/components/layout/Brand"
@@ -16,14 +16,18 @@ import { registerSw } from "@/lib/push"
 import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
 
-type NavItem = { to: string; key: Key; icon: React.ComponentType<{ className?: string }>; end?: boolean }
+type NavItem = { to: string; key: Key; icon: React.ComponentType<{ className?: string }>; end?: boolean; mobile?: boolean }
 const NAV: NavItem[] = [
-  { to: "/", key: "nav.radar", icon: Radar, end: true },
-  { to: "/live", key: "nav.live", icon: Activity },
-  { to: "/screener", key: "nav.screener", icon: SlidersHorizontal },
+  { to: "/", key: "nav.radar", icon: Radar, end: true, mobile: true },
+  { to: "/live", key: "nav.live", icon: Activity, mobile: true },
+  { to: "/screener", key: "nav.screener", icon: SlidersHorizontal, mobile: true },
   { to: "/institutions", key: "nav.institutions", icon: Building2 },
   { to: "/compare", key: "nav.compare", icon: GitCompare },
-  { to: "/research", key: "nav.research", icon: Sparkles },
+  { to: "/research", key: "nav.research", icon: Sparkles, mobile: true },
+]
+const MINE: NavItem[] = [
+  { to: "/watchlist", key: "nav.watchlist", icon: Star, mobile: true },
+  { to: "/alerts", key: "alerts.title", icon: Bell },
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -42,11 +46,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // The account's language wins on login; switching in the header saves it back.
   useEffect(() => { if (user?.lang && user.lang !== lang) setLang(user.lang) }, [user?.lang]) // eslint-disable-line react-hooks/exhaustive-deps
   const pickLang = (l: Lang) => { setLang(l); api.saveSettings({ lang: l }).catch(() => {}) }
+  // Sidebar: labels or icons only — the user's choice, remembered.
+  const [wide, setWide] = useState(() => { try { return localStorage.getItem("instilens.sidebar") !== "icons" } catch { return true } })
+  const toggleWide = () => setWide((w) => { try { localStorage.setItem("instilens.sidebar", w ? "icons" : "wide") } catch { /* ignore */ } return !w })
+
+  const item = ({ to, key, icon: Icon, end }: NavItem) => (
+    <NavLink
+      key={to}
+      to={to}
+      end={end}
+      title={t(key)}
+      className={({ isActive }) =>
+        cn("flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition", isActive ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")
+      }
+    >
+      <Icon className="size-4 shrink-0" /> {wide && <span className="hidden lg:inline">{t(key)}</span>}
+    </NavLink>
+  )
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4">
           <NavLink to="/" className="flex shrink-0 items-center" aria-label={t("nav.home")} title="InstiLens">
             <Mark className="size-8" />
           </NavLink>
@@ -65,30 +86,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               >
                 <span className={cn("rounded-sm px-1 py-px font-mono text-[10px] tracking-wider", market === m ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{m}</span>
-                {label}
+                <span className="hidden sm:inline">{label}</span>
               </button>
             ))}
           </div>
 
-          <nav className="hidden shrink-0 items-center gap-0.5 md:flex">
-            {NAV.map(({ to, key, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  cn("flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-[13px] transition", isActive ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")
-                }
-              >
-                <Icon className="size-4" /> <span className="hidden lg:inline">{t(key)}</span>
-              </NavLink>
-            ))}
-          </nav>
+          <SearchBox className="ml-auto w-full min-w-[140px] max-w-sm" />
 
-          <SearchBox className="ml-auto w-full min-w-[140px] max-w-[200px] xl:max-w-xs" />
-
-          {user?.role === "ADMIN" && <NavLink to="/admin" aria-label={t("nav.admin")} title={t("nav.admin")} className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Shield className="size-4" /></NavLink>}
-          <NavLink to="/watchlist" aria-label={t("nav.watchlist")} title={t("nav.watchlist")} className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Star className="size-4" /></NavLink>
           <BellMenu />
           <div className="flex shrink-0 overflow-hidden rounded-md border border-border text-[11px] font-semibold" role="radiogroup" aria-label={t("lang.label")}>
             {(["tr", "en"] as const).map((l) => (
@@ -98,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button variant="ghost" size="icon" aria-label={t("nav.theme")} title={t("nav.theme")} onClick={toggle}>
             {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </Button>
-          <div className="ml-1 hidden items-center gap-2 border-l border-border pl-3 sm:flex">
+          <div className="hidden shrink-0 items-center gap-2 border-l border-border pl-3 sm:flex">
             <div className="leading-tight">
               <div className="text-xs font-medium">{user?.name}</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{user?.plan}</div>
@@ -108,8 +112,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <NewsTicker market={market} />
-      <main className="mx-auto max-w-[1400px] px-4 py-6">{children}</main>
-      <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-4 text-xs text-muted-foreground">{t("footer.disclaimer")}</footer>
+
+      <div className="mx-auto flex max-w-[1600px]">
+        {/* Left menu: icons on md, icons + labels on lg; sticky under the header. */}
+        <aside className={cn("sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-14 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/70 px-2 py-4 md:flex", wide && "lg:w-52 lg:px-3")}>
+          {NAV.map(item)}
+          <div className="my-2 border-t border-border/70" />
+          {MINE.map(item)}
+          {user?.role === "ADMIN" && (
+            <>
+              <div className="my-2 border-t border-border/70" />
+              {item({ to: "/admin", key: "nav.admin", icon: Shield })}
+            </>
+          )}
+          <button onClick={toggleWide} title={wide ? t("nav.collapse") : t("nav.expand")} aria-label={wide ? t("nav.collapse") : t("nav.expand")} className="mt-auto hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground lg:flex">
+            {wide ? <PanelLeftClose className="size-4 shrink-0" /> : <PanelLeftOpen className="size-4 shrink-0" />}{wide && <span>{t("nav.collapse")}</span>}
+          </button>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <main className="px-4 py-6 pb-24 md:pb-6">{children}</main>
+          <footer className="px-4 pb-8 pt-2 text-xs text-muted-foreground">{t("footer.disclaimer")}</footer>
+        </div>
+      </div>
+
+      {/* Phone: bottom bar with the essentials */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-background/95 backdrop-blur md:hidden" aria-label={t("nav.home")}>
+        {[...NAV, ...MINE].filter((n) => n.mobile).map(({ to, key, icon: Icon, end }) => (
+          <NavLink key={to} to={to} end={end} className={({ isActive }) => cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px]", isActive ? "text-foreground" : "text-muted-foreground")}>
+            <Icon className="size-5" />{t(key)}
+          </NavLink>
+        ))}
+        {user?.role === "ADMIN" && <NavLink to="/admin" className={({ isActive }) => cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px]", isActive ? "text-foreground" : "text-muted-foreground")}><Shield className="size-5" />{t("nav.admin")}</NavLink>}
+      </nav>
+
     </div>
   )
 }
