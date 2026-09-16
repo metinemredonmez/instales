@@ -116,7 +116,8 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
             .order_by(Score.as_of.desc()).limit(1)
         )
         if score and float(score.adjusted_score) >= threshold:
-            yield (f"{score.as_of}:{int(threshold)}", f"{inst.symbol}: Smart Money Score {float(score.adjusted_score):.0f} ≥ {threshold:.0f}", f"{'computed' if lang == 'en' else 'hesaplama'} {score.as_of}", f"/stocks/{inst.symbol}")
+            # once per calendar month while above the threshold (not every nightly compute)
+            yield (f"{score.as_of:%Y-%m}:{int(threshold)}", f"{inst.symbol}: Smart Money Score {float(score.adjusted_score):.0f} ≥ {threshold:.0f}", f"{'computed' if lang == 'en' else 'hesaplama'} {score.as_of}", f"/stocks/{inst.symbol}")
 
     elif t == "SIGNAL" and inst:
         types = set(rule.params.get("types") or [])
@@ -124,7 +125,8 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
         for sig in session.scalars(stmt):
             if types and sig.signal_type not in types:
                 continue
-            yield (f"{sig.signal_type}:{sig.window_end}", f"{inst.symbol}: {sig.signal_type.replace('_', ' ').title()} ({sig.strength})", f"{sig.window_start} → {sig.window_end} · {sig.confidence}", f"/stocks/{inst.symbol}")
+            # keyed by the signal episode (row id), not by the day, so an ongoing signal notifies once
+            yield (f"{sig.signal_type}:{sig.id}", f"{inst.symbol}: {sig.signal_type.replace('_', ' ').title()} ({sig.strength})", f"{sig.window_start} → {sig.window_end} · {sig.confidence}", f"/stocks/{inst.symbol}")
 
     elif t == "FUND_ACTIVITY" and fund:
         latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))

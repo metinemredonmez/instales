@@ -128,3 +128,24 @@ def test_runtime_settings_override_and_reset(session):
     assert not {x["key"]: x for x in rs.snapshot(session)}["ai_requests_per_hour"]["overridden"]
     settings.sec_ciks = before_ciks = snap["sec_ciks"]["default"]
     rs.set_many(session, {"sec_ciks": before_ciks}, "root@example.com")
+
+
+def test_lockout_counts_only_failures(session):
+    from instilens.api.hardening import reset_rate_limits
+
+    reset_rate_limits()
+    c = _client(session)
+    c.post("/api/v1/auth/register", json={"email": "ok@example.com", "password": "correct-horse-1", "name": "Ok"})
+    for _ in range(9):  # correct logins never count towards the account lock (the per-IP cap of 10/min is separate)
+        assert c.post("/api/v1/auth/login", json={"email": "ok@example.com", "password": "correct-horse-1"}).status_code == 200
+    reset_rate_limits()  # clear the per-IP counter only; the account counter is empty anyway
+    for _ in range(7):
+        assert c.post("/api/v1/auth/login", json={"email": "ok@example.com", "password": "wrong-password-x"}).status_code == 401
+    assert c.post("/api/v1/auth/login", json={"email": "ok@example.com", "password": "correct-horse-1"}).status_code == 200  # 7 < 8: still allowed, and the counter resets
+    reset_rate_limits()
+    for _ in range(8):
+        c.post("/api/v1/auth/login", json={"email": "ok@example.com", "password": "wrong-password-x"})
+    assert c.post("/api/v1/auth/login", json={"email": "ok@example.com", "password": "correct-horse-1"}).status_code == 429  # locked after 8 failures
+    from instilens.api.main import app
+
+    app.dependency_overrides.clear()

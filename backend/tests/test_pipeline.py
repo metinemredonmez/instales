@@ -111,3 +111,20 @@ def test_http_surface(session, pipeline_run, monkeypatch):
 def _symbol(session, instrument_id):
     from instilens.domain.models import Instrument
     return session.get(Instrument, instrument_id).symbol
+
+
+def test_signals_do_not_duplicate_across_daily_computes(session, pipeline_run):
+    """A signal that stays true is one episode: recompute the next day must extend it, not add a second row."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from instilens.domain.models import Signal
+
+    before = session.scalar(select(func.count(Signal.id)))
+    assert before > 0
+    pipeline.compute_intelligence(session, AS_OF + timedelta(days=1))
+    session.commit()
+    after = session.scalar(select(func.count(Signal.id)))
+    assert after == before, f"signals duplicated: {before} -> {after}"
+    assert session.scalar(select(func.max(Signal.window_end))) == AS_OF + timedelta(days=1)

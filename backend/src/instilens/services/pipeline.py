@@ -352,6 +352,17 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
                 conv = scoring.conviction_score(c.from_weight_pct, c.to_weight_pct)
                 session.add(_score_row(instrument_id, c.fund_id, ScoreType.CONVICTION, as_of, conv, {}))
         for sig in _detect_signals(session, instrument_id, by_instrument[instrument_id], activity, start_for(instrument_id), as_of):
+            # One row per signal EPISODE: if the same signal was already open for this instrument (its window_end
+            # is the previous compute day or later), extend it instead of inserting a duplicate every day.
+            open_row = session.scalar(
+                select(Signal)
+                .where(Signal.instrument_id == instrument_id, Signal.fund_id.is_(None), Signal.signal_type == sig.signal_type,
+                       Signal.window_end >= as_of - timedelta(days=7), Signal.window_end < as_of)
+                .order_by(Signal.window_end.desc()).limit(1)
+            )
+            if open_row is not None:
+                open_row.window_end, open_row.strength, open_row.evidence, open_row.confidence = as_of, sig.strength, sig.evidence, sig.confidence
+                continue
             session.add(
                 Signal(
                     market_code=instrument.market_code,

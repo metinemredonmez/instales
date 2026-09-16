@@ -144,6 +144,14 @@ def verify(body: VerifyBody, session: Session = Depends(get_session)):
     return {"ok": True}
 
 
+@router.get("/waitlist")
+def waitlist(session: Session = Depends(get_session)):
+    from instilens.domain.models import WaitlistEntry
+
+    rows = session.scalars(select(WaitlistEntry).order_by(WaitlistEntry.created_at.desc())).all()
+    return [{"id": w.id, "email": w.email, "name": w.name, "lang": w.lang, "source": w.source, "created_at": w.created_at.isoformat()} for w in rows]
+
+
 @router.get("/config")
 def config_status():
     """Which integrations are configured on this server — booleans and public values only, never secrets."""

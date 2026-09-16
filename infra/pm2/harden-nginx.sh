@@ -24,10 +24,10 @@ client_max_body_size 500m;
 CONF
 # include once, right after the 443 server's server_name line
 if ! grep -q "instilens-app-headers.conf" "$SITE"; then
+  # certbot writes `server_name` BEFORE `listen 443 ssl`, so anchor on the listen line itself (server context)
   awk -v inc="    include /etc/nginx/snippets/instilens-app-headers.conf;" '
-    /listen 443/ {in443=1}
     {print}
-    in443 && /server_name/ {print inc; in443=0}
+    /listen[[:space:]]+443/ && !done {print inc; done=1}
   ' "$SITE" > "$SITE.tmp" && mv "$SITE.tmp" "$SITE"
 fi
 # tokens never appear in URLs any more, but keep query strings out of the access log anyway
@@ -36,4 +36,5 @@ if ! grep -q "log_format noquery" /etc/nginx/nginx.conf; then
 fi
 grep -q "access_log .*noquery" "$SITE" || sed -i "0,/listen 443/s|listen 443|access_log /var/log/nginx/$DOMAIN.access.log noquery;\n    listen 443|" "$SITE"
 nginx -t && systemctl reload nginx
+nginx -T 2>/dev/null | grep -q "instilens-app-headers.conf" || { echo "!! include not active — check $SITE"; exit 1; }
 echo "✓ headers + CSP active on https://$DOMAIN — open the app once and check the browser console for CSP reports"

@@ -21,14 +21,15 @@ from starlette.responses import JSONResponse, Response
 from instilens.config import settings
 
 # path → (per-IP per minute, global per minute)
-RATE_LIMITED_PATHS: dict[str, tuple[int, int]] = {
-    "/api/v1/auth/login": (settings.auth_rate_limit_per_minute, 300),
-    "/api/v1/auth/register": (settings.auth_rate_limit_per_minute, 100),
+RATE_LIMITED_PATHS: dict[str, tuple[int | None, int]] = {  # None = settings.auth_rate_limit_per_minute (admin-editable at runtime)
+    "/api/v1/auth/login": (None, 300),
+    "/api/v1/auth/register": (None, 100),
     "/api/v1/auth/password": (5, 100),
     "/api/v1/auth/ticket": (60, 3000),
     "/api/v1/public/waitlist": (5, 200),
     "/api/v1/me/settings/test": (3, 60),
     "/api/v1/alerts/evaluate": (3, 60),
+    "/api/v1/push/test": (3, 60),
 }
 _HITS: dict[str, deque[float]] = defaultdict(deque)
 
@@ -69,6 +70,19 @@ def hit(key: str, limit: int, window_s: float = 60.0) -> bool:
     return True
 
 
+def failures(key: str, window_s: float = 60.0) -> int:
+    """How many hits `key` has inside the window (without recording one)."""
+    now = time.monotonic()
+    q = _HITS[key]
+    while q and now - q[0] > window_s:
+        q.popleft()
+    return len(q)
+
+
+def reset_key(key: str) -> None:
+    _HITS.pop(key, None)
+
+
 def too_many(retry_after: int = 60) -> JSONResponse:
     return JSONResponse({"detail": "too many attempts, try again later"}, status_code=429, headers={"Retry-After": str(retry_after)})
 
@@ -96,6 +110,7 @@ class AuthRateLimitMiddleware(BaseHTTPMiddleware):
         cfg = RATE_LIMITED_PATHS.get(request.url.path) if request.method == "POST" else None
         if cfg:
             per_ip, global_cap = cfg
+            per_ip = per_ip or settings.auth_rate_limit_per_minute
             if not hit(f"ip:{client_ip(request)}:{request.url.path}", per_ip) or not hit(f"global:{request.url.path}", global_cap):
                 return too_many()
         return await call_next(request)

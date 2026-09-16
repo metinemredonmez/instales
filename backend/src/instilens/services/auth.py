@@ -14,7 +14,7 @@ from argon2.exceptions import VerifyMismatchError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from instilens.api.hardening import hit
+from instilens.api.hardening import failures, hit, reset_key
 from instilens.config import settings
 from instilens.domain.models import AuditEvent, User
 
@@ -100,13 +100,15 @@ def authenticate(session: Session, email: str, password: str, ip: str | None = N
     """Per-account lockout on top of the IP limiter; the same generic message for every failure path."""
     email = email.strip().lower()
     window = settings.account_lockout_minutes * 60
-    if not hit(_lock_key(email), settings.account_lockout_attempts, window):
+    if failures(_lock_key(email), window) >= settings.account_lockout_attempts:
         audit(session, "auth.locked", actor=email, ip=ip)
         raise LockedOut("too many attempts for this account, try again later")
     user = session.scalar(select(User).where(User.email == email))
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
+        hit(_lock_key(email), settings.account_lockout_attempts, window)  # only FAILED attempts count towards the lock
         audit(session, "auth.login_fail", actor=email, ip=ip)
         raise AuthError("invalid email or password")  # same message for both: no account enumeration
+    reset_key(_lock_key(email))  # a correct password clears the counter
     user.last_login_at = datetime.now(UTC)
     if _hasher.check_needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)

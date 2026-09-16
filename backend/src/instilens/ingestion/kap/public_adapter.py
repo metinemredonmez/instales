@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html as html_mod
 import json
+import logging
 import re
 import time
 from datetime import date, datetime, timedelta
@@ -27,6 +28,7 @@ from instilens.domain.enums import DisclosureKind, Market, Source
 from instilens.domain.schemas import RawDisclosure
 from instilens.ingestion.kap.pdr_pdf import merge_reports, parse_pdr_pdf, pdf_bytes
 
+log = logging.getLogger("instilens.kap")
 BASE = "https://www.kap.org.tr"
 SUBJECT = "Pay Alım Satım Bildirimi"
 REPORT_SUBJECT = "Portföy Dağılım Raporu"
@@ -151,23 +153,27 @@ class KapPublicAdapter:
             time.sleep(self.delay)
             try:
                 raw = parse_detail_page(self.fetch_detail_html(int(idx)), fetch_attachment=self._download)
-            except httpx.HTTPError:
-                continue  # retried already; leave it for the next run
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:  # one odd page must not end the run
+                log.warning("kap detail %s skipped: %s", idx, exc)
+                continue
             if raw is not None:
                 yield raw
         reports = 0
         for row in self.list_portfolio_reports(today - timedelta(days=self.days_back), today):
             idx = str(row["disclosureIndex"])
-            if idx in self.known or reports >= self.max_reports:
+            if idx in self.known:
                 continue
+            if reports >= self.max_reports:  # politeness cap counts ATTEMPTS (failed downloads cost the site too)
+                break
+            reports += 1
             time.sleep(self.delay)
             try:
                 raw = self.fetch_report(int(idx), fund_code=row.get("fundCode"), fund_name=row.get("kapTitle"))
-            except (httpx.HTTPError, ValueError, KeyError):  # one bad PDF must not stop the run; retried next time
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:  # one bad PDF must not stop the run; retried next time
+                log.warning("kap report %s skipped: %s", idx, exc)
                 continue
             if raw is not None:
                 yield raw
-                reports += 1
 
     def _download(self, obj_id: str) -> bytes:
         time.sleep(self.delay)
