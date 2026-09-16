@@ -4,7 +4,7 @@
 #   bash infra/pm2/landing-setup.sh instilens.com you@example.com
 set -euo pipefail
 DOMAIN="${1:?domain, e.g. instilens.com}"
-EMAIL="${2:?e-mail for Let's Encrypt}"
+EMAIL="${2:?e-mail for Lets Encrypt}"
 ROOT="${ROOT:-/opt/instilens}"
 command -v certbot >/dev/null || apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
 
