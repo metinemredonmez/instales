@@ -25,12 +25,16 @@ export function withOneSignal(fn: (os: OneSignalApi) => void | Promise<void>) {
   window.OneSignalDeferred = window.OneSignalDeferred || []
   window.OneSignalDeferred.push(fn)
 }
-/** Run `fn` once the SDK is ready, or give up after `ms` (blocked CDN, no SDK loaded) with `fallback`. */
-export function oneSignalCall<T>(fn: (os: OneSignalApi) => Promise<T>, fallback: T, ms = 4000): Promise<T> {
+/**
+ * Run `fn` once the SDK is ready. `fallback` when the call itself throws; `notReady` (defaults to `fallback`)
+ * when the SDK never initialises within `ms` — blocked CDN, CSP, or the OneSignal iframe failing to load.
+ */
+export function oneSignalCall<T>(fn: (os: OneSignalApi) => Promise<T>, fallback: T, ms = 8000, notReady: T = fallback): Promise<T> {
   return new Promise((resolve) => {
-    const timer = window.setTimeout(() => resolve(fallback), ms)
+    const timer = window.setTimeout(() => resolve(notReady), ms)
     withOneSignal(async (os) => {
-      try { resolve(await fn(os)) } catch { resolve(fallback) } finally { window.clearTimeout(timer) }
+      window.clearTimeout(timer)
+      try { resolve(await fn(os)) } catch { resolve(fallback) }
     })
   })
 }

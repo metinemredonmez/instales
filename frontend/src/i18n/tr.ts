@@ -352,6 +352,7 @@ export const tr = {
   "notify.push.denied": "Tarayıcı izni reddedildi",
   "notify.push.unsupported": "Bu cihaz/tarayıcı desteklemiyor (HTTPS gerekir)",
   "notify.push.noKey": "Sunucuda push anahtarı tanımlı değil",
+  "notify.push.sdk": "OneSignal SDK yüklenemedi — sayfayı yenileyip tekrar deneyin (reklam engelleyici / CSP)",
   "notify.push.turnOff": "Kapat",
   "notify.push.turnOn": "Aç",
   "notify.push.testFailed": "Bildirim teslim edilemedi.",

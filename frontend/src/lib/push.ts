@@ -27,7 +27,9 @@ export async function registerSw() {
 }
 
 /** Ask permission and subscribe this device (OneSignal or VAPID, per the server's configuration). */
-export async function enablePush(userId?: number | null): Promise<"ok" | "denied" | "unsupported" | "disabled"> {
+export type PushEnableResult = "ok" | "denied" | "unsupported" | "disabled" | "sdk"
+
+export async function enablePush(userId?: number | null): Promise<PushEnableResult> {
   if (!pushSupported()) return "unsupported"
   const { mode, appId, publicKey } = await pushMode()
   if (mode === "onesignal" && appId) {
@@ -38,7 +40,7 @@ export async function enablePush(userId?: number | null): Promise<"ok" | "denied
       if (!os.Notifications.permission) return "denied" as const
       await os.User.PushSubscription.optIn()
       return "ok" as const
-    }, "disabled")
+    }, "disabled", 8000, "sdk")
   }
   if (mode !== "vapid" || !publicKey) return "disabled"
   const reg = (await registerSw()) ?? (await navigator.serviceWorker.ready)

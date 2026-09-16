@@ -13,7 +13,7 @@ mkdir -p /etc/nginx/snippets
 cat > /etc/nginx/snippets/instilens-app-headers.conf <<'CONF'
 # InstiLens SPA hardening (ASVS 7.4 / 7.12). Script sources: self + OneSignal SDK. Styles: self + inline
 # (Tailwind runtime + chart libraries set style attributes). Connections: self + OneSignal. No framing.
-add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.onesignal.com; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://*.onesignal.com https://onesignal.com; worker-src 'self' https://cdn.onesignal.com; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com; upgrade-insecure-requests" always;
+add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.onesignal.com https://onesignal.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.onesignal.com https://onesignal.com; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://*.onesignal.com https://onesignal.com; worker-src 'self' blob: https://cdn.onesignal.com; child-src 'self' blob: https://*.onesignal.com https://onesignal.com; frame-src https://*.onesignal.com https://onesignal.com https://www.youtube-nocookie.com https://www.youtube.com; manifest-src 'self'; upgrade-insecure-requests" always;
 add_header X-Content-Type-Options nosniff always;
 add_header X-Frame-Options DENY always;
 add_header Referrer-Policy strict-origin-when-cross-origin always;
