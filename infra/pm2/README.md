@@ -1,6 +1,13 @@
 # Deploy on the Ubuntu box (pm2 + nginx, no Docker)
 
-## 1. Ship the code (from your Mac)
+## 1. Ship the code — via GitHub (preferred)
+```bash
+# server, once (private repo → add the server's public key as a Deploy Key on GitHub)
+git clone git@github.com:metinemredonmez/instales.git /opt/instilens
+```
+Every update afterwards: `bash /opt/instilens/infra/pm2/deploy.sh` (pull + build + migrate + reload).
+
+## 1b. Ship the code via rsync (alternative)
 ```bash
 rsync -az --delete \
   --exclude .venv --exclude node_modules --exclude dist --exclude '*.db' --exclude .env \
