@@ -4,8 +4,11 @@
 #   bash infra/pm2/harden-nginx.sh app.instilens.com
 set -euo pipefail
 DOMAIN="${1:?app domain, e.g. app.instilens.com}"
+# find the site file by server_name (certbot/older setups may have named it differently)
 SITE="/etc/nginx/sites-available/$DOMAIN"
-[ -f "$SITE" ] || { echo "no nginx site at $SITE"; exit 1; }
+[ -f "$SITE" ] || SITE="$(grep -lE "server_name[^;]*\b$DOMAIN\b" /etc/nginx/sites-available/* /etc/nginx/conf.d/* 2>/dev/null | head -1)"
+[ -n "$SITE" ] && [ -f "$SITE" ] || { echo "no nginx site serving $DOMAIN (looked in sites-available and conf.d)"; exit 1; }
+echo "site: $SITE"
 mkdir -p /etc/nginx/snippets
 cat > /etc/nginx/snippets/instilens-app-headers.conf <<'CONF'
 # InstiLens SPA hardening (ASVS 7.4 / 7.12). Script sources: self + OneSignal SDK. Styles: self + inline

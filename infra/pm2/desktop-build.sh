@@ -11,7 +11,7 @@ ENV="$ROOT/backend/.env"
 
 if [ "${1:-}" = "--setup" ]; then
   apt-get update -qq
-  apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential curl file nsis lld llvm clang >/dev/null
+  apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential curl file nsis lld llvm clang xdg-utils >/dev/null
   command -v cargo >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y >/dev/null
   # shellcheck disable=SC1090
   source "$HOME/.cargo/env"; rustup target add x86_64-pc-windows-msvc >/dev/null; cargo install cargo-xwin --locked >/dev/null
