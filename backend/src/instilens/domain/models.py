@@ -393,6 +393,17 @@ class NewsRule(Base):
 # --------------------------------------------------------------------------- AI notes (cached model output)
 
 
+class AppSetting(Base):
+    """Runtime override of a non-secret setting, edited from the admin UI. Secrets never live here."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)  # {"v": <json value>} so scalars round-trip through the JSON column
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_by: Mapped[str | None] = mapped_column(String(254))
+
+
 class AuditEvent(Base):
     """Security-relevant events (login ok/fail, password change, role/plan change, lockouts). No secrets, no PII
     beyond the account e-mail; IP is the resolved client address. Append-only."""

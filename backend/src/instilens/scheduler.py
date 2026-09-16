@@ -97,18 +97,36 @@ def prices(market: str) -> None:
         log.info("%s prices %s", market, load_prices(s, market, days=30))
 
 
+def _fresh(job):
+    """Run a job with the latest admin overrides applied (settings can change between runs)."""
+    from functools import wraps
+
+    from instilens.services import runtime_settings
+
+    @wraps(job)
+    def run(*a, **kw):
+        try:
+            with session_scope() as s:
+                runtime_settings.apply(s)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("runtime settings not applied: %s", exc)
+        return job(*a, **kw)
+
+    return run
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     init_db(get_engine())
     sched = BlockingScheduler(timezone=TZ, job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 600})
-    sched.add_job(ingest_kap, CronTrigger(day_of_week="mon-fri", hour="17-22", minute="*/5", timezone=TZ), id="kap_rush")
-    sched.add_job(ingest_kap, CronTrigger(hour="0-16,23", minute="*/30", timezone=TZ), id="kap_offpeak")
-    sched.add_job(ingest_sec, CronTrigger(hour=8, minute=0, timezone=TZ), id="sec_daily")
-    sched.add_job(prices, CronTrigger(hour=19, minute=30, timezone=TZ), args=["TR"], id="prices_tr")
-    sched.add_job(prices, CronTrigger(hour=0, minute=30, timezone=TZ), args=["US"], id="prices_us")
-    sched.add_job(compute, CronTrigger(hour=2, minute=0, timezone=TZ), id="nightly_compute")
-    sched.add_job(news_pull, CronTrigger(minute="*/10", timezone=TZ), id="news")
-    sched.add_job(briefs, CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
+    sched.add_job(_fresh(ingest_kap), CronTrigger(day_of_week="mon-fri", hour="17-22", minute="*/5", timezone=TZ), id="kap_rush")
+    sched.add_job(_fresh(ingest_kap), CronTrigger(hour="0-16,23", minute="*/30", timezone=TZ), id="kap_offpeak")
+    sched.add_job(_fresh(ingest_sec), CronTrigger(hour=8, minute=0, timezone=TZ), id="sec_daily")
+    sched.add_job(_fresh(prices), CronTrigger(hour=19, minute=30, timezone=TZ), args=["TR"], id="prices_tr")
+    sched.add_job(_fresh(prices), CronTrigger(hour=0, minute=30, timezone=TZ), args=["US"], id="prices_us")
+    sched.add_job(_fresh(compute), CronTrigger(hour=2, minute=0, timezone=TZ), id="nightly_compute")
+    sched.add_job(_fresh(news_pull), CronTrigger(minute="*/10", timezone=TZ), id="news")
+    sched.add_job(_fresh(briefs), CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 

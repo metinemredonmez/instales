@@ -48,6 +48,27 @@ def patch_user(user_id: int, body: UserPatch, request: Request, actor: User = De
     return out
 
 
+@router.get("/settings")
+def get_runtime_settings(session: Session = Depends(get_session)):
+    """Editable (non-secret) settings with their current value, default and override status."""
+    from instilens.services import runtime_settings
+
+    return runtime_settings.snapshot(session)
+
+
+@router.put("/settings")
+def put_runtime_settings(body: dict, request: Request, actor: User = Depends(require_admin), session: Session = Depends(get_session)):
+    from instilens.services import runtime_settings
+
+    try:
+        changed = runtime_settings.set_many(session, body, actor.email)
+    except runtime_settings.SettingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if changed:
+        audit(session, "admin.settings", actor=actor.email, ip=client_ip(request), detail=", ".join(changed))
+    return {"changed": changed, "settings": runtime_settings.snapshot(session)}
+
+
 @router.get("/audit")
 def audit_events(limit: int = Query(100, ge=1, le=500), session: Session = Depends(get_session)):
     """Security events, newest first (logins, lockouts, password/role changes)."""

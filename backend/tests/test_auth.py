@@ -101,3 +101,30 @@ def test_admin_cannot_remove_last_admin_or_self(session):
     from instilens.api.main import app
 
     app.dependency_overrides.clear()
+
+
+def test_runtime_settings_override_and_reset(session):
+    from instilens.config import settings
+    from instilens.services import runtime_settings as rs
+
+    before = settings.ai_requests_per_hour
+    assert rs.set_many(session, {"ai_requests_per_hour": 5, "sec_ciks": "1067983, 12345"}, "root@example.com") == ["ai_requests_per_hour", "sec_ciks"]
+    assert settings.ai_requests_per_hour == 5 and settings.sec_ciks == ["1067983", "12345"]
+    snap = {x["key"]: x for x in rs.snapshot(session)}
+    assert snap["ai_requests_per_hour"]["overridden"] and snap["ai_requests_per_hour"]["default"] == before
+    try:
+        rs.set_many(session, {"jwt_secret": "x"}, "root@example.com")
+    except rs.SettingError:
+        pass
+    else:
+        raise AssertionError("secrets must not be editable")
+    try:
+        rs.set_many(session, {"account_lockout_attempts": 1}, "root@example.com")
+    except rs.SettingError:
+        pass
+    else:
+        raise AssertionError("range must be enforced")
+    assert rs.set_many(session, {"ai_requests_per_hour": before}, "root@example.com") == ["ai_requests_per_hour"]  # back to default removes the override
+    assert not {x["key"]: x for x in rs.snapshot(session)}["ai_requests_per_hour"]["overridden"]
+    settings.sec_ciks = before_ciks = snap["sec_ciks"]["default"]
+    rs.set_many(session, {"sec_ciks": before_ciks}, "root@example.com")

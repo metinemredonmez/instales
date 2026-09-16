@@ -186,6 +186,8 @@ export interface FundDetail {
   events: TxEvent[]
 }
 
+export interface RuntimeSetting { key: string; group: "access" | "ai" | "data"; type: string; min: number | null; max: number | null; value: unknown; default: unknown; overridden: boolean; updated_at: string | null; updated_by: string | null }
+
 export interface AuditEvent { id: number; kind: string; actor: string | null; subject: string | null; ip: string | null; detail: string | null; created_at: string }
 
 export interface WaitlistRow { id: number; email: string; name: string | null; lang: string; source: string | null; created_at: string }
@@ -317,6 +319,8 @@ export const api = {
   noteAudioUrl: (id: number, gender: "female" | "male", ticket: string) => `${BASE}/ai-notes/${id}/audio?gender=${gender}&ticket=${encodeURIComponent(ticket)}`,
   changePassword: (current_password: string, new_password: string) => send<{ access_token: string; token_type: string; user: import("./auth").User }>("POST", "/auth/password", { current_password, new_password }),
   logoutAll: () => send<{ ok: boolean }>("POST", "/auth/logout-all"),
+  adminSettings: () => get<RuntimeSetting[]>("/admin/settings"),
+  adminSaveSettings: (values: Record<string, unknown>) => send<{ changed: string[]; settings: RuntimeSetting[] }>("PUT", "/admin/settings", values),
   adminAudit: (limit = 100) => get<AuditEvent[]>("/admin/audit", { limit }),
   stockAi: (market: Market, symbol: string, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, lang, refresh: refresh || undefined }),
   brief: (market: Market, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote | null>("/brief", { market, lang, refresh: refresh || undefined }),

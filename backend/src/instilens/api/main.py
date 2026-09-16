@@ -41,6 +41,21 @@ app.include_router(admin_router)
 app.include_router(public_router)
 
 
+@app.on_event("startup")
+def _apply_runtime_settings() -> None:
+    """Admin overrides from the DB win over .env for the editable keys (see services/runtime_settings)."""
+    from instilens.db.session import session_scope
+    from instilens.services import runtime_settings
+
+    try:
+        with session_scope() as s:
+            runtime_settings.apply(s)
+    except Exception as exc:  # noqa: BLE001 — a missing table on first boot must not stop the API
+        import logging
+
+        logging.getLogger("instilens.api").warning("runtime settings not applied: %s", exc)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__}
