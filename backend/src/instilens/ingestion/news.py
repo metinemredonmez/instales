@@ -57,6 +57,22 @@ def match_symbols(title: str, keywords: dict[str, list[re.Pattern]]) -> list[str
     return sorted(sym for sym, pats in keywords.items() if any(p.search(upper if p.flags & re.I == 0 else title) for p in pats))[:5]
 
 
+# The ticker is a finance ticker: general feeds (Dünya, Ekonomim, Yahoo) also carry sport, politics, celebrity
+# and exam news. Keep an item only when its section or its title says economy/markets; drop obvious noise.
+_NOISE = re.compile(r"\b(süper lig|fenerbahçe|galatasaray|beşiktaş|trabzonspor|milli takım|transfer|maç|derbi|şampiyonlar ligi|kpss|yks|lgs|ösym|sınav|magazin|dizi|survivor|ünlü|evlendi|boşandı|burç|hava durumu|trafik kazası|cinayet|deprem oldu|celebrity|nfl|nba|premier league|champions league|kardashian|royal family)\b", re.I)
+_FINANCE_TR = re.compile(r"\b(borsa|bist|hisse|endeks|faiz|enflasyon|tüfe|üfe|dolar|euro|sterlin|altın|gümüş|kur\b|tcmb|merkez bankası|fed|ecb|fon|tahvil|bono|eurobond|ihracat|ithalat|cari açık|büyüme|gsyh|bütçe|vergi|banka|kredi|mevduat|petrol|doğalgaz|brent|enerji|halka arz|temettü|bilanço|kâr|kar\b|zarar|ciro|şirket|holding|yatırım|piyasa|ekonomi|sermaye|spk|kap\b|bddk|tefas|emtia|bakır|çelik|otomotiv|konut|kira|asgari ücret|memur maaşı|emekli|zam|indirim|tarife|gümrük|boj|bloomberg|reuters|moody|fitch|s&p|kredi notu|resesyon|stagflasyon|jeopolitik|opec|hazine)\b", re.I)
+_FINANCE_EN = re.compile(r"\b(stocks?|shares?|market|wall street|nasdaq|s&p|dow|fed|rate|inflation|treasury|bond|yield|earnings|revenue|profit|guidance|ipo|dividend|buyback|merger|acquisition|deal|ceo|hedge fund|13f|etf|bitcoin|crypto|oil|opec|gold|dollar|euro|economy|gdp|jobs|tariff|trade|bank|investor|valuation|chip|ai\b|semiconductor|energy|housing)\b", re.I)
+_SECTION = re.compile(r"/(ekonomi|finans|borsa|piyasa|piyasalar|sirket|sirketler|para|yatirim|enerji|is-dunyasi|business|markets|money|economy|finance|stocks|investing|companies|earnings)(/|-|\.)", re.I)
+
+
+def is_finance(title: str, url: str, market: str) -> bool:
+    if _NOISE.search(title):
+        return False
+    if _SECTION.search(url):
+        return True
+    return bool((_FINANCE_TR if market == "TR" else _FINANCE_EN).search(title))
+
+
 def fetch_feeds(session: Session, market: str, feeds: list[tuple[str, str]] | None = None, newsapi_key: str | None = None, max_age_days: int = 7) -> int:
     keywords = _keywords(session, market)
     known = set(session.scalars(select(NewsItem.url)))
@@ -71,7 +87,7 @@ def fetch_feeds(session: Session, market: str, feeds: list[tuple[str, str]] | No
             continue
         for e in parsed.entries[:60]:
             link, title = (e.get("link") or "").strip(), (e.get("title") or "").strip()
-            if not link or not title:
+            if not link or not title or not is_finance(title, link, market):
                 continue
             ts = e.get("published_parsed") or e.get("updated_parsed")
             published = datetime.fromtimestamp(time.mktime(ts), tz=UTC).replace(tzinfo=None) if ts else datetime.now(UTC).replace(tzinfo=None)

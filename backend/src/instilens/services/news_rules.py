@@ -54,12 +54,15 @@ def active_rules(session: Session, market: str) -> list[NewsRule]:
 
 
 def reapply_all(session: Session, market: str, days: int = 7) -> int:
-    from instilens.ingestion.news import _keywords, match_symbols
+    from instilens.ingestion.news import _keywords, is_finance, match_symbols
 
     rules = active_rules(session, market)
     keywords = _keywords(session, market)
     n = 0
     for item in session.scalars(select(NewsItem).where(NewsItem.market_code == market, NewsItem.published_at >= datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days))):
+        if not is_finance(item.title, item.url, market):  # ticker is finance-only; drop noise that got in before the filter
+            session.delete(item)
+            continue
         base = set(match_symbols(item.title, keywords)) | {s.upper() for s in ((item.ai or {}).get("symbols") or [])}
         apply_rules(session, item, rules, base_symbols=base)
         n += 1

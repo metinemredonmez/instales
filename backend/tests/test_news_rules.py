@@ -29,3 +29,15 @@ def test_apply_rules_tags_and_symbols(session):
     item = NewsItem(market_code="TR", source="Bloomberg HT", title="Aselsan savunma ihracatında rekor kırdı", url="https://x/1", published_at=datetime.now(UTC).replace(tzinfo=None), symbols=[], tags=[])
     apply_rules(session, item)
     assert "Savunma" in item.tags and "ASELS" in item.symbols
+
+
+def test_ticker_keeps_finance_only():
+    from instilens.ingestion.news import is_finance
+
+    assert is_finance("Süper Lig'den 8 kulüp PFDK'ya sevk edildi", "https://www.ekonomim.com/spor/x", "TR") is False
+    assert is_finance("KPSS Ön lisans sınav giriş belgesi ne zaman?", "https://www.dunya.com/gundem/x", "TR") is False
+    assert is_finance("Bakan Kurum, Cenevre'de DTÖ Genel Direktörü ile bir araya geldi", "https://www.aa.com.tr/tr/politika/x", "TR") is False
+    assert is_finance("TCMB faiz kararını açıkladı", "https://www.dunya.com/gundem/x", "TR") is True
+    assert is_finance("Yeni ihracat rakamları açıklandı", "https://www.dunya.com/ekonomi/x", "TR") is True
+    assert is_finance("Kardashian launches new brand", "https://finance.yahoo.com/news/x", "US") is False
+    assert is_finance("Nvidia shares jump after earnings beat", "https://finance.yahoo.com/news/x", "US") is True
