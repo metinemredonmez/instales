@@ -47,7 +47,8 @@ export function NotifySettingsCard() {
             <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? t("notify.push.turnOff") : t("notify.push.turnOn")}</Button>
           </div>
           {pushMsg && <div className="mt-2 text-xs text-muted-foreground">{pushMsg}</div>}
-          <Button size="sm" variant="ghost" className="mt-1" onClick={() => pushTest.mutate()}>{t("notify.push.test")}{pushTest.data ? ` (vapid ${pushTest.data.sent} · onesignal ${pushTest.data.onesignal ? "ok" : "—"})` : ""}</Button>
+          {pushTest.data && !pushTest.data.onesignal && pushTest.data.sent === 0 && <div className="mt-1 text-xs text-negative">{pushTest.data.onesignal_error ?? t("notify.push.testFailed")}</div>}
+          <Button size="sm" variant="ghost" className="mt-1" onClick={() => pushTest.mutate()}>{t("notify.push.test")}{pushTest.data ? ` (${pushTest.data.onesignal ? "OneSignal ✓" : pushTest.data.sent > 0 ? `VAPID ${pushTest.data.sent} ✓` : "✗"})` : ""}</Button>
         </div>
         <label className="block">
           <div className="mb-1 text-xs text-muted-foreground">Telegram chat id {ch && !ch.telegram && <span className="text-warning">({t("notify.telegram.noToken")})</span>}</div>

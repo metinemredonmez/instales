@@ -130,25 +130,41 @@ def send_push(session: Session, owner_id: str, title: str, body: str, link: str)
     return sent
 
 
+LAST_ONESIGNAL_ERROR: dict[str, str] = {}  # owner_id → last failure reason (surfaced by /push/test)
+
+
 def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
-    """OneSignal push to the user (identified by external_id = our user id, set by OneSignal.login on the web)."""
+    """OneSignal push to the user (identified by external_id = our user id, set by OneSignal.login on the web).
+    Every failure path is logged and remembered so the settings page can say WHY a test did not arrive."""
     if not (settings.onesignal_app_id and settings.onesignal_rest_api_key):
+        LAST_ONESIGNAL_ERROR[owner_id] = "not configured"
         return False
     payload = {"app_id": settings.onesignal_app_id, "include_aliases": {"external_id": [owner_id]}, "target_channel": "push",
                "headings": {"en": title, "tr": title}, "contents": {"en": body, "tr": body}, "url": link,
                "chrome_web_icon": f"{settings.public_url}/icon-192.png", "firefox_icon": f"{settings.public_url}/icon-192.png"}
+    last = ""
     for scheme in ("Key", "Basic"):  # new-style keys use "Key", legacy REST keys use "Basic"
         try:
             r = httpx.post("https://api.onesignal.com/notifications", json=payload, headers={"Authorization": f"{scheme} {settings.onesignal_rest_api_key}", "accept": "application/json"}, timeout=15)
         except httpx.HTTPError as exc:
             log.warning("onesignal failed: %s", exc)
+            LAST_ONESIGNAL_ERROR[owner_id] = f"network: {exc}"
             return False
         if r.status_code in (200, 201):
             data = r.json()
-            return not data.get("errors")
+            errors = data.get("errors")
+            if errors:
+                # typical: {"invalid_aliases": {"external_id": ["1"]}} → the browser never linked this user id
+                log.warning("onesignal rejected user %s: %s", owner_id, errors)
+                LAST_ONESIGNAL_ERROR[owner_id] = f"no subscription for this user ({errors})"[:200]
+                return False
+            LAST_ONESIGNAL_ERROR.pop(owner_id, None)
+            return True
+        last = f"{r.status_code} {r.text[:160]}"
         if r.status_code not in (401, 403):
-            log.warning("onesignal %s: %s", r.status_code, r.text[:200])
-            return False
+            break
+    log.warning("onesignal %s", last)
+    LAST_ONESIGNAL_ERROR[owner_id] = f"rejected: {last}"
     return False
 
 

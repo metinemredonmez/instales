@@ -180,6 +180,8 @@ def push_unsubscribe(endpoint: str, user: User = Depends(current_user), session:
 @router.post("/push/test")
 def push_test(user: User = Depends(current_user), session: Session = Depends(get_session)):
     from instilens.config import settings as _s
-    from instilens.services.notify import send_onesignal, send_push
+    from instilens.services.notify import LAST_ONESIGNAL_ERROR, send_onesignal, send_push
 
-    return {"sent": send_push(session, str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url), "onesignal": send_onesignal(str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)}
+    sent = send_push(session, str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)
+    ok = send_onesignal(str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)
+    return {"sent": sent, "onesignal": ok, "onesignal_error": None if ok else LAST_ONESIGNAL_ERROR.get(str(user.id))}

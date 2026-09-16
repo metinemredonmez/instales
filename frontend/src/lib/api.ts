@@ -392,7 +392,7 @@ export const api = {
   pushPublicKey: () => get<{ public_key: string | null; enabled: boolean; onesignal_app_id: string | null }>("/push/public-key"),
   pushSubscribe: (sub: PushSubscriptionJSON, user_agent: string) => send<{ id: number }>("POST", "/push/subscribe", { endpoint: sub.endpoint, keys: sub.keys, user_agent }),
   pushUnsubscribe: (endpoint: string) => send<void>("DELETE", `/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`),
-  pushTest: () => send<{ sent: number; onesignal: boolean }>("POST", "/push/test"),
+  pushTest: () => send<{ sent: number; onesignal: boolean; onesignal_error: string | null }>("POST", "/push/test"),
   mySettings: () => get<NotifySettings>("/me/settings"),
   saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; brief_markets: Market[]; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),

@@ -343,6 +343,7 @@ export const en: Record<Key, string> = {
   "notify.push.noKey": "No push key configured on the server",
   "notify.push.turnOff": "Turn off",
   "notify.push.turnOn": "Turn on",
+  "notify.push.testFailed": "Notification could not be delivered.",
   "notify.push.test": "Send test to device",
   "notify.telegram.noToken": "no bot token configured on the server",
   "notify.telegram.howto": "Send /start to the bot on Telegram; get your chat id from @userinfobot.",
