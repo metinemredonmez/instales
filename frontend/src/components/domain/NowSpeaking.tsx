@@ -2,6 +2,7 @@ import { Loader2, Pause, Play, Volume2, X } from "lucide-react"
 import { useEffect } from "react"
 import { useI18n } from "@/lib/i18n"
 import { tts, useTts } from "@/lib/tts"
+import { VoicePicker } from "./VoicePicker"
 import { cn } from "@/lib/utils"
 
 /**
@@ -38,6 +39,9 @@ export function NowSpeaking() {
         <button onClick={tts.stop} className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" title={t("tts.stop")} aria-label={t("tts.stop")}>
           <X className="size-3.5" />
         </button>
+      </div>
+      <div className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 text-[10px] text-muted-foreground">
+        <span>{t("tts.voice")}</span><VoicePicker lang={s.lang} compact /><span className="ml-auto">{t("tts.speedHint")}</span>
       </div>
       {/* Progress only when we actually know it (server audio duration, or spoken characters for the browser voice). */}
       {s.progress !== null && (

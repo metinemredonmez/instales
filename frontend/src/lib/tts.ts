@@ -19,12 +19,20 @@ export interface TtsState {
   progress: number | null
   /** Provider name that failed, shown next to the button that started it. */
   error: string | null
+  /** Chosen ElevenLabs voice per language (null = the configured default for the gender). */
+  voice: Record<"tr" | "en", string | null>
+  /** Playback speed multiplier (0.75–1.25); applied to server audio and the browser voice. */
+  rate: number
 }
 
 const GENDER_KEY = "instilens.tts"
+const VOICE_KEY = "instilens.tts.voice"
+const RATE_KEY = "instilens.tts.rate"
 const initialGender = (): TtsGender => { try { return (localStorage.getItem(GENDER_KEY) as TtsGender) || "female" } catch { return "female" } }
+const initialVoice = (): Record<"tr" | "en", string | null> => { try { return { tr: null, en: null, ...JSON.parse(localStorage.getItem(VOICE_KEY) || "{}") } } catch { return { tr: null, en: null } } }
+const initialRate = (): number => { try { const r = Number(localStorage.getItem(RATE_KEY)); return r >= 0.75 && r <= 1.25 ? r : 1 } catch { return 1 } }
 
-let state: TtsState = { status: "idle", noteId: null, title: "", lang: "tr", gender: initialGender(), provider: null, progress: null, error: null }
+let state: TtsState = { status: "idle", noteId: null, title: "", lang: "tr", gender: initialGender(), provider: null, progress: null, error: null, voice: initialVoice(), rate: initialRate() }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<TtsState>) => { state = { ...state, ...patch }; listeners.forEach((l) => l()) }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -42,6 +50,18 @@ export const tts = {
   setGender(g: TtsGender) {
     set({ gender: g })
     try { localStorage.setItem(GENDER_KEY, g) } catch { /* ignore */ }
+  },
+  /** Pick a specific voice for a language (null = default for the gender). Takes effect on the next play. */
+  setVoice(lang: "tr" | "en", id: string | null, gender?: TtsGender) {
+    const voice = { ...state.voice, [lang]: id }
+    set({ voice, ...(gender ? { gender } : {}) })
+    try { localStorage.setItem(VOICE_KEY, JSON.stringify(voice)); if (gender) localStorage.setItem(GENDER_KEY, gender) } catch { /* ignore */ }
+  },
+  setRate(r: number) {
+    const rate = Math.min(1.25, Math.max(0.75, r))
+    set({ rate })
+    if (audio) audio.playbackRate = rate
+    try { localStorage.setItem(RATE_KEY, String(rate)) } catch { /* ignore */ }
   },
   stop() { clearMedia(); set({ status: "idle", noteId: null, title: "", progress: null }) },
   pause() {
@@ -69,7 +89,8 @@ export const tts = {
       // The audio URL carries a 5-minute ticket, never the session token (it would end up in access logs).
       api.ticket().then(({ ticket }) => {
         if (!mine()) return
-        const a = new Audio(api.noteAudioUrl(noteId, state.gender, ticket))
+        const a = new Audio(api.noteAudioUrl(noteId, state.gender, ticket, state.voice[lang]))
+        a.playbackRate = state.rate
         audio = a
         a.onplaying = () => mine() && set({ status: "playing", error: null })
         a.onended = () => mine() && tts.stop()
@@ -84,7 +105,7 @@ export const tts = {
     const voices = window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang))
     const v = voices.find((v) => (state.gender === "male") === /erkek|male|tolga|ahmet|daniel|david/i.test(v.name)) ?? voices[0]
     if (v) u.voice = v
-    u.lang = lang === "en" ? "en-US" : "tr-TR"; u.rate = 1.0
+    u.lang = lang === "en" ? "en-US" : "tr-TR"; u.rate = state.rate
     u.onend = () => mine() && tts.stop()
     u.onerror = () => mine() && tts.stop()
     u.onboundary = (e) => { if (mine() && text.length) set({ progress: Math.min(1, e.charIndex / text.length) }) }

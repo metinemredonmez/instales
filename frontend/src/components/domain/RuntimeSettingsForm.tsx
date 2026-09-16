@@ -62,14 +62,15 @@ function Field({ s, value, onChange }: { s: RuntimeSetting; value: string; onCha
   const cls = "h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40"
   if (s.type === "bool") return <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}><option value="true">on</option><option value="false">off</option></select>
   if (s.type.startsWith("choice:")) return <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>{s.type.slice(7).split("|").map((o) => <option key={o}>{o}</option>)}</select>
-  if (s.type === "int") return <input type="number" min={s.min ?? undefined} max={s.max ?? undefined} value={value} onChange={(e) => onChange(e.target.value)} className={cn(cls, "num")} />
+  if (s.type === "int" || s.type === "float") return <input type="number" step={s.type === "float" ? 0.05 : 1} min={s.min ?? undefined} max={s.max ?? undefined} value={value} onChange={(e) => onChange(e.target.value)} className={cn(cls, "num")} />
+  if (s.type === "text") return <textarea rows={2} value={value} onChange={(e) => onChange(e.target.value)} className={cn(cls, "h-auto py-1")} />
   return <input value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={s.type === "list" ? "A, B, C" : ""} />
 }
 
 function toText(v: unknown): string { return Array.isArray(v) ? v.join(", ") : typeof v === "boolean" ? String(v) : String(v ?? "") }
 function fromText(s: RuntimeSetting, v: string): unknown {
   if (s.type === "bool") return v === "true"
-  if (s.type === "int") return Number(v)
+  if (s.type === "int" || s.type === "float") return Number(v)
   if (s.type === "list") return v.split(",").map((x) => x.trim()).filter(Boolean)
   return v
 }

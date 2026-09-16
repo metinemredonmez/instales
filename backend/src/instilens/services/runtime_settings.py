@@ -30,6 +30,8 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "ai_model": {"type": "str", "group": "ai"},
     "ai_news_enabled": {"type": "bool", "group": "ai"},
     "ai_news_model": {"type": "str", "group": "ai"},
+    "elevenlabs_speed": {"type": "float", "group": "ai", "min": 0.7, "max": 1.2},
+    "elevenlabs_extra_voices": {"type": "text", "group": "ai"},
     "breached_password_check": {"type": "bool", "group": "access"},
     "news_enabled": {"type": "bool", "group": "data"},
     "kap_adapter": {"type": "choice:public|api|fixture", "group": "data"},
@@ -77,6 +79,19 @@ def coerce(key: str, value: Any) -> Any:
         v = str(value).strip()
         if not v or len(v) > 128:
             raise SettingError(f"{key}: 1-128 characters")
+        return v
+    if t == "text":
+        v = str(value).strip()
+        if len(v) > 4000:
+            raise SettingError(f"{key}: too long")
+        return v
+    if t == "float":
+        try:
+            v = float(value)
+        except (TypeError, ValueError) as exc:
+            raise SettingError(f"{key}: expected a number") from exc
+        if not (meta.get("min", -1e9) <= v <= meta.get("max", 1e9)):
+            raise SettingError(f"{key}: must be between {meta.get('min')} and {meta.get('max')}")
         return v
     if t == "list":
         items = value if isinstance(value, list) else str(value).replace(";", ",").split(",")

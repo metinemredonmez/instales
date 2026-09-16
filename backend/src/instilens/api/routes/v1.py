@@ -120,17 +120,19 @@ def get_brief(request: Request, market: str = MarketParam, refresh: bool = False
 
 
 @ticket_router.get("/ai-notes/{note_id}/audio")
-def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female|male)$"), user: User = Depends(ticket_user), session: Session = Depends(get_session)):
+def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female|male)$"), voice: str | None = Query(None, max_length=64), user: User = Depends(ticket_user), session: Session = Depends(get_session)):
     """MP3 narration of an AI note. Voice follows the note's language and the chosen gender."""
     from fastapi.responses import FileResponse
 
-    from instilens.ai.tts import note_text, synthesize
+    from instilens.ai.tts import note_text, synthesize, voice_allowed
     from instilens.domain.models import AiNote
 
     note = session.get(AiNote, note_id)
     if note is None:
         raise HTTPException(404, "note not found")
-    path = synthesize(note_text(note, session), lang=note.lang, gender=gender)
+    if voice and not voice_allowed(note.lang, voice):
+        raise HTTPException(400, "voice not available for this language")
+    path = synthesize(note_text(note, session), lang=note.lang, gender=gender, voice_id=voice)
     if path is None:
         raise HTTPException(404, "tts not configured")
     return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")
@@ -141,6 +143,14 @@ def tts_status():
     from instilens.ai.tts import provider
 
     return {"provider": provider()}
+
+
+@router.get("/tts/voices")
+def tts_voices(lang: str = LangParam):
+    """Selectable narration voices for a language (configured + admin extras + verified library voices)."""
+    from instilens.ai.tts import provider, voices
+
+    return {"provider": provider(), "lang": lang, "voices": voices(lang) if provider() == "elevenlabs" else []}
 
 
 @router.get("/stocks/{symbol}/timeline")

@@ -3,6 +3,7 @@ import { Loader2, Pause, Volume2 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { tts, useTts } from "@/lib/tts"
+import { VoicePicker } from "./VoicePicker"
 
 /**
  * Read an AI note aloud. Server TTS (ElevenLabs/OpenAI) when configured — and then we do NOT silently fall back
@@ -25,10 +26,7 @@ export function SpeakButton({ noteId, title, text, lang }: { noteId: number; tit
   }
   return (
     <span className="inline-flex items-center gap-1">
-      <span className="inline-flex overflow-hidden rounded-md border border-border text-[11px]">
-        <button onClick={() => tts.setGender("female")} className={`px-1.5 py-1 ${s.gender === "female" ? "bg-accent" : "text-muted-foreground"}`} title={t("tts.female")}>♀</button>
-        <button onClick={() => tts.setGender("male")} className={`px-1.5 py-1 ${s.gender === "male" ? "bg-accent" : "text-muted-foreground"}`} title={t("tts.male")}>♂</button>
-      </span>
+      <VoicePicker lang={lang} compact />
       <button onClick={play} className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent" title={provider ? `${t("tts.title")} (${provider})` : `${t("tts.title")} (${t("tts.browser")})`}>
         {loading ? <Loader2 className="size-3.5 animate-spin" /> : playing ? <Pause className="size-3.5" /> : <Volume2 className="size-3.5" />} {loading ? t("tts.preparing") : playing ? t("tts.stop") : t("tts.listen")}
       </button>

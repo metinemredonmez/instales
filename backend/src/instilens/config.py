@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     elevenlabs_voice_tr_male: str = ""
     elevenlabs_voice_en_female: str = "pFZP5JQG7iQjIQuC4Bku"  # Lily
     elevenlabs_voice_en_male: str = "pNInz6obpgDQGcFmaJgB"  # Adam (ElevenLabs premade)
+    # Extra selectable voices, editable from Admin → Ayarlar: "tr:female:VOICE_ID:Ad, en:male:VOICE_ID:Name, ..."
+    elevenlabs_extra_voices: str = ""
     openai_api_key: str | None = None
     openai_tts_voice: str = "alloy"
 
