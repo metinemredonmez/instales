@@ -128,3 +128,21 @@ def test_signals_do_not_duplicate_across_daily_computes(session, pipeline_run):
     after = session.scalar(select(func.count(Signal.id)))
     assert after == before, f"signals duplicated: {before} -> {after}"
     assert session.scalar(select(func.max(Signal.window_end))) == AS_OF + timedelta(days=1)
+
+
+def test_collapse_repairs_historic_duplicate_signals(session, pipeline_run):
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from instilens.domain.models import Signal
+
+    first = session.scalars(select(Signal)).first()
+    dup = Signal(market_code=first.market_code, instrument_id=first.instrument_id, fund_id=None, signal_type=first.signal_type, strength=first.strength,
+                 window_start=first.window_start + timedelta(days=1), window_end=first.window_end + timedelta(days=1), evidence=first.evidence, confidence=first.confidence)
+    session.add(dup)
+    session.flush()
+    n = session.scalar(select(func.count(Signal.id)))
+    assert pipeline.collapse_signal_episodes(session) == 1
+    assert session.scalar(select(func.count(Signal.id))) == n - 1
+    assert session.get(Signal, first.id).window_end == dup.window_end

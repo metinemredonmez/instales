@@ -297,8 +297,30 @@ def _closes_at(session: Session, on: date) -> dict[str, Decimal]:
 MARKET_WINDOW_DAYS: dict[str, int] = {"TR": 30, "US": 100}
 
 
+def collapse_signal_episodes(session: Session) -> int:
+    """Data repair for rows written before signals were episodic: merge same-type signals of an instrument whose
+    windows overlap or touch into one row (keeps the earliest start, the latest end/evidence). Idempotent."""
+    from instilens.domain.models import SignalOutcome
+
+    removed = 0
+    rows = session.scalars(select(Signal).where(Signal.fund_id.is_(None)).order_by(Signal.instrument_id, Signal.signal_type, Signal.window_start, Signal.window_end)).all()
+    keep: Signal | None = None
+    for row in rows:
+        if keep is not None and (keep.instrument_id, keep.signal_type) == (row.instrument_id, row.signal_type) and row.window_start <= keep.window_end + timedelta(days=1):
+            if row.window_end >= keep.window_end:
+                keep.window_end, keep.strength, keep.evidence, keep.confidence = row.window_end, row.strength, row.evidence, row.confidence
+            session.execute(delete(SignalOutcome).where(SignalOutcome.signal_id == row.id))
+            session.delete(row)
+            removed += 1
+            continue
+        keep = row
+    session.flush()
+    return removed
+
+
 def compute_intelligence(session: Session, as_of: date, window_days: int | None = None) -> int:
     """Recompute scores and signals for every instrument with activity in its market's window."""
+    collapse_signal_episodes(session)
     max_window = window_days or max(MARKET_WINDOW_DAYS.values())
     earliest = as_of - timedelta(days=max_window)
     session.execute(delete(Score).where(Score.as_of == as_of))
