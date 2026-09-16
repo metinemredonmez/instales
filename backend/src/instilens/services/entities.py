@@ -30,6 +30,9 @@ class EntityResolver:
         self.session.flush()
 
     def instrument(self, market: Market, symbol: str, name: str | None = None) -> Instrument:
+        market = Market(market)
+        if self.session.get(MarketRow, market.value) is None:
+            self.ensure_markets()
         symbol = symbol.strip().upper()
         if symbol.startswith("CUSIP:"):
             return self._instrument_by_cusip(market, symbol[6:], name)
@@ -54,6 +57,7 @@ class EntityResolver:
 
     def load_cusip_map(self, rows: list[dict]) -> int:
         """rows: [{cusip, symbol, name}] → verified US instruments; existing CUSIP-symbol rows get renamed."""
+        self.ensure_markets()  # fresh databases have no market rows yet; instruments reference them
         n = 0
         for r in rows:
             cusip, symbol = r["cusip"].strip().upper(), r["symbol"].strip().upper()

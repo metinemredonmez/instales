@@ -119,11 +119,12 @@ def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> No
     init_db(get_engine())
     day = date.fromisoformat(as_of) if as_of else date.today()
     with session_scope() as s:
+        from instilens.services.entities import EntityResolver
+
+        EntityResolver(s).ensure_markets()
         cusips = settings.sec_fixture_dir.parent / "cusips_US.csv"  # real OpenFIGI map, refreshed by scripts/build_sec_fixtures.py
         if cusips.exists():
             import csv
-
-            from instilens.services.entities import EntityResolver
 
             with open(cusips, newline="", encoding="utf-8") as f:
                 EntityResolver(s).load_cusip_map(list(csv.DictReader(f)))
