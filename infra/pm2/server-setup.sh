@@ -29,7 +29,10 @@ npm ci --silent
 npm run build --silent
 
 echo "== nginx site"
-cp "$ROOT/infra/pm2/nginx-instilens.conf" /etc/nginx/sites-available/instilens
+# Never clobber a certbot-managed (HTTPS) site written by domain-setup.sh; only install the plain template on first run.
+if ! grep -q "listen 443" /etc/nginx/sites-available/instilens 2>/dev/null; then
+  cp "$ROOT/infra/pm2/nginx-instilens.conf" /etc/nginx/sites-available/instilens
+fi
 ln -sf /etc/nginx/sites-available/instilens /etc/nginx/sites-enabled/instilens
 nginx -t && systemctl reload nginx
 
