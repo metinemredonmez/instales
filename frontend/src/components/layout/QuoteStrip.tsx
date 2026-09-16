@@ -2,13 +2,15 @@ import type { Quote } from "@/lib/api"
 import { fmtDateTime } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import { useCountUp, useFlash } from "@/lib/motion"
-import { fmtQuoteChange, fmtQuotePrice, quoteTone, useQuotes } from "@/lib/quotes"
+import { fmtQuoteChange, fmtQuotePrice, fmtSessionDate, quoteTone, useQuotes } from "@/lib/quotes"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * USD/TRY · EUR/TRY · BIST 100 · S&P 500 from /quotes (60 s). Renders nothing until the first answer arrives and
- * only the quotes the API actually returned — a source that failed leaves a gap, never a placeholder number.
+ * only the quotes the API actually returned — a source that failed leaves a gap, never a placeholder number. Each
+ * quote's tooltip names the session its print belongs to (`bar_date`), so a weekend read of Friday's close says
+ * Friday, not the time the server happened to be asked.
  * Row mode is a flex row that wraps into 2×2 at lg–xl (the header is too narrow for one line there) and runs as a
  * single line from 2xl up; `stack` lays the rows vertically (used inside the account menu on small screens).
  */
@@ -19,7 +21,7 @@ export function QuoteStrip({ className, stack = false }: { className?: string; s
   if (quotes.length === 0) return null
   return (
     <TooltipProvider>
-      <div role="list" aria-label={t("quotes.label")} title={q.data ? t("quotes.asOf", { at: fmtDateTime(q.data.as_of) }) : undefined} className={cn("flex", stack ? "flex-col gap-1" : "w-[300px] shrink-0 flex-wrap items-center 2xl:w-auto 2xl:flex-nowrap 2xl:gap-0.5", className)}>
+      <div role="list" aria-label={t("quotes.label")} title={t("quotes.source")} className={cn("flex", stack ? "flex-col gap-1" : "w-[300px] shrink-0 flex-wrap items-center 2xl:w-auto 2xl:flex-nowrap 2xl:gap-0.5", className)}>
         {quotes.map((x) => <QuoteItem key={x.key} quote={x} stack={stack} />)}
       </div>
     </TooltipProvider>
@@ -32,7 +34,11 @@ function QuoteItem({ quote, stack }: { quote: Quote; stack: boolean }) {
   const value = useCountUp(quote.price)
   const flash = useFlash(quote.price, tone === "flat" ? "info" : tone)
   return (
-    <div role="listitem" className={cn("flex items-baseline gap-1 rounded-sm px-1 py-0.5 text-xs", stack ? "justify-between" : "basis-1/2 2xl:basis-auto", flash)}>
+    <div
+      role="listitem"
+      title={quote.bar_date ? t("quotes.session", { label: quote.label, d: fmtSessionDate(quote.bar_date) }) : `${quote.label} · ${fmtDateTime(quote.updated_at)}`}
+      className={cn("flex items-baseline gap-1 rounded-sm px-1 py-0.5 text-xs", stack ? "justify-between" : "basis-1/2 2xl:basis-auto", flash)}
+    >
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{quote.label}</span>
       <span className={cn("flex items-baseline gap-1.5", stack && "ml-auto")}>
         <span className="num font-medium text-foreground">{fmtQuotePrice(value ?? quote.price, quote.decimals)}</span>

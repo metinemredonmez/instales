@@ -253,9 +253,9 @@ export interface StockSeries {
 }
 
 /** Header quote (Yahoo Finance via the backend, 60 s cache). Absent from the list when the source failed; `stale` marks a cached value. */
-export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; stale?: boolean }
+export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; bar_date: string | null; stale?: boolean }
 export type MarketState = "open" | "closed" | "pre" | "post"
-export interface MarketStatus { state: MarketState; label_key: string; next_change_at: string; tz: string }
+export interface MarketStatus { state: MarketState; next_change_at: string; tz: string }
 export interface QuotesResponse { as_of: string; quotes: Quote[]; markets: Partial<Record<Market, MarketStatus>> }
 
 export interface WatchItem {

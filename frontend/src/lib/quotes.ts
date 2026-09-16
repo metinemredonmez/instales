@@ -54,7 +54,7 @@ export function fmtOpensAt(at: string, tz: string, now: number | Date, lang: "tr
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return "—"
   const loc = lang === "en" ? "en-GB" : "tr-TR"
-  const time = new Intl.DateTimeFormat(loc, { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(d)
+  const time = new Intl.DateTimeFormat(loc, { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d)
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
   const sameDay = day.format(d) === day.format(typeof now === "number" ? new Date(now) : now)
   if (sameDay) return time
@@ -76,12 +76,27 @@ export function trTimeSuffix(time: string): string {
 }
 
 /**
- * The state a market enters when `next_change_at` passes — shown until /quotes answers with the new schedule, so the
- * pill never keeps calling a session "open" after its close. BIST: open ↔ closed; NYSE: closed → pre → open → post → closed.
+ * `at` as a full moment in the market's own zone with the zone spelled out ("Per 10:00 GMT+3") — for tooltips, so a
+ * reader outside that zone sees which clock the visible time belongs to.
  */
-export function nextMarketState(market: Market, state: MarketState): MarketState {
-  if (market === "TR") return state === "open" ? "closed" : "open"
-  return state === "closed" ? "pre" : state === "pre" ? "open" : state === "open" ? "post" : "closed"
+export function fmtInZone(at: string, tz: string, lang: "tr" | "en"): string {
+  const d = new Date(at)
+  if (Number.isNaN(d.getTime())) return "—"
+  const loc = lang === "en" ? "en-GB" : "tr-TR"
+  // Composed from parts: locales differ on the punctuation between weekday and time ("Thu, 10:00" vs "Per 10:00").
+  const parts = new Intl.DateTimeFormat(loc, { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }).formatToParts(d)
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((x) => x.type === type)?.value ?? ""
+  return `${pick("weekday")} ${pick("hour")}:${pick("minute")} ${pick("timeZoneName")}`
+}
+
+/**
+ * A calendar date the API sent as "YYYY-MM-DD" (a quote's `bar_date`, the session the print belongs to), in the UI
+ * locale. Parsed as date parts, not as an instant, so it never shifts by a day west of UTC.
+ */
+export function fmtSessionDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return "—"
+  return new Intl.DateTimeFormat(locale(), { weekday: "short", day: "2-digit", month: "short" }).format(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
 }
 
 /** State label for the pill: "BIST açık" for the Turkish session, plain "Açık"/"Pre-market"/"After-hours"/"Kapalı" otherwise. */

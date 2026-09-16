@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Dialog } from "radix-ui"
@@ -24,7 +24,9 @@ const LANG_NAME: Record<Lang, Key> = { tr: "menu.lang.tr", en: "menu.lang.en" }
 
 /**
  * ⌘K / Ctrl+K: one box for the header search (same hook as SearchBox) and the app's commands — pages, market,
- * theme, language, "listen to the brief". Arrow keys move, Enter runs, Escape closes; Radix supplies the focus trap.
+ * theme, language, "listen to the brief". Arrow keys move (scrolling the active row into view), Enter runs the
+ * highlighted row only — a query with no match is not guessed into a route here, the empty state offers that as an
+ * explicit button — and Escape closes; Radix supplies the focus trap.
  */
 export function CommandPalette() {
   const { t, lang } = useI18n()
@@ -36,6 +38,8 @@ export function CommandPalette() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
+  // Set by the key handler so only keyboard moves scroll the list; hovering a half-visible row must not jump it.
+  const scrollActive = useRef(false)
   const listId = useId()
   const search = useSearch()
   const KIND_LABEL: Record<SearchHit["kind"], string> = { stock: t("common.stock"), fund: t("common.fund"), institution: t("inst.institution") }
@@ -86,21 +90,28 @@ export function CommandPalette() {
     else sections.push({ label, rows: [{ row, i }] })
   })
 
-  useEffect(() => { setActive(0) }, [rows.length, search.debounced])
+  useEffect(() => { setActive(0); document.getElementById(listId)?.scrollTo?.(0, 0) }, [rows.length, search.debounced, listId])
+  useEffect(() => {
+    if (!scrollActive.current) return
+    scrollActive.current = false
+    document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: "nearest" })
+  }, [active, listId])
 
-  const run = (row: Row | undefined) => {
-    if (!row) { if (search.go(undefined)) setOpen(false); return }
+  const run = (row: Row) => {
     if (row.hit) { search.go(row.hit); setOpen(false); return }
     row.cmd?.run()
     close()
   }
+  /** The empty state's "try the X page": the search box's shape-based route, only on an explicit click. */
+  const tryPage = () => { if (search.go(undefined)) setOpen(false) }
 
+  const move = (to: (a: number) => number) => { scrollActive.current = true; setActive(to) }
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, rows.length - 1)) }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
-    else if (e.key === "Home") { e.preventDefault(); setActive(0) }
-    else if (e.key === "End") { e.preventDefault(); setActive(rows.length - 1) }
-    else if (e.key === "Enter") { e.preventDefault(); run(rows[active]) }
+    if (e.key === "ArrowDown") { e.preventDefault(); move((a) => Math.min(a + 1, rows.length - 1)) }
+    else if (e.key === "ArrowUp") { e.preventDefault(); move((a) => Math.max(a - 1, 0)) }
+    else if (e.key === "Home") { e.preventDefault(); move(() => 0) }
+    else if (e.key === "End") { e.preventDefault(); move(() => rows.length - 1) }
+    else if (e.key === "Enter") { e.preventDefault(); const row = rows[active]; if (row) run(row) }
   }
 
   return (
@@ -120,8 +131,8 @@ export function CommandPalette() {
               onChange={(e) => search.setQ(e.target.value)}
               onKeyDown={onKey}
               role="combobox"
-              aria-expanded
-              aria-controls={listId}
+              aria-expanded={rows.length > 0}
+              aria-controls={rows.length > 0 ? listId : undefined}
               aria-autocomplete="list"
               aria-activedescendant={rows[active] ? `${listId}-${active}` : undefined}
               placeholder={t("palette.placeholder")}
@@ -130,7 +141,7 @@ export function CommandPalette() {
           </div>
           {rows.length === 0 && (
             <div className="px-3.5 py-3 text-sm text-muted-foreground" aria-live="polite">
-              {search.fetching ? t("search.searching") : needle ? <>{t("palette.empty")} — <button type="button" className="underline" onMouseDown={(e) => { e.preventDefault(); run(undefined) }}>{t("search.tryPage", { q: search.q.trim().toUpperCase() })}</button></> : t("palette.empty")}
+              {search.fetching ? t("search.searching") : needle ? <>{t("palette.empty")} — <button type="button" className="underline" onMouseDown={(e) => { e.preventDefault(); tryPage() }}>{t("search.tryPage", { q: search.q.trim().toUpperCase() })}</button></> : t("palette.empty")}
             </div>
           )}
           <ul id={listId} role="listbox" aria-label={t("palette.open")} className={cn("max-h-[min(60vh,420px)] overflow-y-auto p-1", rows.length === 0 && "hidden")}>

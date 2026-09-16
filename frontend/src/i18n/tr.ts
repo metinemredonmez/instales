@@ -575,7 +575,8 @@ export const tr = {
   // header: quotes, market clock, account menu, command palette
   "quotes.label": "Piyasa özeti",
   "quotes.stale": "Kaynak yanıt vermedi; son değer {at}",
-  "quotes.asOf": "Yahoo Finance · {at}",
+  "quotes.source": "Kaynak: Yahoo Finance",
+  "quotes.session": "{label} · {d} seansı",
   "market.status.label": "Piyasa durumu",
   "market.state.open": "Açık",
   "market.state.openBist": "BIST açık",

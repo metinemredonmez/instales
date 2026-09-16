@@ -39,7 +39,8 @@ export function ProfileMenu() {
     if (!open) return
     panelRef.current?.focus()
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); btnRef.current?.focus() } }
+    // Radix dialogs (⌘K) consume Escape in the capture phase; a prevented event was theirs, not this panel's.
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { setOpen(false); btnRef.current?.focus() } }
     document.addEventListener("mousedown", onDoc)
     document.addEventListener("keydown", onKey)
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey) }
@@ -104,7 +105,7 @@ export function ProfileMenu() {
             <span className="w-10 text-[11px] text-muted-foreground">{t("nav.theme")}</span>
             <div className="flex flex-1 rounded-md border border-border bg-card p-0.5" role="radiogroup" aria-label={t("nav.theme")}>
               {THEMES.map(({ mode: m, key, icon: Icon }) => (
-                <button key={m} role="radio" aria-checked={mode === m} onClick={() => setMode(m)} className={seg(mode === m)} title={t(key)}><Icon className="size-3.5" /> <span className="hidden sm:inline">{t(key)}</span></button>
+                <button key={m} role="radio" aria-checked={mode === m} onClick={() => setMode(m)} className={seg(mode === m)}><Icon className="size-3.5" aria-hidden /> <span className="sr-only sm:not-sr-only">{t(key)}</span></button>
               ))}
             </div>
           </div>
