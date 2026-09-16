@@ -14,6 +14,18 @@ FIXTURES = BACKEND_ROOT / "fixtures"
 AS_OF = date(2026, 9, 14)
 
 
+@pytest.fixture(autouse=True)
+def _offline_password_policy():
+    """Tests never call the HIBP breach API; the policy itself is covered in test_auth."""
+    from instilens.api.hardening import reset_rate_limits
+    from instilens.config import settings
+
+    settings.breached_password_check = False
+    reset_rate_limits()
+    yield
+    reset_rate_limits()
+
+
 @pytest.fixture
 def session() -> Session:
     engine = create_engine(

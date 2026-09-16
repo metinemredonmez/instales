@@ -10,6 +10,7 @@ import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { NotifySettingsCard } from "@/components/domain/NotifySettingsCard"
+import { AccountSecurityCard } from "@/components/domain/AccountSecurityCard"
 
 const ruleLabel = (t: T): Record<string, string> => ({
   NEW_FUND_POSITION: t("alerts.rule.newFundPosition"),
@@ -67,6 +68,7 @@ export function AlertsPage() {
             </form>
           </Section>
           <NotifySettingsCard />
+          <AccountSecurityCard />
           <Section title={t("alerts.activeRules")} hint={`${active.length}`}>
             <ul className="divide-y divide-border/60 text-sm">
               {active.map((r) => (

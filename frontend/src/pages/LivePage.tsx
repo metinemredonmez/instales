@@ -15,12 +15,23 @@ export function LivePage() {
   const [live, setLive] = useState<TxEvent[]>([])
   const [connected, setConnected] = useState(false)
 
+  // The stream URL carries a 5-minute ticket (not the session token). On error we fetch a fresh ticket and reconnect.
   useEffect(() => {
-    const es = new EventSource(api.eventStreamUrl(market))
-    es.onopen = () => setConnected(true)
-    es.onerror = () => setConnected(false)
-    es.addEventListener("transaction", (e) => setLive((prev) => [JSON.parse((e as MessageEvent).data) as TxEvent, ...prev]))
-    return () => es.close()
+    let es: EventSource | null = null
+    let timer: number | undefined
+    let stopped = false
+    const connect = async () => {
+      try {
+        const { ticket } = await api.ticket()
+        if (stopped) return
+        es = new EventSource(api.eventStreamUrl(market, ticket))
+        es.onopen = () => setConnected(true)
+        es.onerror = () => { setConnected(false); es?.close(); if (!stopped) timer = window.setTimeout(connect, 5000) }
+        es.addEventListener("transaction", (e) => setLive((prev) => [JSON.parse((e as MessageEvent).data) as TxEvent, ...prev]))
+      } catch { if (!stopped) timer = window.setTimeout(connect, 10_000) }
+    }
+    connect()
+    return () => { stopped = true; es?.close(); window.clearTimeout(timer) }
   }, [market])
 
   const seen = new Set(live.map((e) => e.id))

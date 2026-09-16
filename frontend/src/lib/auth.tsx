@@ -10,7 +10,8 @@ const Ctx = createContext<{
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, name: string) => Promise<void>
   logout: () => void
-}>({ user: null, token: null, login: async () => {}, register: async () => {}, logout: () => {} })
+  adoptSession: (s: Session) => void
+}>({ user: null, token: null, login: async () => {}, register: async () => {}, logout: () => {}, adoptSession: () => {} })
 
 let currentToken: string | null = null
 export const getToken = () => currentToken
@@ -58,8 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => setSession(await post("login", { email, password })), [])
   const register = useCallback(async (email: string, password: string, name: string) => setSession(await post("register", { email, password, name })), [])
   const logout = useCallback(() => setSession(null), [])
+  const adoptSession = useCallback((s: Session) => setSession(s), [])
 
-  const value = useMemo(() => ({ user: session?.user ?? null, token: session?.access_token ?? null, login, register, logout }), [session, login, register, logout])
+  const value = useMemo(() => ({ user: session?.user ?? null, token: session?.access_token ?? null, login, register, logout, adoptSession }), [session, login, register, logout, adoptSession])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

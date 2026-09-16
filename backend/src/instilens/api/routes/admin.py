@@ -1,17 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from instilens.api.deps import current_user, get_session
-from instilens.domain.models import User
+from instilens.api.deps import get_session, require_admin
+from instilens.api.hardening import client_ip
+from instilens.domain.models import AuditEvent, User
 from instilens.services import admin
-
-
-def require_admin(user: User = Depends(current_user)) -> User:
-    if user.role != "ADMIN":
-        raise HTTPException(403, "admin only")
-    return user
-
+from instilens.services.auth import audit
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -34,11 +30,29 @@ def users(session: Session = Depends(get_session)):
 
 
 @router.patch("/users/{user_id}")
-def patch_user(user_id: int, body: UserPatch, session: Session = Depends(get_session)):
-    out = admin.update_user(session, user_id, plan=body.plan, role=body.role, is_active=body.is_active)
-    if out is None:
+def patch_user(user_id: int, body: UserPatch, request: Request, actor: User = Depends(require_admin), session: Session = Depends(get_session)):
+    target = session.get(User, user_id)
+    if target is None:
         raise HTTPException(404, "not found")
+    demoting = (body.role is not None and body.role != "ADMIN") or body.is_active is False
+    if demoting and target.id == actor.id:
+        raise HTTPException(400, "you cannot demote or deactivate your own account")
+    if demoting and target.role == "ADMIN":
+        admins = session.scalar(select(func.count(User.id)).where(User.role == "ADMIN", User.is_active.is_(True))) or 0
+        if admins <= 1:
+            raise HTTPException(400, "cannot remove the last active admin")
+    out = admin.update_user(session, user_id, plan=body.plan, role=body.role, is_active=body.is_active)
+    if body.role is not None or body.is_active is not None:
+        target.token_version = (target.token_version or 1) + 1  # role/access changes take effect on the next request
+    audit(session, "admin.user_patch", actor=actor.email, subject=target.email, ip=client_ip(request), detail=body.model_dump_json(exclude_none=True))
     return out
+
+
+@router.get("/audit")
+def audit_events(limit: int = Query(100, ge=1, le=500), session: Session = Depends(get_session)):
+    """Security events, newest first (logins, lockouts, password/role changes)."""
+    rows = session.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)).all()
+    return [{"id": e.id, "kind": e.kind, "actor": e.actor, "subject": e.subject, "ip": e.ip, "detail": e.detail, "created_at": e.created_at.isoformat()} for e in rows]
 
 
 @router.get("/review")

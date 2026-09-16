@@ -26,8 +26,23 @@ def test_register_login_me_and_protection(session, pipeline_run):
     h = {"authorization": f"Bearer {tok}"}
     assert c.get("/api/v1/auth/me", headers=h).json()["name"] == "Emre"
     assert c.get("/api/v1/radar", headers=h).status_code == 200
-    assert c.get(f"/api/v1/screener?token={tok}").status_code == 200  # query token for SSE-style clients
+    # Session tokens are refused in the query string; EventSource/<audio> use a 5-minute ticket instead.
+    assert c.get(f"/api/v1/screener?token={tok}").status_code == 401
+    ticket = c.post("/api/v1/auth/ticket", headers=h).json()["ticket"]
+    assert c.get(f"/api/v1/screener?ticket={ticket}").status_code == 401  # ticket is not a session
+    assert c.get(f"/api/v1/ai-notes/1/audio?ticket={ticket}").status_code in (404, 503)  # authenticated; note missing / no tts
+    assert c.get("/api/v1/ai-notes/1/audio").status_code == 401
     assert c.get("/api/v1/radar", headers={"authorization": "Bearer nope"}).status_code == 401
+
+    # Password change revokes older tokens; the response carries a fresh one.
+    assert c.post("/api/v1/auth/password", json={"current_password": "wrong", "new_password": "another-good-one"}, headers=h).status_code == 400
+    r = c.post("/api/v1/auth/password", json={"current_password": "correct-horse", "new_password": "another-good-one"}, headers=h)
+    assert r.status_code == 200
+    assert c.get("/api/v1/auth/me", headers=h).status_code == 401  # old token dead
+    h2 = {"authorization": f"Bearer {r.json()['access_token']}"}
+    assert c.get("/api/v1/auth/me", headers=h2).status_code == 200
+    assert c.post("/api/v1/auth/logout-all", headers=h2).status_code == 200
+    assert c.get("/api/v1/auth/me", headers=h2).status_code == 401
     from instilens.api.main import app
 
     app.dependency_overrides.clear()
@@ -46,8 +61,43 @@ def test_auth_rate_limit_and_security_headers(session):
     app.dependency_overrides[deps.get_session] = lambda: session
     reset_rate_limits()
     c = TestClient(app)
+    # Per-account lockout (8) trips before the per-IP cap (10); both answer 429.
     codes = [c.post("/api/v1/auth/login", json={"email": "a@b.co", "password": "wrong-password"}).status_code for _ in range(12)]
-    assert codes[:10] == [401] * 10 and codes[10:] == [429, 429]
+    assert codes[:8] == [401] * 8 and codes[8:] == [429] * 4
     r = c.get("/health")
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
+    app.dependency_overrides.clear()
+
+
+def test_password_policy_rules():
+    from instilens.config import settings
+
+    settings.breached_password_check = False
+    for bad in ("short", "aaaaaaaa", "emre1234x", "InstiLens2027!"):
+        try:
+            auth.check_password_policy(bad, "emre1234@example.com")
+        except auth.AuthError:
+            continue
+        raise AssertionError(f"{bad!r} should be rejected")
+    auth.check_password_policy("correct horse battery staple", "emre1234@example.com")
+
+
+def test_admin_cannot_remove_last_admin_or_self(session):
+    c = _client(session)
+    r = c.post("/api/v1/auth/register", json={"email": "root@example.com", "password": "correct-horse-1", "name": "Root"})
+    tok = r.json()["access_token"]
+    uid = r.json()["user"]["id"]
+    from instilens.domain.models import User
+
+    u = session.get(User, uid)
+    u.role = "ADMIN"
+    session.flush()
+    h = {"authorization": f"Bearer {tok}"}
+    assert c.patch(f"/api/v1/admin/users/{uid}", json={"role": "USER"}, headers=h).status_code == 400
+    assert c.patch(f"/api/v1/admin/users/{uid}", json={"is_active": False}, headers=h).status_code == 400
+    assert c.patch(f"/api/v1/admin/users/{uid}", json={"plan": "PRO"}, headers=h).status_code == 200
+    events = c.get("/api/v1/admin/audit", headers=h).json()
+    assert any(e["kind"] == "admin.user_patch" for e in events) and any(e["kind"] == "auth.registered" for e in events)
+    from instilens.api.main import app
+
     app.dependency_overrides.clear()

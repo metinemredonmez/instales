@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     allow_registration: bool = True  # open beta; flip off for invite-only
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost"]
     auth_rate_limit_per_minute: int = 10  # per client IP on /auth/login and /auth/register
+    trusted_proxies: list[str] = ["127.0.0.1/32", "::1/128"]  # only these peers may set X-Forwarded-For (nginx)
+    account_lockout_attempts: int = 8  # failed logins per e-mail within the lockout window → temporary lock
+    account_lockout_minutes: int = 15
+    breached_password_check: bool = True  # NIST 800-63B-4: reject passwords seen in breaches (HIBP k-anonymity)
+    ai_requests_per_hour: int = 30  # per user: /research and forced AI refreshes (paid calls)
 
     # News ticker: RSS headlines (TR first, then global). Optional NewsAPI key adds a keyword source.
     news_enabled: bool = True

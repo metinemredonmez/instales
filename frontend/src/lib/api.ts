@@ -186,6 +186,8 @@ export interface FundDetail {
   events: TxEvent[]
 }
 
+export interface AuditEvent { id: number; kind: string; actor: string | null; subject: string | null; ip: string | null; detail: string | null; created_at: string }
+
 export interface WaitlistRow { id: number; email: string; name: string | null; lang: string; source: string | null; created_at: string }
 
 export interface AdminConfig {
@@ -310,7 +312,12 @@ export const api = {
   institutions: (market: Market) => get<InstitutionRow[]>("/institutions", { market }),
   institution: (market: Market, code: string) => get<InstitutionDetail>(`/institutions/${code}`, { market }),
   ttsStatus: () => get<{ provider: string | null }>("/tts/status"),
-  noteAudioUrl: (id: number, gender: "female" | "male" = "female") => `${BASE}/ai-notes/${id}/audio?gender=${gender}&token=${encodeURIComponent(getToken() ?? "")}`,
+  /** 5-minute ticket for EventSource / <audio> — the only credentials allowed in a URL. */
+  ticket: () => send<{ ticket: string; ttl_seconds: number }>("POST", "/auth/ticket"),
+  noteAudioUrl: (id: number, gender: "female" | "male", ticket: string) => `${BASE}/ai-notes/${id}/audio?gender=${gender}&ticket=${encodeURIComponent(ticket)}`,
+  changePassword: (current_password: string, new_password: string) => send<{ access_token: string; token_type: string; user: import("./auth").User }>("POST", "/auth/password", { current_password, new_password }),
+  logoutAll: () => send<{ ok: boolean }>("POST", "/auth/logout-all"),
+  adminAudit: (limit = 100) => get<AuditEvent[]>("/admin/audit", { limit }),
   stockAi: (market: Market, symbol: string, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, lang, refresh: refresh || undefined }),
   brief: (market: Market, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote | null>("/brief", { market, lang, refresh: refresh || undefined }),
   news: (market: Market, symbol?: string, limit = 40) => get<NewsItem[]>("/news", { market, symbol, limit }),
@@ -355,5 +362,5 @@ export const api = {
   saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
-  eventStreamUrl: (market: Market) => `${BASE}/events/stream?market=${market}&token=${encodeURIComponent(getToken() ?? "")}`,
+  eventStreamUrl: (market: Market, ticket: string) => `${BASE}/events/stream?market=${market}&ticket=${encodeURIComponent(ticket)}`,
 }

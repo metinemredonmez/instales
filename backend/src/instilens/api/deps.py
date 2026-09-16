@@ -13,11 +13,11 @@ def get_session() -> Iterator[Session]:
         yield session
 
 
-def _bearer(request: Request, token: str | None = Query(None, include_in_schema=False)) -> str | None:
+def _bearer(request: Request) -> str | None:
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
         return header[7:].strip()
-    return token  # EventSource cannot set headers, so the SSE stream accepts ?token=
+    return None
 
 
 def current_user(session: Session = Depends(get_session), token: str | None = Depends(_bearer)) -> User:
@@ -27,3 +27,22 @@ def current_user(session: Session = Depends(get_session), token: str | None = De
         return auth.user_from_token(session, token)
     except auth.AuthError as exc:
         raise HTTPException(401, str(exc), headers={"WWW-Authenticate": "Bearer"}) from exc
+
+
+def ticket_user(session: Session = Depends(get_session), ticket: str | None = Query(None, include_in_schema=False), token: str | None = Depends(_bearer)) -> User:
+    """For EventSource / <audio>, which cannot set headers: accepts a 5-minute ticket in the query string
+    (or a normal bearer header). Session tokens are refused in the query so they never land in access logs."""
+    try:
+        if token:
+            return auth.user_from_token(session, token)
+        if ticket:
+            return auth.user_from_token(session, ticket, expect_scope="ticket")
+    except auth.AuthError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    raise HTTPException(401, "ticket required")
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    if user.role != "ADMIN":
+        raise HTTPException(403, "admin only")
+    return user

@@ -294,6 +294,8 @@ class User(Base):
     notify_telegram_chat_id: Mapped[str | None] = mapped_column(String(32))
     notify_brief: Mapped[bool] = mapped_column(Boolean, default=True)
     lang: Mapped[str] = mapped_column(String(2), default="tr")  # UI + AI note + delivery language: "tr" / "en"
+    # Bumped on password change / role change / "log out everywhere": tokens carry it and older ones die.
+    token_version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -389,6 +391,21 @@ class NewsRule(Base):
 
 
 # --------------------------------------------------------------------------- AI notes (cached model output)
+
+
+class AuditEvent(Base):
+    """Security-relevant events (login ok/fail, password change, role/plan change, lockouts). No secrets, no PII
+    beyond the account e-mail; IP is the resolved client address. Append-only."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(48), index=True)  # auth.login_ok, auth.login_fail, auth.locked, auth.password_changed, admin.user_patch, ...
+    actor: Mapped[str | None] = mapped_column(String(254))  # e-mail of the acting account (or attempted e-mail)
+    subject: Mapped[str | None] = mapped_column(String(254))  # affected account / object
+    ip: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
 
 class WaitlistEntry(Base):

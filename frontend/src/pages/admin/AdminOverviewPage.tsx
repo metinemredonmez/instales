@@ -17,6 +17,7 @@ export function AdminOverviewPage() {
   const review = useQuery({ queryKey: ["admin", "review"], queryFn: api.adminReview })
   const status = useQuery({ queryKey: ["pipeline-status"], queryFn: api.adminPipelineStatus })
   const outcomes = useMutation({ mutationFn: api.adminComputeOutcomes })
+  const audit = useQuery({ queryKey: ["admin", "audit"], queryFn: () => api.adminAudit(40), refetchInterval: 60_000 })
   const r = review.data
   const pending = (r?.instruments.length ?? 0) + (r?.funds.length ?? 0) + (r?.institutions.length ?? 0)
   const st = status.data
@@ -45,6 +46,21 @@ export function AdminOverviewPage() {
           {st?.result && <div className="text-xs text-muted-foreground">{t("pipeline.last")}: {Object.entries(st.result).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>}
           <p className="text-xs text-muted-foreground">{t("admin.pipeline.schedule")}</p>
         </div>
+      </Section>
+      <Section title={t("admin.audit.title")} hint={t("admin.audit.hint")}>
+        <ul className="divide-y divide-border/60 text-xs">
+          {audit.data?.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-center gap-2 px-4 py-1.5">
+              <span className="num w-28 shrink-0 text-muted-foreground">{fmtDateTime(e.created_at)}</span>
+              <span className={`rounded-sm border px-1.5 py-px font-mono ${e.kind.includes("fail") || e.kind.includes("locked") ? "border-negative/40 text-negative" : e.kind.startsWith("admin") ? "border-warning/40 text-warning" : "border-border text-muted-foreground"}`}>{e.kind}</span>
+              <span>{e.actor}</span>
+              {e.subject && e.subject !== e.actor && <span className="text-muted-foreground">→ {e.subject}</span>}
+              {e.ip && <span className="num text-muted-foreground">{e.ip}</span>}
+              {e.detail && <span className="truncate text-muted-foreground">{e.detail}</span>}
+            </li>
+          ))}
+          {audit.data?.length === 0 && <li className="px-4 py-6 text-muted-foreground">{t("common.none")}</li>}
+        </ul>
       </Section>
     </>
   )

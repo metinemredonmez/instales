@@ -63,16 +63,20 @@ export const tts = {
     const { noteId, title, text, lang, provider } = opts
     const mine = () => state.noteId === noteId
     if (provider) {
-      const a = new Audio(api.noteAudioUrl(noteId, state.gender))
-      audio = a
       set({ status: "preparing", noteId, title, lang, provider, progress: null, error: null })
       // Keep noteId so the button that started this shows the error; the widget hides on "idle".
       const fail = () => { if (!mine()) return; clearMedia(); set({ status: "idle", progress: null, error: opts.errorMessage(provider) }) }
-      a.onplaying = () => mine() && set({ status: "playing", error: null })
-      a.onended = () => mine() && tts.stop()
-      a.onerror = fail
-      a.ontimeupdate = () => { if (mine() && Number.isFinite(a.duration) && a.duration > 0) set({ progress: a.currentTime / a.duration }) }
-      a.play().catch(fail)
+      // The audio URL carries a 5-minute ticket, never the session token (it would end up in access logs).
+      api.ticket().then(({ ticket }) => {
+        if (!mine()) return
+        const a = new Audio(api.noteAudioUrl(noteId, state.gender, ticket))
+        audio = a
+        a.onplaying = () => mine() && set({ status: "playing", error: null })
+        a.onended = () => mine() && tts.stop()
+        a.onerror = fail
+        a.ontimeupdate = () => { if (mine() && Number.isFinite(a.duration) && a.duration > 0) set({ progress: a.currentTime / a.duration }) }
+        a.play().catch(fail)
+      }).catch(fail)
       return
     }
     if (!("speechSynthesis" in window)) return

@@ -489,29 +489,30 @@ def search(session: Session, market: str, q: str, limit: int = 8) -> list[dict]:
     Ranking: exact symbol/code → symbol/code prefix → name substring. Returns at most `limit`
     rows per kind so a short query like "A" still shows funds and institutions, not only stocks.
     """
-    q = q.strip()
+    q = q.strip()[:64]
     if not q:
         return []
+    q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")  # user text must not act as LIKE wildcards
     up = q.upper()
     like = f"%{q}%"
-    rank = lambda code_col: case((code_col == up, 0), (code_col.like(f"{up}%"), 1), else_=2)  # noqa: E731
+    rank = lambda code_col: case((code_col == up, 0), (code_col.like(f"{up}%", escape="\\"), 1), else_=2)  # noqa: E731
 
     stocks = session.scalars(
         select(Instrument)
-        .where(Instrument.market_code == market, (Instrument.symbol.like(f"{up}%")) | (Instrument.name.ilike(like)))
+        .where(Instrument.market_code == market, (Instrument.symbol.like(f"{up}%", escape="\\")) | (Instrument.name.ilike(like, escape="\\")))
         .order_by(rank(Instrument.symbol), Instrument.symbol)
         .limit(limit)
     )
     funds = session.scalars(
         select(Fund)
         .join(Institution)
-        .where(Institution.market_code == market, (Fund.code.like(f"{up}%")) | (Fund.name.ilike(like)))
+        .where(Institution.market_code == market, (Fund.code.like(f"{up}%", escape="\\")) | (Fund.name.ilike(like, escape="\\")))
         .order_by(rank(Fund.code), Fund.code)
         .limit(limit)
     )
     insts = session.scalars(
         select(Institution)
-        .where(Institution.market_code == market, (Institution.code.like(f"{up}%")) | (Institution.name.ilike(like)))
+        .where(Institution.market_code == market, (Institution.code.like(f"{up}%", escape="\\")) | (Institution.name.ilike(like, escape="\\")))
         .order_by(rank(Institution.code), Institution.name)
         .limit(limit)
     )
