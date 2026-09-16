@@ -87,6 +87,7 @@ def test_upload_replaces_older_artifact_of_same_platform_and_windows_setup_is_do
     from instilens.services import releases
 
     rel = session.scalar(__import__("sqlalchemy").select(Release).where(Release.version == v))
+    session.refresh(rel)  # the test shares one session with the app; reload the files collection
     names = sorted(f.filename for f in rel.files)
     assert names == [f"InstiLens_{v}_amd64.deb", f"InstiLens_{v}_x64-setup.exe"]
     assert not (tmp_path / v / "InstiLens_0.1.9_amd64.deb").exists()
