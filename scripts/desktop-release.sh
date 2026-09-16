@@ -11,7 +11,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API="${INSTILENS_RELEASE_API:-https://app.instilens.com/api/v1/public/desktop}"
-SSH_HOST="${INSTILENS_RELEASE_SSH:-instilens}"
+SSH_HOST="${INSTILENS_RELEASE_SSH:-root@91.99.183.64}"
 VERSION="${1:-}"; NOTES="${2:-}"
 
 KEY="${INSTILENS_RELEASE_UPLOAD_KEY:-}"
@@ -70,9 +70,18 @@ for T in aarch64-apple-darwin x86_64-apple-darwin; do
 done
 
 echo "▶ upload…"
-upload() {  # file [sigfile]
-  local f="$1" sig=""; [ -n "${2:-}" ] && [ -f "$2" ] && sig="$(cat "$2")"
-  if curl -fsS -X POST "$API/ci/upload" -H "x-release-key: $KEY" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=$sig"} ${NOTES:+-F "notes=$NOTES"} >/dev/null; then echo "   ↑ $(basename "$f")"; else echo "   ✗ $(basename "$f")"; fi
+SSH_OK=0; ssh -o ConnectTimeout=8 -o BatchMode=yes "$SSH_HOST" true 2>/dev/null && SSH_OK=1
+upload() {  # file [sigfile] — HTTPS first; if nginx refuses (413 etc.) and SSH works, copy to the server and post locally there
+  local f="$1" sig="" name; name="$(basename "$f")"; [ -n "${2:-}" ] && [ -f "$2" ] && sig="$(cat "$2")"
+  if curl -fsS -X POST "$API/ci/upload" -H "x-release-key: $KEY" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=$sig"} ${NOTES:+-F "notes=$NOTES"} >/dev/null 2>&1; then
+    echo "   ↑ $name"; return
+  fi
+  if [ "$SSH_OK" = "1" ]; then
+    if scp -q "$f" "$SSH_HOST:/tmp/$name" && ssh "$SSH_HOST" "curl -fsS -X POST http://127.0.0.1:8010/api/v1/public/desktop/ci/upload -H 'x-release-key: $KEY' -F 'version=$VERSION' -F 'file=@/tmp/$name' ${sig:+-F 'signature=$sig'} >/dev/null && rm -f '/tmp/$name'"; then
+      echo "   ↑ $name (ssh)"; return
+    fi
+  fi
+  echo "   ✗ $name"
 }
 shopt -s nullglob
 for T in aarch64-apple-darwin x86_64-apple-darwin; do
