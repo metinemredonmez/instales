@@ -13,7 +13,10 @@ def build_kap_adapter() -> SourceAdapter:
             max_reports=settings.kap_public_max_reports, fund_codes=settings.kap_public_fund_codes or None,
         )
     if settings.kap_adapter == "api":
-        if not settings.kap_api_key:
-            raise RuntimeError("INSTILENS_KAP_API_KEY is required for the KAP API adapter")
-        return KapApiAdapter(settings.kap_api_base_url, settings.kap_api_key)
+        if not (settings.kap_api_key and settings.kap_api_secret):
+            raise RuntimeError("INSTILENS_KAP_API_KEY and INSTILENS_KAP_API_SECRET are required for the KAP API adapter")
+        return KapApiAdapter(
+            settings.kap_api_base_url, settings.kap_api_key, settings.kap_api_secret,
+            rate_per_min=settings.kap_api_rate_per_min, max_calls=settings.kap_api_max_calls,
+        )
     return KapFixtureAdapter(settings.kap_fixture_dir)

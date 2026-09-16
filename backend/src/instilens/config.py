@@ -18,8 +18,13 @@ class Settings(BaseSettings):
     # "api" talks to the official KAP Veri Yayın Servisi (needs a data-distribution contract).
     kap_adapter: str = "public"  # real data via the polite prototype; "api" once the licence is signed; "fixture" only for tests
     kap_fixture_dir: Path = BACKEND_ROOT / "fixtures" / "kap"
-    kap_api_base_url: str = "https://api.kap.org.tr"
+    # MKK API Portal → "KAP Data Dissemination Services". Dev gateway per the published OpenAPI spec;
+    # switch to the production gateway URL once MKK provides it. Basic auth: key + secret from My Apps.
+    kap_api_base_url: str = "https://apigwdev.mkk.com.tr/api/vyk"
     kap_api_key: str | None = None
+    kap_api_secret: str | None = None
+    kap_api_rate_per_min: int = 6  # Free plan throttle
+    kap_api_max_calls: int = 120  # per run (~20 min at 6/min); the scheduler runs often
     # "public" = prototype adapter over kap.org.tr (polite, capped). Dev/validation only.
     kap_public_days_back: int = 7
     kap_public_max_details: int = 25

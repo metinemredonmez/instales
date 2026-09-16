@@ -180,3 +180,26 @@ def scheduler() -> None:
     from instilens.scheduler import main
 
     main()
+
+
+@app.command("kap-test")
+def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
+    """Probe the official KAP API with the configured key/secret and dump raw responses for inspection."""
+    import json
+
+    from instilens.ingestion.kap.api_adapter import probe
+
+    if not (settings.kap_api_key and settings.kap_api_secret):
+        raise typer.BadParameter("set INSTILENS_KAP_API_KEY and INSTILENS_KAP_API_SECRET in backend/.env")
+    results: dict = {}
+
+    def dump(name: str, value) -> None:
+        results[name] = value
+        typer.echo(f"✓ {name}: {str(value)[:160]}")
+
+    try:
+        probe(settings.kap_api_base_url, settings.kap_api_key, settings.kap_api_secret, dump)
+    finally:
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=1, default=str)
+        typer.echo(f"raw responses saved to {out}")
