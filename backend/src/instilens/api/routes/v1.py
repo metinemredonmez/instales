@@ -91,6 +91,31 @@ def get_brief(market: str = MarketParam, refresh: bool = False, session: Session
     return note_json(note)
 
 
+@router.get("/ai-notes/{note_id}/audio")
+def get_note_audio(note_id: int, session: Session = Depends(get_session)):
+    """MP3 narration of an AI note (ElevenLabs/OpenAI). 404 when no TTS provider is configured."""
+    from fastapi.responses import FileResponse
+
+    from instilens.ai.tts import synthesize
+    from instilens.domain.models import AiNote
+
+    note = session.get(AiNote, note_id)
+    if note is None:
+        raise HTTPException(404, "note not found")
+    watch = " ".join(f"İzlenecek: {w}." for w in (note.data or {}).get("watch", []))
+    path = synthesize(f"{note.content} {watch}")
+    if path is None:
+        raise HTTPException(404, "tts not configured")
+    return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")
+
+
+@router.get("/tts/status")
+def tts_status():
+    from instilens.ai.tts import provider
+
+    return {"provider": provider()}
+
+
 @router.get("/stocks/{symbol}/timeline")
 def get_stock_timeline(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
     data = analytics.stock_timeline(session, market, symbol)

@@ -5,6 +5,7 @@ import { api, type AiNote, type Market } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { fmtDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { SpeakButton } from "./SpeakButton"
 
 /** Descriptive AI note (flows × headlines). Never advice; shows model + time + what it was written from. */
 export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?: string; title: string }) {
@@ -22,7 +23,8 @@ export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?:
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Sparkles className="size-3.5 text-primary" /> <span className="font-semibold text-foreground">{title}</span>
         <span>· {fmtDateTime(note.created_at)}</span><span className="hidden sm:inline">· {note.model}</span>
-        {user?.role === "ADMIN" && <button onClick={refresh} disabled={busy} className="ml-auto inline-flex items-center gap-1 hover:text-foreground"><RefreshCw className={cn("size-3", busy && "animate-spin")} /> yenile</button>}
+        <span className="ml-auto" /><SpeakButton noteId={note.id} text={`${note.content} ${note.watch.map((w) => `İzlenecek: ${w}.`).join(" ")}`} />
+        {user?.role === "ADMIN" && <button onClick={refresh} disabled={busy} className="inline-flex items-center gap-1 hover:text-foreground"><RefreshCw className={cn("size-3", busy && "animate-spin")} /> yenile</button>}
       </div>
       <p className="mt-2 text-sm leading-relaxed">{note.content}</p>
       {note.watch.length > 0 && (

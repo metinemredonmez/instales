@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     vapid_private_key: str | None = None
     vapid_subject: str = "mailto:alerts@instilens.app"
 
+    # Text-to-speech for AI notes (optional). ElevenLabs preferred for Turkish; OpenAI as alternative.
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # "Rachel" default; pick a Turkish voice in the ElevenLabs library
+    openai_api_key: str | None = None
+    openai_tts_voice: str = "alloy"
+
     # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
     # "local" is reserved for a self-hosted model (phase 3).
     ai_provider: str = "claude"

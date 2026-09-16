@@ -107,4 +107,4 @@ def daily_brief(session: Session, market: str, day: date | None = None, force: b
 def note_json(n: AiNote | None) -> dict | None:
     if n is None:
         return None
-    return {"kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "content": n.content, "watch": n.data.get("watch", []), "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""), "model": n.model, "created_at": n.created_at.isoformat()}
+    return {"id": n.id, "kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "content": n.content, "watch": n.data.get("watch", []), "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""), "model": n.model, "created_at": n.created_at.isoformat()}
