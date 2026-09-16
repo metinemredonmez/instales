@@ -323,6 +323,7 @@ export const api = {
   ticket: () => send<{ ticket: string; ttl_seconds: number }>("POST", "/auth/ticket"),
   noteAudioUrl: (id: number, gender: "female" | "male", ticket: string, voice?: string | null) => `${BASE}/ai-notes/${id}/audio?gender=${gender}&ticket=${encodeURIComponent(ticket)}${voice ? `&voice=${encodeURIComponent(voice)}` : ""}`,
   liveTv: () => get<{ name: string; channel_id: string; embed: string }[]>("/live-tv"),
+  ttsPreviewUrl: (voiceId: string, lang: "tr" | "en", ticket: string) => `${BASE}/tts/preview/${encodeURIComponent(voiceId)}?lang=${lang}&ticket=${encodeURIComponent(ticket)}`,
   ttsVoices: (lang: "tr" | "en") => get<{ provider: string | null; lang: string; voices: TtsVoice[] }>("/tts/voices", { lang }),
   changePassword: (current_password: string, new_password: string) => send<{ access_token: string; token_type: string; user: import("./auth").User }>("POST", "/auth/password", { current_password, new_password }),
   logoutAll: () => send<{ ok: boolean }>("POST", "/auth/logout-all"),

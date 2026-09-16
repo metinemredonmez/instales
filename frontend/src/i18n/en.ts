@@ -374,6 +374,8 @@ export const en: Record<Key, string> = {
   "tts.female": "Female voice",
   "tts.male": "Male voice",
   "tts.preparing": "Preparing…",
+  "tts.audition": "Audition",
+  "tts.instant": "voice changes apply instantly",
   "tts.voice": "Voice",
   "tts.speed": "Speed",
   "tts.speedHint": "new voice applies on next play",

@@ -167,6 +167,27 @@ def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
+PREVIEW_TEXT = {"tr": "Merhaba, ben InstiLens. Sabah brifingini ve hisse notlarını bu sesle okuyacağım.",
+                "en": "Hi, I'm InstiLens. I'll read the morning brief and stock notes in this voice."}
+
+
+@ticket_router.get("/tts/preview/{voice_id}")
+def tts_preview(voice_id: str, lang: str = LangParam, user: User = Depends(ticket_user)):
+    """A two-sentence sample in the given voice, so the picker can audition voices instantly (cached on disk)."""
+    from fastapi.responses import FileResponse
+
+    from instilens.ai.tts import provider, synthesize, voice_allowed
+
+    if provider() != "elevenlabs":
+        raise HTTPException(404, "tts not configured")
+    if not voice_allowed(lang, voice_id):
+        raise HTTPException(400, "voice not available for this language")
+    path = synthesize(PREVIEW_TEXT["en" if lang == "en" else "tr"], lang=lang, gender="female", voice_id=voice_id)
+    if path is None:
+        raise HTTPException(404, "tts not configured")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
 @router.get("/live-tv")
 def live_tv():
     """Channels for the live TV widget (YouTube live embeds); editable in Admin → Ayarlar."""

@@ -41,7 +41,7 @@ export function NowSpeaking() {
         </button>
       </div>
       <div className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 text-[10px] text-muted-foreground">
-        <span>{t("tts.voice")}</span><VoicePicker lang={s.lang} compact /><span className="ml-auto">{t("tts.speedHint")}</span>
+        <VoicePicker lang={s.lang} compact /><span className="ml-auto truncate">{t("tts.instant")}</span>
       </div>
       {/* Progress only when we actually know it (server audio duration, or spoken characters for the browser voice). */}
       {s.progress !== null && (

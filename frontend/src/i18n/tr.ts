@@ -388,6 +388,8 @@ export const tr = {
   "tts.female": "Kadın ses",
   "tts.male": "Erkek ses",
   "tts.preparing": "Hazırlanıyor…",
+  "tts.audition": "Örnek dinle",
+  "tts.instant": "ses değişimi anında uygulanır",
   "tts.voice": "Ses",
   "tts.speed": "Hız",
   "tts.speedHint": "yeni ses bir sonraki dinlemede",

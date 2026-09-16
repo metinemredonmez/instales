@@ -39,6 +39,9 @@ const subscribe = (l: () => void) => { listeners.add(l); return () => { listener
 
 let audio: HTMLAudioElement | null = null
 let utterance: SpeechSynthesisUtterance | null = null
+type PlayOpts = { noteId: number; title: string; text: string; lang: "tr" | "en"; provider: string | null; errorMessage: (provider: string) => string }
+let lastOpts: PlayOpts | null = null
+let preview: HTMLAudioElement | null = null
 
 const clearMedia = () => {
   if (audio) { audio.onplaying = audio.onended = audio.onerror = audio.ontimeupdate = audio.onpause = null; audio.pause(); audio = null }
@@ -51,12 +54,28 @@ export const tts = {
     set({ gender: g })
     try { localStorage.setItem(GENDER_KEY, g) } catch { /* ignore */ }
   },
-  /** Pick a specific voice for a language (null = default for the gender). Takes effect on the next play. */
+  /** Pick a voice for a language (null = default for the gender). If that language is playing now, the new voice
+   *  takes over immediately, resuming at the same position when the file is seekable (cached). */
   setVoice(lang: "tr" | "en", id: string | null, gender?: TtsGender) {
     const voice = { ...state.voice, [lang]: id }
     set({ voice, ...(gender ? { gender } : {}) })
     try { localStorage.setItem(VOICE_KEY, JSON.stringify(voice)); if (gender) localStorage.setItem(GENDER_KEY, gender) } catch { /* ignore */ }
+    if (lastOpts && state.noteId === lastOpts.noteId && state.status !== "idle" && lastOpts.lang === lang && lastOpts.provider) {
+      const at = audio?.currentTime ?? 0
+      tts.play(lastOpts, at)
+    }
   },
+  /** Audition a voice with a short sample (stops any running preview; does not touch the note playback state). */
+  previewVoice(lang: "tr" | "en", id: string): Promise<void> {
+    if (preview) { preview.pause(); preview = null }
+    return api.ticket().then(({ ticket }) => {
+      const a = new Audio(api.ttsPreviewUrl(id, lang, ticket))
+      a.playbackRate = state.rate
+      preview = a
+      return a.play().catch(() => undefined)
+    })
+  },
+  stopPreview() { if (preview) { preview.pause(); preview = null } },
   setRate(r: number) {
     const rate = Math.min(1.25, Math.max(0.75, r))
     set({ rate })
@@ -78,8 +97,9 @@ export const tts = {
   },
   toggle() { if (state.status === "playing") tts.pause(); else if (state.status === "paused") tts.resume() },
   /** Start reading a note; whatever was playing before is stopped first. */
-  play(opts: { noteId: number; title: string; text: string; lang: "tr" | "en"; provider: string | null; errorMessage: (provider: string) => string }) {
+  play(opts: PlayOpts, startAt = 0) {
     clearMedia()
+    lastOpts = opts
     const { noteId, title, text, lang, provider } = opts
     const mine = () => state.noteId === noteId
     if (provider) {
@@ -92,6 +112,7 @@ export const tts = {
         const a = new Audio(api.noteAudioUrl(noteId, state.gender, ticket, state.voice[lang]))
         a.playbackRate = state.rate
         audio = a
+        a.onloadedmetadata = () => { if (startAt > 0 && Number.isFinite(a.duration) && a.duration > startAt) a.currentTime = startAt }
         a.onplaying = () => mine() && set({ status: "playing", error: null })
         a.onended = () => mine() && tts.stop()
         a.onerror = fail
