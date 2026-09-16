@@ -82,7 +82,8 @@ def briefs() -> None:
     with session_scope() as s:
         for market in ("TR", "US"):
             try:
-                note = daily_brief(s, market, force=True)
+                note = daily_brief(s, market, force=True)  # Turkish
+                daily_brief(s, market, force=True, lang="en")  # English, so EN users don't wait on first open
                 log.info("%s brief %s, delivered %s", market, "ok" if note else "skipped", deliver_brief(s, note) if note and market == "TR" else 0)
             except Exception as exc:
                 log.warning("brief %s failed: %s", market, exc)

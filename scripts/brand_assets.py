@@ -61,6 +61,36 @@ def gradient(size: int) -> Image.Image:
     return img
 
 
+def hgradient(w: int, h: int, a: tuple[int, int, int], b: tuple[int, int, int]) -> Image.Image:
+    """Horizontal a → b gradient (the wordmark treatment: black on the left, blue on the right)."""
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    for x in range(w):
+        t = x / max(1, w - 1)
+        c = tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+        for y in range(h):
+            px[x, y] = c
+    return img
+
+
+def gradient_text(mask_part: Image.Image, a: tuple[int, int, int], b: tuple[int, int, int]) -> Image.Image:
+    """Glyph mask filled with a horizontal gradient, transparent elsewhere."""
+    fill = hgradient(mask_part.width, mask_part.height, a, b).convert("RGBA")
+    fill.putalpha(mask_part)
+    return fill
+
+
+def glyph_icon(mask: Image.Image, size: int, glyph_ratio: float, bg: tuple[int, int, int, int]) -> Image.Image:
+    """Stencil “I” with the black→blue gradient on a flat background (transparent for the favicon, white for app icons)."""
+    out = Image.new("RGBA", (size, size), bg)
+    glyph = mask.crop(GLYPH_I)
+    target_h = round(size * glyph_ratio)
+    glyph = glyph.resize((round(glyph.width * target_h / glyph.height), target_h), Image.LANCZOS)
+    ink = gradient_text(glyph, GRAD_A, GRAD_B)
+    out.alpha_composite(ink, ((size - ink.width) // 2, (size - ink.height) // 2))
+    return out
+
+
 def icon(mask: Image.Image, size: int, glyph_ratio: float) -> Image.Image:
     bg = gradient(size).convert("RGBA")
     glyph = mask.crop(GLYPH_I)
@@ -81,14 +111,26 @@ def main() -> None:
         colorize(part, (0, 0, 0)).save(BRAND / f"{name}-dark.png", optimize=True)
         colorize(part, (255, 255, 255)).save(BRAND / f"{name}-light.png", optimize=True)
 
-    master = icon(mask, 1024, 0.56)
+    # Gradient wordmark (the "I…S" black→blue treatment) for light surfaces, and a white→blue one for dark.
+    wm = crop_scaled(mask, WORDMARK, 1400)
+    gradient_text(wm, GRAD_A, GRAD_B).save(BRAND / "wordmark-gradient-dark.png", optimize=True)
+    gradient_text(wm, (255, 255, 255), (120, 118, 255)).save(BRAND / "wordmark-gradient-light.png", optimize=True)
+
+    # App icon: gradient “I” on white (PWA/Tauri/iOS need an opaque square); favicon: same glyph, transparent.
+    master = glyph_icon(mask, 1024, 0.62, (255, 255, 255, 255))
     master.save(PUB / "icon-1024.png", optimize=True)
     for s in (512, 192):
         master.resize((s, s), Image.LANCZOS).save(PUB / f"icon-{s}.png", optimize=True)
-    icon(mask, 512, 0.42).save(PUB / "icon-maskable-512.png", optimize=True)
+    glyph_icon(mask, 512, 0.46, (255, 255, 255, 255)).save(PUB / "icon-maskable-512.png", optimize=True)
     master.resize((180, 180), Image.LANCZOS).save(PUB / "apple-touch-icon.png", optimize=True)
-    for s in (32, 16):
-        icon(mask, 256, 0.64).resize((s, s), Image.LANCZOS).save(PUB / f"favicon-{s}.png", optimize=True)
+    fav = glyph_icon(mask, 256, 0.92, (0, 0, 0, 0))
+    for s in (64, 32, 16):
+        fav.resize((s, s), Image.LANCZOS).save(PUB / f"favicon-{s}.png", optimize=True)
+    # Header mark: transparent gradient glyph (no square), a bit larger than the favicon.
+    fav.save(PUB / "brand/mark-gradient.png", optimize=True)
+    # Dark header: white→blue glyph so the black end doesn't vanish on the dark background.
+    g = mask.crop(GLYPH_I); g = g.resize((round(g.width * 236 / g.height), 236), Image.LANCZOS)
+    m = Image.new("RGBA", (256, 256), (0, 0, 0, 0)); ink = gradient_text(g, (255, 255, 255), (120, 118, 255)); m.alpha_composite(ink, ((256 - ink.width) // 2, 10)); m.save(PUB / "brand/mark-gradient-light.png", optimize=True)
     print("ok →", BRAND, PUB)
 
 

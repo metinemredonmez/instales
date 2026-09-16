@@ -25,7 +25,22 @@ export function Lockup({ className }: { className?: string }) {
   return <Swap name="lockup" alt="InstiLens — See where smart money moves." className={cn("block w-full max-w-md", className)} />
 }
 
-/** App icon: stencil “I” on the blue gradient. */
+/** Gradient wordmark: black→blue on light surfaces, white→blue on dark — login, splash. */
+export function GradientWordmark({ className }: { className?: string }) {
+  return (
+    <span className={cn("block shrink-0", className)}>
+      <img src="/brand/wordmark-gradient-dark.png" alt="InstiLens" draggable={false} className="block w-full select-none dark:hidden" />
+      <img src="/brand/wordmark-gradient-light.png" alt="" aria-hidden draggable={false} className="hidden w-full select-none dark:block" />
+    </span>
+  )
+}
+
+/** App mark: gradient stencil “I”, no square — for the header. */
 export function Mark({ className }: { className?: string }) {
-  return <img src="/icon-192.png" alt="" aria-hidden draggable={false} className={cn("size-7 shrink-0 rounded-md", className)} />
+  return (
+    <span className={cn("block size-7 shrink-0", className)}>
+      <img src="/brand/mark-gradient.png" alt="" aria-hidden draggable={false} className="block size-full select-none dark:hidden" />
+      <img src="/brand/mark-gradient-light.png" alt="" aria-hidden draggable={false} className="hidden size-full select-none dark:block" />
+    </span>
+  )
 }

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 import { api, type PositionChange, type ScoreDetail } from "@/lib/api"
 import { useMarket } from "@/lib/market"
+import { useI18n, type T } from "@/lib/i18n"
 import { fmtDate, fmtLots } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { ActivityBadge, ConfidenceBadge, Flow, ScorePill, SignalBadge } from "@/components/domain/badges"
@@ -15,25 +16,26 @@ import { WatchButton } from "@/components/domain/WatchButton"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
-const COMPONENT_LABEL: Record<string, string> = {
-  breadth: "Genişlik (artıran − azaltan fon)",
-  net_flow: "Net akış",
-  persistence: "Süreklilik (ardışık dönem)",
-  new_positions: "Yeni pozisyonlar",
-  conviction: "Conviction (fon içi ağırlık)",
-  freshness: "Tazelik",
-}
+const componentLabel = (t: T): Record<string, string> => ({
+  breadth: t("score.c.breadth"),
+  net_flow: t("score.c.netFlow"),
+  persistence: t("score.c.persistence"),
+  new_positions: t("score.c.newPositions"),
+  conviction: t("score.c.conviction"),
+  freshness: t("score.c.freshness"),
+})
 
 export function StockPage() {
   const { symbol = "" } = useParams()
   const { market } = useMarket()
+  const { t } = useI18n()
   const q = useQuery({ queryKey: ["stock", market, symbol], queryFn: () => api.stock(market, symbol) })
 
   if (q.isLoading) return <Skeleton className="h-96" />
   if (q.isError || !q.data)
     return (
       <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-        <b className="text-foreground">{symbol}</b> bulunamadı. Fon kodu mu? <Link className="text-primary underline" to={`/funds/${symbol}`}>Fon sayfasını dene</Link>
+        <b className="text-foreground">{symbol}</b> {t("stock.notFound")} <Link className="text-primary underline" to={`/funds/${symbol}`}>{t("stock.tryFund")}</Link>
       </div>
     )
   const d = q.data
@@ -45,7 +47,7 @@ export function StockPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-xs text-muted-foreground">{d.market} · {fmtDate(d.as_of)} itibarıyla · son dönem {fmtDate(d.latest_period_end)}</div>
+          <div className="text-xs text-muted-foreground">{d.market} · {t("stock.asOf")} {fmtDate(d.as_of)} · {t("stock.latestPeriod")} {fmtDate(d.latest_period_end)}</div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{d.symbol} <span className="text-lg font-normal text-muted-foreground">{d.name !== d.symbol ? d.name : ""}</span></h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">{d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}<WatchButton symbol={d.symbol} market={market} /></div>
@@ -53,17 +55,17 @@ export function StockPage() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <ScoreCard title="Smart Money Score" detail={sm} />
-        <ScoreCard title="Kurumsal Konsensüs" detail={cs} />
+        <ScoreCard title={t("stock.consensus")} detail={cs} />
         <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">30 günlük kurumsal aktivite</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("stock.activity30")}</div>
           {act ? (
             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-              <Row k="Artıran" v={act.funds_increasing} tone="pos" />
-              <Row k="Azaltan" v={act.funds_reducing} tone="neg" />
-              <Row k="Yeni pozisyon" v={act.funds_new} tone="pos" />
-              <Row k="Tam çıkış" v={act.funds_exited} tone="neg" />
-              <Row k="Net akış" v={<Flow value={act.net_flow_value} market={market} />} />
-              <Row k="Ardışık dönem" v={act.persistence_periods} />
+              <Row k={t("common.increasing")} v={act.funds_increasing} tone="pos" />
+              <Row k={t("common.reducing")} v={act.funds_reducing} tone="neg" />
+              <Row k={t("common.newPosition")} v={act.funds_new} tone="pos" />
+              <Row k={t("common.fullExit")} v={act.funds_exited} tone="neg" />
+              <Row k={t("common.netFlow")} v={<Flow value={act.net_flow_value} market={market} />} />
+              <Row k={t("stock.persistence")} v={act.persistence_periods} />
               <div className="col-span-2 mt-2 flex flex-wrap gap-1.5 text-[11px]">
                 {Object.entries(act.flow_by_confidence).map(([c, v]) => (
                   <span key={c} className="inline-flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5">
@@ -73,22 +75,22 @@ export function StockPage() {
               </div>
             </div>
           ) : (
-            <div className="mt-2 text-sm text-muted-foreground">Aktivite yok.</div>
+            <div className="mt-2 text-sm text-muted-foreground">{t("stock.noActivity")}</div>
           )}
         </div>
       </div>
 
-      <AiNoteCard market={market} symbol={d.symbol} title={`${d.symbol} · AI değerlendirmesi`} />
+      <AiNoteCard market={market} symbol={d.symbol} title={`${d.symbol} · ${t("stock.aiTitle")}`} />
 
       <StockChart symbol={d.symbol} market={market} />
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Section title="En büyük alıcılar" hint="son raporlama dönemi"><ChangeTable rows={d.top_buyers} market={market} /></Section>
-        <Section title="En büyük satıcılar" hint="son raporlama dönemi"><ChangeTable rows={d.top_sellers} market={market} /></Section>
+        <Section title={t("stock.topBuyers")} hint={t("stock.lastPeriod")}><ChangeTable rows={d.top_buyers} market={market} /></Section>
+        <Section title={t("stock.topSellers")} hint={t("stock.lastPeriod")}><ChangeTable rows={d.top_sellers} market={market} /></Section>
       </div>
 
       {d.signals.length > 0 && (
-        <Section title="Sinyaller" hint="kanıtla birlikte">
+        <Section title={t("common.signals")} hint={t("stock.withEvidence")}>
           <ul className="divide-y divide-border/60">
             {d.signals.map((s) => (
               <li key={s.type + s.window_end} className="px-4 py-3">
@@ -109,8 +111,8 @@ export function StockPage() {
 
       <Timeline symbol={d.symbol} market={market} />
 
-      <Section title="KAP bildirimleri" hint={`${d.events.length}`}>
-        {d.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">Bu hisse için işlem bildirimi yok.</div>}
+      <Section title={t("common.kapDisclosures")} hint={`${d.events.length}`}>
+        {d.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("stock.noEvents")}</div>}
         {d.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
       </Section>
     </div>
@@ -118,10 +120,11 @@ export function StockPage() {
 }
 
 function RelatedNews({ symbol, market }: { symbol: string; market: "TR" | "US" }) {
+  const { t } = useI18n()
   const q = useQuery({ queryKey: ["news", market, symbol], queryFn: () => api.news(market, symbol, 10) })
   if (!q.data?.length) return null
   return (
-    <Section title="İlgili haberler" hint="başlık + kaynak; tam metin için kaynağa gider">
+    <Section title={t("stock.relatedNews")} hint={t("stock.relatedNews.hint")}>
       <ul className="divide-y divide-border/60 text-sm">
         {q.data.map((n) => (
           <li key={n.id} className="flex items-center gap-3 px-4 py-2">
@@ -145,9 +148,11 @@ function Row({ k, v, tone }: { k: string; v: React.ReactNode; tone?: "pos" | "ne
 }
 
 function ScoreCard({ title, detail }: { title: string; detail?: ScoreDetail }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   if (!detail) return <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">{title}: —</div>
-  const comps = Object.entries(detail.why.components).filter(([k]) => k in COMPONENT_LABEL)
+  const labels = componentLabel(t)
+  const comps = Object.entries(detail.why.components).filter(([k]) => k in labels)
   const weights = detail.why.weights ?? {}
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -155,18 +160,18 @@ function ScoreCard({ title, detail }: { title: string; detail?: ScoreDetail }) {
       <div className="mt-1 flex items-center justify-between">
         <ScorePill value={detail.score} size="lg" />
         <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-          Neden {Math.round(detail.score)}? <ChevronDown className={cn("size-3 transition", open && "rotate-180")} />
+          {t("score.why", { n: Math.round(detail.score) })} <ChevronDown className={cn("size-3 transition", open && "rotate-180")} />
         </button>
       </div>
       <div className="mt-1 text-xs text-muted-foreground num">
-        ham {detail.raw.toFixed(1)} × güven {detail.why.confidence_multiplier.toFixed(2)}
+        {t("score.raw")} {detail.raw.toFixed(1)} × {t("score.confidence")} {detail.why.confidence_multiplier.toFixed(2)}
       </div>
       {open && (
         <div className="mt-3 space-y-1.5 border-t border-border/60 pt-3">
           {comps.length === 0 && <div className="text-xs text-muted-foreground">{JSON.stringify(detail.why.components)}</div>}
           {comps.map(([k, v]) => (
             <div key={k} className="text-xs">
-              <div className="flex justify-between"><span>{COMPONENT_LABEL[k]}</span><span className="num text-muted-foreground">{Math.round(v * 100)}% · ağırlık {Math.round((weights[k] ?? 0) * 100)}</span></div>
+              <div className="flex justify-between"><span>{labels[k]}</span><span className="num text-muted-foreground">{Math.round(v * 100)}% · {t("score.weight")} {Math.round((weights[k] ?? 0) * 100)}</span></div>
               <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${v * 100}%` }} /></div>
             </div>
           ))}
@@ -177,16 +182,17 @@ function ScoreCard({ title, detail }: { title: string; detail?: ScoreDetail }) {
 }
 
 function ChangeTable({ rows, market }: { rows: PositionChange[]; market: string }) {
-  if (rows.length === 0) return <div className="px-4 py-6 text-sm text-muted-foreground">Yok.</div>
+  const { t } = useI18n()
+  if (rows.length === 0) return <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.none")}</div>
   return (
     <table className="w-full text-sm">
       <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
         <tr className="border-b border-border/60">
-          <th className="px-4 py-2 text-left font-medium">Fon</th>
-          <th className="px-2 py-2 text-left font-medium">Hareket</th>
-          <th className="px-2 py-2 text-right font-medium">Lot</th>
-          <th className="px-2 py-2 text-right font-medium">Değer</th>
-          <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">Ağırlık</th>
+          <th className="px-4 py-2 text-left font-medium">{t("common.fund")}</th>
+          <th className="px-2 py-2 text-left font-medium">{t("common.move")}</th>
+          <th className="px-2 py-2 text-right font-medium">{t("common.lots")}</th>
+          <th className="px-2 py-2 text-right font-medium">{t("common.value")}</th>
+          <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">{t("common.weight")}</th>
         </tr>
       </thead>
       <tbody>

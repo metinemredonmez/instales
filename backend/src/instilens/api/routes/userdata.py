@@ -86,21 +86,32 @@ def evaluate_now(user: User = Depends(current_user), session: Session = Depends(
 
 
 class NotifySettings(BaseModel):
-    notify_email: bool = False
+    """Partial update: only the fields present in the body change."""
+
+    notify_email: bool | None = None
     notify_telegram_chat_id: str | None = Field(None, max_length=32)
-    notify_brief: bool = True
+    notify_brief: bool | None = None
+    lang: str | None = Field(None, pattern="^(tr|en)$")
 
 
 @router.get("/me/settings")
 def get_settings(user: User = Depends(current_user)):
-    return {"email": user.email, "notify_email": user.notify_email, "notify_telegram_chat_id": user.notify_telegram_chat_id, "notify_brief": user.notify_brief,
+    return {"email": user.email, "notify_email": user.notify_email, "notify_telegram_chat_id": user.notify_telegram_chat_id, "notify_brief": user.notify_brief, "lang": user.lang,
             "channels": {"telegram": bool(__import__("instilens.config", fromlist=["settings"]).settings.telegram_bot_token), "email": bool(__import__("instilens.config", fromlist=["settings"]).settings.smtp_host)}}
 
 
 @router.put("/me/settings")
 def put_settings(body: NotifySettings, user: User = Depends(current_user), session: Session = Depends(get_session)):
     u = session.get(User, user.id)
-    u.notify_email, u.notify_telegram_chat_id, u.notify_brief = body.notify_email, (body.notify_telegram_chat_id or "").strip() or None, body.notify_brief
+    given = body.model_dump(exclude_unset=True)
+    if "notify_email" in given:
+        u.notify_email = bool(body.notify_email)
+    if "notify_telegram_chat_id" in given:
+        u.notify_telegram_chat_id = (body.notify_telegram_chat_id or "").strip() or None
+    if "notify_brief" in given:
+        u.notify_brief = bool(body.notify_brief)
+    if body.lang:
+        u.lang = body.lang
     return {"ok": True}
 
 

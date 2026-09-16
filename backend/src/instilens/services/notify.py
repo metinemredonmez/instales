@@ -122,14 +122,31 @@ def deliver_pending(session: Session) -> int:
 
 
 def deliver_brief(session: Session, note: AiNote) -> int:
+    """Send the morning brief to every opted-in user, in the user's language (EN generated on demand)."""
+    from instilens.ai.assess import daily_brief
+
+    notes: dict[str, AiNote | None] = {note.lang: note}
     sent = 0
-    title = "InstiLens sabah brifingi · " + ("Türkiye" if note.market_code == "TR" else "Global")
-    watch = "\n".join(f"• {w}" for w in (note.data or {}).get("watch", []))
-    body = f"{note.content}\n\n{watch}\n\n{settings.public_url}\nBetimleyici AI notu; yatırım tavsiyesi değildir."
     for u in session.scalars(select(User).where(User.notify_brief.is_(True))):
+        lang = u.lang if u.lang in ("tr", "en") else "tr"
+        if lang not in notes:
+            try:
+                notes[lang] = daily_brief(session, note.market_code, day=note.as_of, lang=lang)
+            except Exception as exc:  # noqa: BLE001 — never let one language break delivery
+                log.warning("brief %s/%s failed: %s", note.market_code, lang, exc)
+                notes[lang] = None
+        n = notes.get(lang) or note
+        if n.lang == "en":
+            title = "InstiLens morning brief · " + ("Turkey" if n.market_code == "TR" else "Global")
+            footer = "Descriptive AI note; not investment advice."
+        else:
+            title = "InstiLens sabah brifingi · " + ("Türkiye" if n.market_code == "TR" else "Global")
+            footer = "Betimleyici AI notu; yatırım tavsiyesi değildir."
+        watch = "\n".join(f"• {w}" for w in (n.data or {}).get("watch", []))
+        body = f"{n.content}\n\n{watch}\n\n{settings.public_url}\n{footer}"
         ok = False
-        ok |= send_push(session, str(u.id), title, note.content[:180] + "…", settings.public_url) > 0
-        ok |= send_onesignal(str(u.id), title, note.content[:180] + "…", settings.public_url)
+        ok |= send_push(session, str(u.id), title, n.content[:180] + "…", settings.public_url) > 0
+        ok |= send_onesignal(str(u.id), title, n.content[:180] + "…", settings.public_url)
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{title}</b>\n{body}")
         if u.notify_email:

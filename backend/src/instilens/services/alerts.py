@@ -28,6 +28,7 @@ from instilens.domain.models import (
     Signal,
     TransactionEvent,
     TransactionEventFund,
+    User,
 )
 
 RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY"}
@@ -42,8 +43,9 @@ def evaluate(session: Session, as_of: date) -> int:
     created = 0
     rules = list(session.scalars(select(AlertRule).where(AlertRule.is_active.is_(True))))
     rules += _watchlist_rules(session)
+    langs = {str(u.id): (u.lang if u.lang in ("tr", "en") else "tr") for u in session.scalars(select(User))}
     for rule in rules:
-        for key, title, body, link in _fire(session, rule, as_of):
+        for key, title, body, link in _fire(session, rule, as_of, langs.get(str(rule.owner_id), "tr")):
             if _notify(session, rule, key, title, body, link):
                 created += 1
     session.flush()
@@ -73,7 +75,7 @@ def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, 
     return True
 
 
-def _fire(session: Session, rule: AlertRule, as_of: date):
+def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
     inst = session.get(Instrument, rule.instrument_id) if rule.instrument_id else None
     fund = session.get(Fund, rule.fund_id) if rule.fund_id else None
     t = rule.rule_type
@@ -88,8 +90,13 @@ def _fire(session: Session, rule: AlertRule, as_of: date):
             .where(PositionChange.instrument_id == inst.id, PositionChange.period_end == latest, PositionChange.activity == want)
         ).scalars().all()
         if rows:
-            verb = "yeni pozisyon açtı" if want is ActivityType.NEW else "pozisyonunu tamamen kapattı"
-            yield (f"{latest}", f"{inst.symbol}: {len(rows)} fon {verb}", ", ".join(sorted(rows)) + f" · dönem sonu {latest}", f"/stocks/{inst.symbol}")
+            if lang == "en":
+                verb = "opened a new position" if want == ActivityType.NEW else "fully exited"
+                title, tail = f"{inst.symbol}: {len(rows)} fund(s) {verb}", f" · period end {latest}"
+            else:
+                verb = "yeni pozisyon açtı" if want == ActivityType.NEW else "pozisyonunu tamamen kapattı"
+                title, tail = f"{inst.symbol}: {len(rows)} fon {verb}", f" · dönem sonu {latest}"
+            yield (f"{latest}", title, ", ".join(sorted(rows)) + tail, f"/stocks/{inst.symbol}")
 
     elif t == "KAP_TRANSACTION" and (inst or fund):
         stmt = select(TransactionEvent).where(TransactionEvent.is_superseded.is_(False))
@@ -99,7 +106,7 @@ def _fire(session: Session, rule: AlertRule, as_of: date):
             stmt = stmt.where(TransactionEvent.funds.any(TransactionEventFund.fund_id == fund.id))
         for ev in session.scalars(stmt.order_by(TransactionEvent.published_at.desc()).limit(20)):
             sym = inst.symbol if inst else session.get(Instrument, ev.instrument_id).symbol
-            side = "pozisyon artışı" if ev.net_nominal > 0 else "pozisyon azalışı"
+            side = ("position increase" if ev.net_nominal > 0 else "position decrease") if lang == "en" else ("pozisyon artışı" if ev.net_nominal > 0 else "pozisyon azalışı")
             yield (f"ev:{ev.id}", f"{sym}: KAP {side} ({ev.confidence})", f"{ev.net_nominal:+,} nominal · {ev.effective_date}", f"/stocks/{sym}")
 
     elif t == "SCORE_ABOVE" and inst:
@@ -109,7 +116,7 @@ def _fire(session: Session, rule: AlertRule, as_of: date):
             .order_by(Score.as_of.desc()).limit(1)
         )
         if score and float(score.adjusted_score) >= threshold:
-            yield (f"{score.as_of}:{int(threshold)}", f"{inst.symbol}: Smart Money Score {float(score.adjusted_score):.0f} ≥ {threshold:.0f}", f"hesaplama {score.as_of}", f"/stocks/{inst.symbol}")
+            yield (f"{score.as_of}:{int(threshold)}", f"{inst.symbol}: Smart Money Score {float(score.adjusted_score):.0f} ≥ {threshold:.0f}", f"{'computed' if lang == 'en' else 'hesaplama'} {score.as_of}", f"/stocks/{inst.symbol}")
 
     elif t == "SIGNAL" and inst:
         types = set(rule.params.get("types") or [])
@@ -129,4 +136,4 @@ def _fire(session: Session, rule: AlertRule, as_of: date):
         ).all()
         if rows:
             body = " · ".join(f"{s} {a}" for s, a in sorted(rows))
-            yield (f"{latest}", f"{fund.code}: {len(rows)} yeni giriş/çıkış", body, f"/funds/{fund.code}")
+            yield (f"{latest}", f"{fund.code}: {len(rows)} {'new entries/exits' if lang == 'en' else 'yeni giriş/çıkış'}", body, f"/funds/{fund.code}")

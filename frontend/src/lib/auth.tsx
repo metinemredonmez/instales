@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
-export interface User { id: number; email: string; name: string; plan: "FREE" | "PRO" | "PRO_PLUS"; role?: "USER" | "ADMIN" }
+export interface User { id: number; email: string; name: string; plan: "FREE" | "PRO" | "PRO_PLUS"; role?: "USER" | "ADMIN"; lang?: "tr" | "en" }
 interface Session { access_token: string; user: User }
 
 const KEY = "instilens.session"

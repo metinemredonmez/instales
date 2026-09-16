@@ -71,4 +71,4 @@ def user_from_token(session: Session, token: str) -> User:
 
 
 def public_user(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "name": user.name, "plan": user.plan, "role": user.role}
+    return {"id": user.id, "email": user.email, "name": user.name, "plan": user.plan, "role": user.role, "lang": user.lang}

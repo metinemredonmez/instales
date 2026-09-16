@@ -5,9 +5,11 @@ import { Link } from "react-router-dom"
 import { api } from "@/lib/api"
 import { fmtDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n"
 
 /** In-app notification center: unread badge, last 10, click-through, mark all read. */
 export function BellMenu() {
+  const { t } = useI18n()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -22,17 +24,17 @@ export function BellMenu() {
   }, [])
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(!open)} aria-label="Bildirimler" className={cn("relative grid size-9 place-items-center rounded-md hover:bg-accent", open && "bg-accent")}>
+      <button onClick={() => setOpen(!open)} aria-label={t("alerts.notifications")} className={cn("relative grid size-9 place-items-center rounded-md hover:bg-accent", open && "bg-accent")}>
         <Bell className="size-4" />
         {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">{unread}</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-2rem))] rounded-lg border border-border bg-popover shadow-xl">
           <div className="flex items-center justify-between border-b border-border/70 px-3 py-2 text-xs">
-            <span className="font-semibold">Bildirimler {unread > 0 && <span className="text-muted-foreground">· {unread} okunmamış</span>}</span>
+            <span className="font-semibold">{t("alerts.notifications")} {unread > 0 && <span className="text-muted-foreground">· {t("alerts.unread", { n: unread })}</span>}</span>
             <div className="flex gap-2">
-              {unread > 0 && <button onClick={() => markAll.mutate()} className="text-muted-foreground hover:text-foreground">tümünü okundu</button>}
-              <Link to="/alerts" onClick={() => setOpen(false)} className="text-primary hover:underline">Alarmlar →</Link>
+              {unread > 0 && <button onClick={() => markAll.mutate()} className="text-muted-foreground hover:text-foreground">{t("bell.markAll")}</button>}
+              <Link to="/alerts" onClick={() => setOpen(false)} className="text-primary hover:underline">{t("alerts.title")} →</Link>
             </div>
           </div>
           <ul className="max-h-[420px] divide-y divide-border/60 overflow-y-auto">
@@ -50,7 +52,7 @@ export function BellMenu() {
                 </Link>
               </li>
             ))}
-            {notes.data?.length === 0 && <li className="px-3 py-6 text-center text-xs text-muted-foreground">Henüz bildirim yok. Takip listene hisse/fon ekle; olaylar buraya düşer.</li>}
+            {notes.data?.length === 0 && <li className="px-3 py-6 text-center text-xs text-muted-foreground">{t("bell.empty")}</li>}
           </ul>
         </div>
       )}

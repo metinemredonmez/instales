@@ -1,16 +1,18 @@
 import { cn } from "@/lib/utils"
 import type { Activity, Confidence, SignalType } from "@/lib/api"
+import { useI18n, type T } from "@/lib/i18n"
 
-const CONF: Record<Confidence, { cls: string; title: string }> = {
-  EXACT: { cls: "text-exact border-exact/40 bg-exact/10", title: "Tek fon, açık tutar" },
-  GROUPED: { cls: "text-grouped border-grouped/40 bg-grouped/10", title: "Birden fazla ilişkili fon; dağılım bilinmiyor" },
-  INFERRED: { cls: "text-inferred border-inferred/40 bg-inferred/10", title: "İki portföy raporunun farkından türetildi" },
+const CONF: Record<Confidence, { cls: string; key: "conf.exact" | "conf.grouped" | "conf.inferred" }> = {
+  EXACT: { cls: "text-exact border-exact/40 bg-exact/10", key: "conf.exact" },
+  GROUPED: { cls: "text-grouped border-grouped/40 bg-grouped/10", key: "conf.grouped" },
+  INFERRED: { cls: "text-inferred border-inferred/40 bg-inferred/10", key: "conf.inferred" },
 }
 
 export function ConfidenceBadge({ value, className }: { value: Confidence; className?: string }) {
+  const { t } = useI18n()
   const c = CONF[value]
   return (
-    <span title={c.title} className={cn("inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider", c.cls, className)}>
+    <span title={t(c.key)} className={cn("inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider", c.cls, className)}>
       {value}
     </span>
   )
@@ -28,17 +30,20 @@ export function ActivityBadge({ value }: { value: Activity }) {
   return <span className={cn("inline-flex rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider", ACT[value])}>{value}</span>
 }
 
-export const SIGNAL_LABEL: Record<SignalType, { label: string; tone: "pos" | "neg" | "info" }> = {
-  ACCUMULATION: { label: "Accumulation", tone: "pos" },
-  DISTRIBUTION: { label: "Distribution", tone: "neg" },
-  POSITIVE_DIVERGENCE: { label: "Positive divergence", tone: "pos" },
-  NEGATIVE_DIVERGENCE: { label: "Negative divergence", tone: "neg" },
-  NEW_POSITION_CLUSTER: { label: "New-position cluster", tone: "pos" },
-  EXIT_CLUSTER: { label: "Exit cluster", tone: "neg" },
+const SIGNAL_TONE: Record<SignalType, { key: `signal.${string}` & Parameters<T>[0]; tone: "pos" | "neg" | "info" }> = {
+  ACCUMULATION: { key: "signal.accumulation", tone: "pos" },
+  DISTRIBUTION: { key: "signal.distribution", tone: "neg" },
+  POSITIVE_DIVERGENCE: { key: "signal.positiveDivergence", tone: "pos" },
+  NEGATIVE_DIVERGENCE: { key: "signal.negativeDivergence", tone: "neg" },
+  NEW_POSITION_CLUSTER: { key: "signal.newPositionCluster", tone: "pos" },
+  EXIT_CLUSTER: { key: "signal.exitCluster", tone: "neg" },
 }
+export const SIGNAL_TYPES = Object.keys(SIGNAL_TONE) as SignalType[]
+export const signalLabel = (t: T, type: SignalType) => t(SIGNAL_TONE[type].key)
 
 export function SignalBadge({ type }: { type: SignalType }) {
-  const s = SIGNAL_LABEL[type]
+  const { t } = useI18n()
+  const s = { ...SIGNAL_TONE[type], label: signalLabel(t, type) }
   return (
     <span
       className={cn(

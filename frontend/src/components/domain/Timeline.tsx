@@ -4,14 +4,16 @@ import { fmtDate } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { ConfidenceBadge, SignalBadge } from "./badges"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n"
 
 const DOT: Record<string, string> = { PERIOD: "bg-primary", EVENT: "bg-exact", SIGNAL: "bg-positive", SCORE: "bg-muted-foreground" }
 
 export function Timeline({ symbol, market }: { symbol: string; market: Market }) {
+  const { t } = useI18n()
   const q = useQuery({ queryKey: ["timeline", market, symbol], queryFn: () => api.timeline(market, symbol) })
   if (!q.data?.length) return null
   return (
-    <Section title="Smart Money Timeline" hint="hikâye, kronolojik">
+    <Section title="Smart Money Timeline" hint={t("timeline.hint")}>
       <ol className="relative ml-4 border-l border-border py-2">
         {q.data.map((it, i) => (
           <li key={i} className="relative pl-5 pr-4 py-2">

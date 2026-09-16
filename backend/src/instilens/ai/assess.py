@@ -21,12 +21,20 @@ from instilens.config import settings
 from instilens.domain.models import AiNote
 from instilens.services import analytics
 
-SYSTEM = """You are InstiLens' analyst. You write short, factual Turkish notes for investors about institutional
+SYSTEM = """You are InstiLens' analyst. You write short, factual notes for investors about institutional
 (fund) activity in a stock or market, combining the structured data and the headlines you are given.
-Rules: (1) use ONLY numbers present in the JSON; (2) never give advice — no "al", "sat", "yükselir";
-describe and flag what to watch instead; (3) mention data confidence when it matters (GROUPED = fon
-dağılımı bilinmiyor, INFERRED = snapshot farkı); (4) refer to headlines by [n:ID] and disclosures by [kap:ID]
-so the UI can link them; (5) if the data is thin, say so in one sentence rather than padding."""
+Rules: (1) use ONLY numbers present in the JSON; (2) never give advice — no "buy", "sell", "will rise"
+(Turkish: "al", "sat", "yükselir"); describe and flag what to watch instead; (3) mention data confidence when
+it matters (GROUPED = allocation across the funds is unknown, INFERRED = derived from a snapshot diff);
+(4) refer to headlines by [n:ID] and disclosures by [kap:ID] so the UI can link them; (5) if the data is
+thin, say so in one sentence rather than padding; (6) write in the language requested by the user prompt —
+Turkish or English — including the `watch` items and `confidence_note`."""
+
+LANGS = ("tr", "en")
+
+
+def norm_lang(lang: str | None) -> str:
+    return lang if lang in LANGS else "tr"
 
 
 class Note(BaseModel):
@@ -40,10 +48,11 @@ def _client() -> anthropic.Anthropic | None:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
 
 
-def _write(session: Session, kind: str, market: str, subject: str, day: date, prompt: str, data: dict) -> AiNote | None:
+def _write(session: Session, kind: str, market: str, subject: str, day: date, prompt: str, data: dict, lang: str = "tr") -> AiNote | None:
     client = _client()
     if client is None:
         return None
+    prompt = f"Language: {'English' if lang == 'en' else 'Turkish'}.\n{prompt}"
     r = client.messages.parse(
         model=settings.ai_model, max_tokens=4000, thinking={"type": "adaptive"}, output_config={"effort": "medium"},
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
@@ -52,10 +61,10 @@ def _write(session: Session, kind: str, market: str, subject: str, day: date, pr
     )
     if r.stop_reason == "refusal" or r.parsed_output is None:
         return None
-    note = session.scalar(select(AiNote).where(AiNote.kind == kind, AiNote.market_code == market, AiNote.subject == subject, AiNote.as_of == day))
+    note = _cached(session, kind, market, subject, day, lang)
     payload = {"watch": r.parsed_output.watch, "headline_ids": r.parsed_output.headline_ids, "confidence_note": r.parsed_output.confidence_note, "inputs": data}
     if note is None:
-        note = AiNote(kind=kind, market_code=market, subject=subject, as_of=day, content=r.parsed_output.text, data=payload, model=r.model)
+        note = AiNote(kind=kind, market_code=market, subject=subject, as_of=day, lang=lang, content=r.parsed_output.text, data=payload, model=r.model)
         session.add(note)
     else:
         note.content, note.data, note.model, note.created_at = r.parsed_output.text, payload, r.model, datetime.now(UTC)
@@ -63,13 +72,13 @@ def _write(session: Session, kind: str, market: str, subject: str, day: date, pr
     return note
 
 
-def _cached(session: Session, kind: str, market: str, subject: str, day: date) -> AiNote | None:
-    return session.scalar(select(AiNote).where(AiNote.kind == kind, AiNote.market_code == market, AiNote.subject == subject, AiNote.as_of == day))
+def _cached(session: Session, kind: str, market: str, subject: str, day: date, lang: str = "tr") -> AiNote | None:
+    return session.scalar(select(AiNote).where(AiNote.kind == kind, AiNote.market_code == market, AiNote.subject == subject, AiNote.as_of == day, AiNote.lang == lang))
 
 
-def stock_assessment(session: Session, market: str, symbol: str, day: date | None = None, force: bool = False) -> AiNote | None:
-    day = day or date.today()
-    if not force and (c := _cached(session, "STOCK_ASSESSMENT", market, symbol.upper(), day)):
+def stock_assessment(session: Session, market: str, symbol: str, day: date | None = None, force: bool = False, lang: str = "tr") -> AiNote | None:
+    day, lang = day or date.today(), norm_lang(lang)
+    if not force and (c := _cached(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, lang)):
         return c
     detail = analytics.stock_detail(session, market, symbol)
     if detail is None:
@@ -81,12 +90,14 @@ def stock_assessment(session: Session, market: str, symbol: str, day: date | Non
         "recent_disclosures": [{"kap_id": e["source"]["id"], "date": e["effective_date"], "institution": e["institution"], "funds": e["funds"], "net_nominal": e["net_nominal"], "confidence": e["confidence"]} for e in detail["events"][:6]],
         "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "published_at": n["published_at"], "ai": n.get("ai")} for n in news],
     }
-    return _write(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, f"{symbol.upper()} için kısa kurumsal akış değerlendirmesi yaz (3-5 cümle).", data)
+    prompt = (f"Write a short institutional-flow assessment for {symbol.upper()} (3-5 sentences)." if lang == "en"
+              else f"{symbol.upper()} için kısa kurumsal akış değerlendirmesi yaz (3-5 cümle).")
+    return _write(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, prompt, data, lang)
 
 
-def daily_brief(session: Session, market: str, day: date | None = None, force: bool = False) -> AiNote | None:
-    day = day or date.today()
-    if not force and (c := _cached(session, "DAILY_BRIEF", market, "market", day)):
+def daily_brief(session: Session, market: str, day: date | None = None, force: bool = False, lang: str = "tr") -> AiNote | None:
+    day, lang = day or date.today(), norm_lang(lang)
+    if not force and (c := _cached(session, "DAILY_BRIEF", market, "market", day, lang)):
         return c
     radar = analytics.radar(session, market, 8)
     flows7 = analytics.window_flows(session, market, 7)
@@ -100,11 +111,16 @@ def daily_brief(session: Session, market: str, day: date | None = None, force: b
         "latest_disclosures": [{"kap_id": e["source"]["id"], "date": e["effective_date"], "symbol": e["symbol"], "institution": e["institution"], "net_nominal": e["net_nominal"], "confidence": e["confidence"]} for e in events],
         "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "tags": n.get("tags"), "ai": n.get("ai")} for n in news],
     }
-    label = "Türkiye (BIST / KAP)" if market == "TR" else "ABD (SEC 13F)"
-    return _write(session, "DAILY_BRIEF", market, "market", day, f"{label} için sabah brifingi yaz: dün/son dönemde fonlar ne yaptı, aktif sinyaller, ilgili haberler, bugün izlenecekler. 5-8 cümle, başlıksız düz metin.", data)
+    if lang == "en":
+        label = "Turkey (BIST / KAP)" if market == "TR" else "US (SEC 13F)"
+        prompt = f"Write the morning brief for {label}: what funds did yesterday / in the latest period, active signals, related headlines, what to watch today. 5-8 sentences, plain text without headings."
+    else:
+        label = "Türkiye (BIST / KAP)" if market == "TR" else "ABD (SEC 13F)"
+        prompt = f"{label} için sabah brifingi yaz: dün/son dönemde fonlar ne yaptı, aktif sinyaller, ilgili haberler, bugün izlenecekler. 5-8 cümle, başlıksız düz metin."
+    return _write(session, "DAILY_BRIEF", market, "market", day, prompt, data, lang)
 
 
 def note_json(n: AiNote | None) -> dict | None:
     if n is None:
         return None
-    return {"id": n.id, "kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "content": n.content, "watch": n.data.get("watch", []), "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""), "model": n.model, "created_at": n.created_at.isoformat()}
+    return {"id": n.id, "kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "lang": n.lang, "content": n.content, "watch": n.data.get("watch", []), "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""), "model": n.model, "created_at": n.created_at.isoformat()}

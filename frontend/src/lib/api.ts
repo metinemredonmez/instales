@@ -74,9 +74,9 @@ export interface NewsRule {
   language: string; max_age_days: number; symbols: string[]; newsapi_query: string; ai_summary: boolean; is_active: boolean
 }
 
-export interface AiNote { id: number; kind: string; subject: string; as_of: string; content: string; watch: string[]; headline_ids: number[]; confidence_note: string; model: string; created_at: string }
+export interface AiNote { id: number; kind: string; subject: string; as_of: string; lang: "tr" | "en"; content: string; watch: string[]; headline_ids: number[]; confidence_note: string; model: string; created_at: string }
 
-export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; channels: { telegram: boolean; email: boolean } }
+export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en"; channels: { telegram: boolean; email: boolean } }
 
 export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
 
@@ -179,6 +179,15 @@ export interface FundDetail {
   activity_period_end: string | null
   activity: Record<Exclude<Activity, "HOLD">, PositionChange[]>
   events: TxEvent[]
+}
+
+export interface AdminConfig {
+  environment: string; public_url: string; allow_registration: boolean; database: string
+  kap_adapter: string; kap_api_base_url: string | null; sec_adapter: string; sec_ciks: string[]
+  ai: { provider: string; model: string; configured: boolean; news_enrich: boolean }
+  tts: { provider: string | null; voices: Record<string, boolean> }
+  news: { enabled: boolean; newsapi: boolean }
+  channels: { telegram: boolean; email: boolean; web_push: boolean; onesignal: boolean }
 }
 
 export interface SearchHit {
@@ -295,8 +304,8 @@ export const api = {
   institution: (market: Market, code: string) => get<InstitutionDetail>(`/institutions/${code}`, { market }),
   ttsStatus: () => get<{ provider: string | null }>("/tts/status"),
   noteAudioUrl: (id: number, gender: "female" | "male" = "female") => `${BASE}/ai-notes/${id}/audio?gender=${gender}&token=${encodeURIComponent(getToken() ?? "")}`,
-  stockAi: (market: Market, symbol: string, refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, refresh: refresh || undefined }),
-  brief: (market: Market, refresh = false) => get<AiNote | null>("/brief", { market, refresh: refresh || undefined }),
+  stockAi: (market: Market, symbol: string, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, lang, refresh: refresh || undefined }),
+  brief: (market: Market, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote | null>("/brief", { market, lang, refresh: refresh || undefined }),
   news: (market: Market, symbol?: string, limit = 40) => get<NewsItem[]>("/news", { market, symbol, limit }),
   freshness: (market: Market) => get<Freshness[]>("/freshness", { market }),
   signalPerformance: (market: Market) => get<SignalPerf>("/signals/performance", { market }),
@@ -312,6 +321,7 @@ export const api = {
   adminNewsSeed: () => send<{ created: number }>("POST", "/admin/news/rules/seed"),
   adminNewsReapply: () => send<{ TR: number; US: number }>("POST", "/admin/news/reapply"),
   adminNewsEnrich: (market: Market) => send<{ tagged: number }>("POST", `/admin/news/enrich?market=${market}`),
+  adminConfig: () => get<AdminConfig>("/admin/config"),
   adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
   adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
@@ -334,7 +344,7 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => send<void>("DELETE", `/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`),
   pushTest: () => send<{ sent: number; onesignal: boolean }>("POST", "/push/test"),
   mySettings: () => get<NotifySettings>("/me/settings"),
-  saveSettings: (body: { notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean }) => send<{ ok: boolean }>("PUT", "/me/settings", body),
+  saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
   eventStreamUrl: (market: Market) => `${BASE}/events/stream?market=${market}&token=${encodeURIComponent(getToken() ?? "")}`,

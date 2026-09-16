@@ -53,6 +53,28 @@ def verify(body: VerifyBody, session: Session = Depends(get_session)):
     return {"ok": True}
 
 
+@router.get("/config")
+def config_status():
+    """Which integrations are configured on this server — booleans and public values only, never secrets."""
+    from instilens.ai.tts import provider as tts_provider
+    from instilens.config import settings
+
+    return {
+        "environment": settings.environment,
+        "public_url": settings.public_url,
+        "allow_registration": settings.allow_registration,
+        "database": settings.database_url.split(":", 1)[0],
+        "kap_adapter": settings.kap_adapter,
+        "kap_api_base_url": settings.kap_api_base_url if settings.kap_adapter == "api" else None,
+        "sec_adapter": settings.sec_adapter,
+        "sec_ciks": settings.sec_ciks,
+        "ai": {"provider": settings.ai_provider, "model": settings.ai_model, "configured": bool(settings.anthropic_api_key), "news_enrich": settings.ai_news_enabled},
+        "tts": {"provider": tts_provider(), "voices": {k: bool(getattr(settings, f"elevenlabs_voice_{k}", "")) for k in ("tr_female", "tr_male", "en_female", "en_male")}},
+        "news": {"enabled": settings.news_enabled, "newsapi": bool(settings.newsapi_key)},
+        "channels": {"telegram": bool(settings.telegram_bot_token), "email": bool(settings.smtp_host), "web_push": bool(settings.vapid_public_key), "onesignal": bool(settings.onesignal_app_id)},
+    }
+
+
 @router.post("/outcomes/compute")
 def compute_outcomes(session: Session = Depends(get_session)):
     from instilens.services.outcomes import compute_outcomes as run

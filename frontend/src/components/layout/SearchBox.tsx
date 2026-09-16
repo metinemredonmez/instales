@@ -5,13 +5,14 @@ import { Search } from "lucide-react"
 import { api, type SearchHit } from "@/lib/api"
 import { useMarket } from "@/lib/market"
 import { cn } from "@/lib/utils"
-
-const KIND_LABEL: Record<SearchHit["kind"], string> = { stock: "Hisse", fund: "Fon", institution: "Kurum" }
+import { useI18n } from "@/lib/i18n"
 
 /** Header typeahead: queries /search (stocks, funds, institutions of the active market); Enter opens the highlighted hit. */
 export function SearchBox({ className }: { className?: string }) {
   const navigate = useNavigate()
   const { market } = useMarket()
+  const { t } = useI18n()
+  const KIND_LABEL: Record<SearchHit["kind"], string> = { stock: t("common.stock"), fund: t("common.fund"), institution: t("inst.institution") }
   const [q, setQ] = useState("")
   const [debounced, setDebounced] = useState("")
   const [open, setOpen] = useState(false)
@@ -73,14 +74,14 @@ export function SearchBox({ className }: { className?: string }) {
         aria-expanded={showList}
         aria-controls={listId}
         aria-autocomplete="list"
-        placeholder={market === "TR" ? "Hisse, fon veya kurum: ASELS, TMV…" : "Ticker or filer: NVDA, Berkshire…"}
+        placeholder={market === "TR" ? t("search.ph.tr") : t("search.ph.us")}
         className="h-9 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
       />
       {showList && (
         <ul id={listId} role="listbox" className="absolute left-0 right-0 top-full z-40 mt-1 max-h-80 overflow-auto rounded-md border border-border bg-popover p-1 text-sm shadow-lg">
           {rows.length === 0 && (
             <li className="px-2.5 py-2 text-muted-foreground">
-              {hits.isFetching ? "Aranıyor…" : <>Sonuç yok — <button type="button" className="underline" onMouseDown={() => go(undefined)}>“{q.trim().toUpperCase()}” sayfasını dene</button></>}
+              {hits.isFetching ? t("search.searching") : <>{t("search.noResults")} — <button type="button" className="underline" onMouseDown={() => go(undefined)}>{t("search.tryPage", { q: q.trim().toUpperCase() })}</button></>}
             </li>
           )}
           {rows.map((h, i) => (

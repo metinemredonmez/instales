@@ -1,5 +1,14 @@
 const CURRENCY: Record<string, string> = { TR: "₺", US: "$" }
 
+// Locale for dates and numbers; set by LangProvider (tr-TR / en-GB). Pages remount on language change.
+let LOCALE = "tr-TR"
+export function setLocale(lang: "tr" | "en") {
+  LOCALE = lang === "en" ? "en-GB" : "tr-TR"
+}
+export function locale() {
+  return LOCALE
+}
+
 export function fmtMoney(v: number | string | null | undefined, market = "TR"): string {
   if (v === null || v === undefined) return "—"
   const n = typeof v === "string" ? Number(v) : v
@@ -20,7 +29,7 @@ export function fmtLots(v: number | null | undefined): string {
 }
 
 export function fmtQty(v: number): string {
-  return new Intl.NumberFormat("tr-TR").format(v)
+  return new Intl.NumberFormat(LOCALE).format(v)
 }
 
 export function fmtPct(v: number | null | undefined, digits = 1): string {
@@ -30,9 +39,9 @@ export function fmtPct(v: number | null | undefined, digits = 1): string {
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" })
+  return new Date(iso).toLocaleDateString(LOCALE, { day: "2-digit", month: "short", year: "numeric" })
 }
 
 export function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+  return new Date(iso).toLocaleString(LOCALE, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
