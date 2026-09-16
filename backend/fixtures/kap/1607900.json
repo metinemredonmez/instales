@@ -1,0 +1,26 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1607900",
+  "kind": "KAP_SHARE_TRANSACTION",
+  "published_at": "2026-08-20T19:05:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1607900",
+  "payload": {
+    "member_oid": "MOID-TERA",
+    "member_name": "Tera Portföy Yönetimi A.Ş.",
+    "subject_symbol": "ASELS",
+    "related_fund_codes": [
+      "TMV"
+    ],
+    "rows": [
+      {
+        "transaction_date": "2026-08-20",
+        "side": "ALIS",
+        "nominal": 300000,
+        "price": 161
+      }
+    ],
+    "ownership_before_pct": 0.1,
+    "ownership_after_pct": 0.12
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1601016",
+  "kind": "KAP_PORTFOLIO_REPORT",
+  "published_at": "2026-08-31T18:30:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1601016",
+  "payload": {
+    "fund_code": "TMV",
+    "fund_name": "Tera Portföy Algoritmik Stratejiler Serbest Fon",
+    "member_oid": "MOID-TERA",
+    "member_name": "Tera Portföy Yönetimi A.Ş.",
+    "as_of": "2026-08-31",
+    "total_value": 675100000,
+    "holdings": [
+      {
+        "symbol": "ASELS",
+        "quantity": 2900000,
+        "market_value": 464000000,
+        "weight_pct": 68.7306
+      },
+      {
+        "symbol": "THYAO",
+        "quantity": 400000,
+        "market_value": 124000000,
+        "weight_pct": 18.3676
+      },
+      {
+        "symbol": "EREGL",
+        "quantity": 500000,
+        "market_value": 23500000,
+        "weight_pct": 3.481
+      },
+      {
+        "symbol": "KCHOL",
+        "quantity": 300000,
+        "market_value": 63600000,
+        "weight_pct": 9.4208
+      }
+    ]
+  }
+}

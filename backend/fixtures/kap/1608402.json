@@ -1,0 +1,26 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1608402",
+  "kind": "KAP_SHARE_TRANSACTION",
+  "published_at": "2026-09-11T18:50:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1608402",
+  "payload": {
+    "member_oid": "MOID-TERA",
+    "member_name": "Tera Portföy Yönetimi A.Ş.",
+    "subject_symbol": "THYAO",
+    "related_fund_codes": [
+      "TMV"
+    ],
+    "rows": [
+      {
+        "transaction_date": "2026-09-11",
+        "side": "ALIS",
+        "nominal": 1200000,
+        "price": 312
+      }
+    ],
+    "ownership_before_pct": 0.03,
+    "ownership_after_pct": 0.12
+  }
+}

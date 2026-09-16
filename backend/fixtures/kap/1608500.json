@@ -1,0 +1,27 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1608500",
+  "kind": "KAP_SHARE_TRANSACTION",
+  "published_at": "2026-09-12T19:20:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1608500",
+  "payload": {
+    "member_oid": "MOID-IS",
+    "member_name": "İş Portföy Yönetimi A.Ş.",
+    "subject_symbol": "ASELS",
+    "related_fund_codes": [
+      "IPB",
+      "TI2"
+    ],
+    "rows": [
+      {
+        "transaction_date": "2026-09-12",
+        "side": "SATIS",
+        "nominal": 500000,
+        "price": 141
+      }
+    ],
+    "ownership_before_pct": 0.28,
+    "ownership_after_pct": 0.26
+  }
+}

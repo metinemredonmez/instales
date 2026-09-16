@@ -1,0 +1,113 @@
+"""Alert rules → notifications. Runs after every `compute_intelligence`; idempotent via dedup_key.
+
+Rule types (params in AlertRule.params):
+  NEW_FUND_POSITION  a fund opened a first position in the instrument         (instrument)
+  FUND_EXIT          a fund fully exited the instrument                       (instrument)
+  KAP_TRANSACTION    a new disclosed transaction touched the instrument/fund  (instrument | fund)
+  SCORE_ABOVE        Smart Money Score crossed {threshold}                    (instrument)
+  SIGNAL             one of {types} fired                                     (instrument)
+  FUND_ACTIVITY      the fund had NEW/EXIT moves in the latest period         (fund)
+Language is descriptive on purpose — never "buy"/"sell".
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from instilens.domain.enums import ActivityType, ScoreType
+from instilens.domain.models import (
+    AlertRule,
+    Fund,
+    Instrument,
+    Notification,
+    PositionChange,
+    Score,
+    Signal,
+    TransactionEvent,
+    TransactionEventFund,
+)
+
+RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY"}
+
+
+def evaluate(session: Session, as_of: date) -> int:
+    """Evaluate every active rule against the latest state. Returns notifications created."""
+    created = 0
+    rules = session.scalars(select(AlertRule).where(AlertRule.is_active.is_(True))).all()
+    for rule in rules:
+        for key, title, body, link in _fire(session, rule, as_of):
+            if _notify(session, rule, key, title, body, link):
+                created += 1
+    session.flush()
+    return created
+
+
+def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, link: str | None) -> bool:
+    dedup = f"{rule.id}:{key}"[:160]
+    exists = session.scalar(select(Notification.id).where(Notification.owner_id == rule.owner_id, Notification.dedup_key == dedup))
+    if exists:
+        return False
+    session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id, dedup_key=dedup, title=title, body=body, link=link))
+    return True
+
+
+def _fire(session: Session, rule: AlertRule, as_of: date):
+    inst = session.get(Instrument, rule.instrument_id) if rule.instrument_id else None
+    fund = session.get(Fund, rule.fund_id) if rule.fund_id else None
+    t = rule.rule_type
+
+    if t in ("NEW_FUND_POSITION", "FUND_EXIT") and inst:
+        want = ActivityType.NEW if t == "NEW_FUND_POSITION" else ActivityType.EXIT
+        latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.instrument_id == inst.id))
+        if latest is None:
+            return
+        rows = session.execute(
+            select(Fund.code).join(PositionChange, PositionChange.fund_id == Fund.id)
+            .where(PositionChange.instrument_id == inst.id, PositionChange.period_end == latest, PositionChange.activity == want)
+        ).scalars().all()
+        if rows:
+            verb = "yeni pozisyon açtı" if want is ActivityType.NEW else "pozisyonunu tamamen kapattı"
+            yield (f"{latest}", f"{inst.symbol}: {len(rows)} fon {verb}", ", ".join(sorted(rows)) + f" · dönem sonu {latest}", f"/stocks/{inst.symbol}")
+
+    elif t == "KAP_TRANSACTION" and (inst or fund):
+        stmt = select(TransactionEvent).where(TransactionEvent.is_superseded.is_(False))
+        if inst:
+            stmt = stmt.where(TransactionEvent.instrument_id == inst.id)
+        if fund:
+            stmt = stmt.where(TransactionEvent.funds.any(TransactionEventFund.fund_id == fund.id))
+        for ev in session.scalars(stmt.order_by(TransactionEvent.published_at.desc()).limit(20)):
+            sym = inst.symbol if inst else session.get(Instrument, ev.instrument_id).symbol
+            side = "pozisyon artışı" if ev.net_nominal > 0 else "pozisyon azalışı"
+            yield (f"ev:{ev.id}", f"{sym}: KAP {side} ({ev.confidence})", f"{ev.net_nominal:+,} nominal · {ev.effective_date}", f"/stocks/{sym}")
+
+    elif t == "SCORE_ABOVE" and inst:
+        threshold = float(rule.params.get("threshold", 80))
+        score = session.scalar(
+            select(Score).where(Score.instrument_id == inst.id, Score.score_type == ScoreType.SMART_MONEY, Score.fund_id.is_(None))
+            .order_by(Score.as_of.desc()).limit(1)
+        )
+        if score and float(score.adjusted_score) >= threshold:
+            yield (f"{score.as_of}:{int(threshold)}", f"{inst.symbol}: Smart Money Score {float(score.adjusted_score):.0f} ≥ {threshold:.0f}", f"hesaplama {score.as_of}", f"/stocks/{inst.symbol}")
+
+    elif t == "SIGNAL" and inst:
+        types = set(rule.params.get("types") or [])
+        stmt = select(Signal).where(Signal.instrument_id == inst.id, Signal.window_end == as_of)
+        for sig in session.scalars(stmt):
+            if types and sig.signal_type not in types:
+                continue
+            yield (f"{sig.signal_type}:{sig.window_end}", f"{inst.symbol}: {sig.signal_type.replace('_', ' ').title()} ({sig.strength})", f"{sig.window_start} → {sig.window_end} · {sig.confidence}", f"/stocks/{inst.symbol}")
+
+    elif t == "FUND_ACTIVITY" and fund:
+        latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))
+        if latest is None:
+            return
+        rows = session.execute(
+            select(Instrument.symbol, PositionChange.activity).join(Instrument, Instrument.id == PositionChange.instrument_id)
+            .where(PositionChange.fund_id == fund.id, PositionChange.period_end == latest, PositionChange.activity.in_([ActivityType.NEW, ActivityType.EXIT]))
+        ).all()
+        if rows:
+            body = " · ".join(f"{s} {a}" for s, a in sorted(rows))
+            yield (f"{latest}", f"{fund.code}: {len(rows)} yeni giriş/çıkış", body, f"/funds/{fund.code}")

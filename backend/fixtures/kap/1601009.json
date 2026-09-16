@@ -1,0 +1,36 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1601009",
+  "kind": "KAP_PORTFOLIO_REPORT",
+  "published_at": "2026-06-30T18:30:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1601009",
+  "payload": {
+    "fund_code": "TI2",
+    "fund_name": "İş Portföy Hisse Senedi Fonu",
+    "member_oid": "MOID-IS",
+    "member_name": "İş Portföy Yönetimi A.Ş.",
+    "as_of": "2026-06-30",
+    "total_value": 467400000,
+    "holdings": [
+      {
+        "symbol": "ASELS",
+        "quantity": 800000,
+        "market_value": 126400000,
+        "weight_pct": 27.0432
+      },
+      {
+        "symbol": "THYAO",
+        "quantity": 1000000,
+        "market_value": 300000000,
+        "weight_pct": 64.1849
+      },
+      {
+        "symbol": "KCHOL",
+        "quantity": 200000,
+        "market_value": 41000000,
+        "weight_pct": 8.7719
+      }
+    ]
+  }
+}

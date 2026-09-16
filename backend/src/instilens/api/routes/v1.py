@@ -1,0 +1,161 @@
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
+
+from instilens.ai import build_engine
+from instilens.api.deps import current_user, get_session
+from instilens.db.session import session_scope
+from instilens.services import analytics
+
+# Every data route requires a signed-in user; /auth/* and /health live outside this router.
+router = APIRouter(prefix="/api/v1", tags=["intelligence"], dependencies=[Depends(current_user)])
+
+MarketParam = Query("TR", pattern="^(TR|US)$")
+
+
+@router.get("/radar")
+def get_radar(market: str = MarketParam, limit: int = 20, window: int | None = Query(None, ge=1, le=365), session: Session = Depends(get_session)):
+    """Default window = the market's score window (TR 30D, US 100D). Other windows re-aggregate flows on the fly."""
+    data = analytics.radar(session, market, limit)
+    if window is not None and window != data.get("window_days"):
+        flows = analytics.window_flows(session, market, window)
+        data.update({"window_days": window, "window_start": flows["window_start"], "accumulated": flows["accumulated"][:limit], "distributed": flows["distributed"][:limit]})
+    return data
+
+
+@router.get("/freshness")
+def get_freshness(market: str = MarketParam, session: Session = Depends(get_session)):
+    return analytics.data_freshness(session, market)
+
+
+@router.get("/signals/performance")
+def get_signal_performance(market: str = MarketParam, session: Session = Depends(get_session)):
+    return analytics.signal_performance(session, market)
+
+
+@router.get("/institutions")
+def get_institutions(market: str = MarketParam, session: Session = Depends(get_session)):
+    return analytics.institutions(session, market)
+
+
+@router.get("/institutions/{code}")
+def get_institution(code: str, market: str = MarketParam, session: Session = Depends(get_session)):
+    data = analytics.institution_detail(session, market, code)
+    if data is None:
+        raise HTTPException(404, "institution not found")
+    return data
+
+
+@router.get("/funds/{code}/compare/{other}")
+def get_fund_compare(code: str, other: str, session: Session = Depends(get_session)):
+    data = analytics.compare_funds(session, code, other)
+    if data is None:
+        raise HTTPException(404, "fund not found")
+    return data
+
+
+@router.get("/stocks/{symbol}")
+def get_stock(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
+    data = analytics.stock_detail(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/timeline")
+def get_stock_timeline(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
+    data = analytics.stock_timeline(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/series")
+def get_stock_series(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
+    data = analytics.stock_series(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/funds/{code}")
+def get_fund(code: str, session: Session = Depends(get_session)):
+    data = analytics.fund_detail(session, code)
+    if data is None:
+        raise HTTPException(404, "fund not found")
+    return data
+
+
+@router.get("/events")
+def get_events(market: str = MarketParam, limit: int = 50, session: Session = Depends(get_session)):
+    return analytics.events(session, market, limit)
+
+
+@router.get("/events/stream")
+async def stream_events(market: str = MarketParam, poll_seconds: float = 5.0):
+    """Live KAP Radar feed. SSE + DB polling is enough for the MVP; no websockets needed."""
+
+    async def generator():
+        last_id = 0
+        with session_scope() as session:
+            latest = analytics.events(session, market, limit=1)
+            last_id = latest[0]["id"] if latest else 0
+        yield {"event": "ready", "data": json.dumps({"last_id": last_id})}  # flushes headers through proxies
+        while True:
+            with session_scope() as session:
+                fresh = analytics.events(session, market, limit=100, after_id=last_id)
+            for ev in fresh:
+                last_id = max(last_id, ev["id"])
+                yield {"event": "transaction", "data": json.dumps(ev)}
+            await asyncio.sleep(poll_seconds)
+
+    return EventSourceResponse(generator())
+
+
+@router.get("/screener")
+def get_screener(
+    market: str = MarketParam,
+    min_smart_money_score: float | None = None,
+    min_consensus_score: float | None = None,
+    min_funds_increasing: int | None = None,
+    min_funds_new: int | None = None,
+    min_net_flow_value: float | None = None,
+    max_price_change_30d_pct: float | None = None,
+    signal: list[str] | None = Query(None),
+    limit: int = 25,
+    session: Session = Depends(get_session),
+):
+    return analytics.screener(
+        session,
+        market,
+        min_smart_money_score=min_smart_money_score,
+        min_consensus_score=min_consensus_score,
+        min_funds_increasing=min_funds_increasing,
+        min_funds_new=min_funds_new,
+        min_net_flow_value=min_net_flow_value,
+        max_price_change_pct=max_price_change_30d_pct,
+        signal_types=signal,
+        limit=limit,
+    )
+
+
+class ResearchRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=2000)
+    market: str = Field("TR", pattern="^(TR|US)$")
+
+
+@router.post("/research")
+def post_research(body: ResearchRequest, session: Session = Depends(get_session)):
+    """AI research: natural-language question → tool-grounded answer with an audit trail."""
+    answer = build_engine(session).ask(body.question, body.market)
+    return {
+        "question": answer.question,
+        "answer": answer.answer,
+        "model": answer.model,
+        "usage": answer.usage,
+        "tool_calls": [{"name": c.name, "input": c.input, "output_preview": c.output_preview} for c in answer.tool_calls],
+    }

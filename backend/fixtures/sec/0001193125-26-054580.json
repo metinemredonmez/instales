@@ -1,0 +1,310 @@
+{
+ "market": "US",
+ "source": "SEC",
+ "source_id": "0001193125-26-054580",
+ "kind": "SEC_13F",
+ "published_at": "2026-02-17T00:00:00",
+ "raw_uri": "https://www.sec.gov/Archives/edgar/data/1067983/000119312526054580/",
+ "payload": {
+  "cik": "1067983",
+  "filer_name": "BERKSHIRE HATHAWAY INC",
+  "period": "2025-12-31",
+  "amendment": false,
+  "holdings": [
+   {
+    "cusip": "02005N100",
+    "issuer": "ALLY FINL INC",
+    "quantity": 29000000,
+    "value_usd": 1313410001,
+    "weight_pct": 0.4791
+   },
+   {
+    "cusip": "02079K305",
+    "issuer": "ALPHABET INC",
+    "quantity": 17846142,
+    "value_usd": 5585842446,
+    "weight_pct": 2.0374
+   },
+   {
+    "cusip": "023135106",
+    "issuer": "AMAZON COM INC",
+    "quantity": 2276000,
+    "value_usd": 525346320,
+    "weight_pct": 0.1916
+   },
+   {
+    "cusip": "025816109",
+    "issuer": "AMERICAN EXPRESS CO",
+    "quantity": 151610700,
+    "value_usd": 56088378465,
+    "weight_pct": 20.4583
+   },
+   {
+    "cusip": "037833100",
+    "issuer": "APPLE INC",
+    "quantity": 227917808,
+    "value_usd": 61961735283,
+    "weight_pct": 22.6006
+   },
+   {
+    "cusip": "047726302",
+    "issuer": "ATLANTA BRAVES HLDGS INC",
+    "quantity": 115428,
+    "value_usd": 4553634,
+    "weight_pct": 0.0017
+   },
+   {
+    "cusip": "060505104",
+    "issuer": "BANK AMERICA CORP",
+    "quantity": 517295934,
+    "value_usd": 28451276370,
+    "weight_pct": 10.3776
+   },
+   {
+    "cusip": "14040H105",
+    "issuer": "CAPITAL ONE FINL CORP",
+    "quantity": 7150000,
+    "value_usd": 1732874000,
+    "weight_pct": 0.6321
+   },
+   {
+    "cusip": "16119P108",
+    "issuer": "CHARTER COMMUNICATIONS INC N",
+    "quantity": 1060882,
+    "value_usd": 221459118,
+    "weight_pct": 0.0808
+   },
+   {
+    "cusip": "166764100",
+    "issuer": "CHEVRON CORP NEW",
+    "quantity": 130156362,
+    "value_usd": 19837131131,
+    "weight_pct": 7.2356
+   },
+   {
+    "cusip": "191216100",
+    "issuer": "COCA COLA CO",
+    "quantity": 400000000,
+    "value_usd": 27964000000,
+    "weight_pct": 10.1999
+   },
+   {
+    "cusip": "21036P108",
+    "issuer": "CONSTELLATION BRANDS INC",
+    "quantity": 13000000,
+    "value_usd": 1793480000,
+    "weight_pct": 0.6542
+   },
+   {
+    "cusip": "23918K108",
+    "issuer": "DAVITA INC",
+    "quantity": 31759065,
+    "value_usd": 3608147375,
+    "weight_pct": 1.3161
+   },
+   {
+    "cusip": "25243Q205",
+    "issuer": "DIAGEO PLC",
+    "quantity": 227750,
+    "value_usd": 19647993,
+    "weight_pct": 0.0072
+   },
+   {
+    "cusip": "25754A201",
+    "issuer": "DOMINOS PIZZA INC",
+    "quantity": 3350000,
+    "value_usd": 1396347000,
+    "weight_pct": 0.5093
+   },
+   {
+    "cusip": "422806208",
+    "issuer": "HEICO CORP NEW",
+    "quantity": 1294612,
+    "value_usd": 326798907,
+    "weight_pct": 0.1192
+   },
+   {
+    "cusip": "47233W109",
+    "issuer": "JEFFERIES FINL GROUP INC",
+    "quantity": 433558,
+    "value_usd": 26867589,
+    "weight_pct": 0.0098
+   },
+   {
+    "cusip": "500754106",
+    "issuer": "KRAFT HEINZ CO",
+    "quantity": 325634818,
+    "value_usd": 7896644337,
+    "weight_pct": 2.8803
+   },
+   {
+    "cusip": "501044101",
+    "issuer": "KROGER CO",
+    "quantity": 50000000,
+    "value_usd": 3124000000,
+    "weight_pct": 1.1395
+   },
+   {
+    "cusip": "512816109",
+    "issuer": "LAMAR ADVERTISING CO NEW",
+    "quantity": 1202410,
+    "value_usd": 152201058,
+    "weight_pct": 0.0555
+   },
+   {
+    "cusip": "526057104",
+    "issuer": "LENNAR CORP",
+    "quantity": 7050950,
+    "value_usd": 724837660,
+    "weight_pct": 0.2644
+   },
+   {
+    "cusip": "526057302",
+    "issuer": "LENNAR CORP",
+    "quantity": 180980,
+    "value_usd": 17214818,
+    "weight_pct": 0.0063
+   },
+   {
+    "cusip": "530909100",
+    "issuer": "LIBERTY LIVE HOLDINGS INC",
+    "quantity": 4986588,
+    "value_usd": 406406923,
+    "weight_pct": 0.1482
+   },
+   {
+    "cusip": "530909308",
+    "issuer": "LIBERTY LIVE HOLDINGS INC",
+    "quantity": 10917661,
+    "value_usd": 907912688,
+    "weight_pct": 0.3312
+   },
+   {
+    "cusip": "531229755",
+    "issuer": "LIBERTY MEDIA CORP DEL",
+    "quantity": 3018555,
+    "value_usd": 297357853,
+    "weight_pct": 0.1085
+   },
+   {
+    "cusip": "546347105",
+    "issuer": "LOUISIANA PAC CORP",
+    "quantity": 5664793,
+    "value_usd": 457488683,
+    "weight_pct": 0.1669
+   },
+   {
+    "cusip": "57636Q104",
+    "issuer": "MASTERCARD INCORPORATED",
+    "quantity": 3986648,
+    "value_usd": 2275897610,
+    "weight_pct": 0.8301
+   },
+   {
+    "cusip": "615369105",
+    "issuer": "MOODYS CORP",
+    "quantity": 24669778,
+    "value_usd": 12602556092,
+    "weight_pct": 4.5968
+   },
+   {
+    "cusip": "62944T105",
+    "issuer": "NVR INC",
+    "quantity": 11112,
+    "value_usd": 81037260,
+    "weight_pct": 0.0296
+   },
+   {
+    "cusip": "650111107",
+    "issuer": "NEW YORK TIMES CO",
+    "quantity": 5065744,
+    "value_usd": 351663948,
+    "weight_pct": 0.1283
+   },
+   {
+    "cusip": "670346105",
+    "issuer": "NUCOR CORP",
+    "quantity": 6407749,
+    "value_usd": 1045167939,
+    "weight_pct": 0.3812
+   },
+   {
+    "cusip": "674599105",
+    "issuer": "OCCIDENTAL PETE CORP",
+    "quantity": 264941431,
+    "value_usd": 10894391643,
+    "weight_pct": 3.9737
+   },
+   {
+    "cusip": "73278L105",
+    "issuer": "POOL CORP",
+    "quantity": 3068885,
+    "value_usd": 702007444,
+    "weight_pct": 0.2561
+   },
+   {
+    "cusip": "829933100",
+    "issuer": "SIRIUS XM HOLDINGS INC",
+    "quantity": 124807117,
+    "value_usd": 2495518305,
+    "weight_pct": 0.9102
+   },
+   {
+    "cusip": "91324P102",
+    "issuer": "UNITEDHEALTH GROUP INC",
+    "quantity": 5039564,
+    "value_usd": 1663610472,
+    "weight_pct": 0.6068
+   },
+   {
+    "cusip": "92343E102",
+    "issuer": "VERISIGN INC",
+    "quantity": 8989880,
+    "value_usd": 2184091346,
+    "weight_pct": 0.7966
+   },
+   {
+    "cusip": "92826C839",
+    "issuer": "VISA INC",
+    "quantity": 8297460,
+    "value_usd": 2910002197,
+    "weight_pct": 1.0614
+   },
+   {
+    "cusip": "G0176J109",
+    "issuer": "ALLEGION PLC",
+    "quantity": 780133,
+    "value_usd": 124212776,
+    "weight_pct": 0.0453
+   },
+   {
+    "cusip": "G0403H108",
+    "issuer": "AON PLC",
+    "quantity": 3602995,
+    "value_usd": 1271424876,
+    "weight_pct": 0.4638
+   },
+   {
+    "cusip": "G9001E102",
+    "issuer": "LIBERTY LATIN AMERICA LTD",
+    "quantity": 2396665,
+    "value_usd": 17711354,
+    "weight_pct": 0.0065
+   },
+   {
+    "cusip": "G9001E128",
+    "issuer": "LIBERTY LATIN AMERICA LTD",
+    "quantity": 1284020,
+    "value_usd": 9578789,
+    "weight_pct": 0.0035
+   },
+   {
+    "cusip": "H1467J104",
+    "issuer": "CHUBB LIMITED",
+    "quantity": 34249183,
+    "value_usd": 10689854998,
+    "weight_pct": 3.8991
+   }
+  ]
+ }
+}

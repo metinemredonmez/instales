@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+.env
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+
+# secrets & local
+**/.env
+infra/.env
+backend/instilens.db*
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+.claude/

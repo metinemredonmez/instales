@@ -1,0 +1,36 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1601020",
+  "kind": "KAP_PORTFOLIO_REPORT",
+  "published_at": "2026-08-31T18:30:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1601020",
+  "payload": {
+    "fund_code": "MAC",
+    "fund_name": "Marmara Capital Hisse Senedi Fonu",
+    "member_oid": "MOID-MC",
+    "member_name": "Marmara Capital Portföy Yönetimi A.Ş.",
+    "as_of": "2026-08-31",
+    "total_value": 89340000.0,
+    "holdings": [
+      {
+        "symbol": "ASELS",
+        "quantity": 520000,
+        "market_value": 83200000,
+        "weight_pct": 93.1274
+      },
+      {
+        "symbol": "SASA",
+        "quantity": 400000,
+        "market_value": 1440000.0,
+        "weight_pct": 1.6118
+      },
+      {
+        "symbol": "EREGL",
+        "quantity": 100000,
+        "market_value": 4700000,
+        "weight_pct": 5.2608
+      }
+    ]
+  }
+}

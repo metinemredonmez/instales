@@ -1,0 +1,219 @@
+{
+ "market": "US",
+ "source": "SEC",
+ "source_id": "0001193125-26-352200",
+ "kind": "SEC_13F",
+ "published_at": "2026-08-14T00:00:00",
+ "raw_uri": "https://www.sec.gov/Archives/edgar/data/1067983/000119312526352200/",
+ "payload": {
+  "cik": "1067983",
+  "filer_name": "BERKSHIRE HATHAWAY INC",
+  "period": "2026-06-30",
+  "amendment": false,
+  "holdings": [
+   {
+    "cusip": "02005N100",
+    "issuer": "ALLY FINL INC",
+    "quantity": 27000000,
+    "value_usd": 1240650000,
+    "weight_pct": 0.4146
+   },
+   {
+    "cusip": "02079K107",
+    "issuer": "ALPHABET INC",
+    "quantity": 27188433,
+    "value_usd": 9606489032,
+    "weight_pct": 3.2102
+   },
+   {
+    "cusip": "02079K305",
+    "issuer": "ALPHABET INC",
+    "quantity": 78791167,
+    "value_usd": 28157599351,
+    "weight_pct": 9.4093
+   },
+   {
+    "cusip": "025816109",
+    "issuer": "AMERICAN EXPRESS CO",
+    "quantity": 151610700,
+    "value_usd": 51282319275,
+    "weight_pct": 17.1367
+   },
+   {
+    "cusip": "037833100",
+    "issuer": "APPLE INC",
+    "quantity": 227917808,
+    "value_usd": 65950296923,
+    "weight_pct": 22.0383
+   },
+   {
+    "cusip": "060505104",
+    "issuer": "BANK OF AMER CORP",
+    "quantity": 483394015,
+    "value_usd": 27543790975,
+    "weight_pct": 9.2042
+   },
+   {
+    "cusip": "14040H105",
+    "issuer": "CAPITAL ONE FINL CORP",
+    "quantity": 3000000,
+    "value_usd": 601860000,
+    "weight_pct": 0.2011
+   },
+   {
+    "cusip": "166764100",
+    "issuer": "CHEVRON CORPORATION",
+    "quantity": 84375856,
+    "value_usd": 13986141890,
+    "weight_pct": 4.6737
+   },
+   {
+    "cusip": "191216100",
+    "issuer": "COCA COLA CO",
+    "quantity": 400000000,
+    "value_usd": 32508000000,
+    "weight_pct": 10.863
+   },
+   {
+    "cusip": "23331A109",
+    "issuer": "D R HORTON INC",
+    "quantity": 3564,
+    "value_usd": 580504,
+    "weight_pct": 0.0002
+   },
+   {
+    "cusip": "23918K108",
+    "issuer": "DAVITA INC",
+    "quantity": 28880209,
+    "value_usd": 6425268898,
+    "weight_pct": 2.1471
+   },
+   {
+    "cusip": "247361702",
+    "issuer": "DELTA AIR LINES INC",
+    "quantity": 57320000,
+    "value_usd": 5368591200,
+    "weight_pct": 1.794
+   },
+   {
+    "cusip": "47233W109",
+    "issuer": "JEFFERIES FINANCIAL GROUP IN",
+    "quantity": 433558,
+    "value_usd": 21669229,
+    "weight_pct": 0.0072
+   },
+   {
+    "cusip": "500754106",
+    "issuer": "KRAFT HEINZ CO",
+    "quantity": 325634818,
+    "value_usd": 7691494401,
+    "weight_pct": 2.5702
+   },
+   {
+    "cusip": "501044101",
+    "issuer": "KROGER CO",
+    "quantity": 39000000,
+    "value_usd": 2165670000,
+    "weight_pct": 0.7237
+   },
+   {
+    "cusip": "526057104",
+    "issuer": "LENNAR CORP",
+    "quantity": 13111741,
+    "value_usd": 1186481443,
+    "weight_pct": 0.3965
+   },
+   {
+    "cusip": "526057302",
+    "issuer": "LENNAR CORP",
+    "quantity": 298117,
+    "value_usd": 26445959,
+    "weight_pct": 0.0088
+   },
+   {
+    "cusip": "530909100",
+    "issuer": "LIBERTY LIVE HOLDINGS INC",
+    "quantity": 4986588,
+    "value_usd": 504941901,
+    "weight_pct": 0.1687
+   },
+   {
+    "cusip": "530909308",
+    "issuer": "LIBERTY LIVE HOLDINGS INC",
+    "quantity": 10587143,
+    "value_usd": 1118425787,
+    "weight_pct": 0.3737
+   },
+   {
+    "cusip": "546347105",
+    "issuer": "LOUISIANA PAC CORP",
+    "quantity": 5664793,
+    "value_usd": 445592617,
+    "weight_pct": 0.1489
+   },
+   {
+    "cusip": "55616P104",
+    "issuer": "MACYS INC",
+    "quantity": 7347426,
+    "value_usd": 173031882,
+    "weight_pct": 0.0578
+   },
+   {
+    "cusip": "615369105",
+    "issuer": "MOODYS CORP",
+    "quantity": 24669778,
+    "value_usd": 11173435852,
+    "weight_pct": 3.7338
+   },
+   {
+    "cusip": "62944T105",
+    "issuer": "NVR INC",
+    "quantity": 11112,
+    "value_usd": 75710501,
+    "weight_pct": 0.0253
+   },
+   {
+    "cusip": "650111107",
+    "issuer": "NEW YORK TIMES CO MTN BE",
+    "quantity": 15700000,
+    "value_usd": 1098686000,
+    "weight_pct": 0.3671
+   },
+   {
+    "cusip": "670346105",
+    "issuer": "NUCOR CORP",
+    "quantity": 1857752,
+    "value_usd": 413814258,
+    "weight_pct": 0.1383
+   },
+   {
+    "cusip": "674599105",
+    "issuer": "OCCIDENTAL PETE CORP",
+    "quantity": 264941431,
+    "value_usd": 12868205304,
+    "weight_pct": 4.3001
+   },
+   {
+    "cusip": "829933100",
+    "issuer": "SIRIUSXM HOLDINGS INC",
+    "quantity": 124807117,
+    "value_usd": 3686802237,
+    "weight_pct": 1.232
+   },
+   {
+    "cusip": "92343E102",
+    "issuer": "VERISIGN INC",
+    "quantity": 8989880,
+    "value_usd": 2261494212,
+    "weight_pct": 0.7557
+   },
+   {
+    "cusip": "H1467J104",
+    "issuer": "CHUBB LIMITED",
+    "quantity": 34249183,
+    "value_usd": 11670066615,
+    "weight_pct": 3.8997
+   }
+  ]
+ }
+}

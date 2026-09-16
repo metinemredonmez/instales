@@ -1,0 +1,36 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1601018",
+  "kind": "KAP_PORTFOLIO_REPORT",
+  "published_at": "2026-08-31T18:30:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1601018",
+  "payload": {
+    "fund_code": "IPB",
+    "fund_name": "İş Portföy BIST Teknoloji Ağırlıklı Sınırlamalı Endeks Hisse Senedi Fonu",
+    "member_oid": "MOID-IS",
+    "member_name": "İş Portföy Yönetimi A.Ş.",
+    "as_of": "2026-08-31",
+    "total_value": 746900000,
+    "holdings": [
+      {
+        "symbol": "ASELS",
+        "quantity": 3300000,
+        "market_value": 528000000,
+        "weight_pct": 70.6922
+      },
+      {
+        "symbol": "THYAO",
+        "quantity": 600000,
+        "market_value": 186000000,
+        "weight_pct": 24.9029
+      },
+      {
+        "symbol": "EREGL",
+        "quantity": 700000,
+        "market_value": 32900000,
+        "weight_pct": 4.4049
+      }
+    ]
+  }
+}

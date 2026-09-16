@@ -1,0 +1,28 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1608450",
+  "kind": "KAP_SHARE_TRANSACTION",
+  "published_at": "2026-09-11T20:10:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1608450",
+  "payload": {
+    "member_oid": "MOID-TERA",
+    "member_name": "Tera Portföy Yönetimi A.Ş.",
+    "subject_symbol": "ANELE",
+    "related_fund_codes": [
+      "TMV",
+      "TLY"
+    ],
+    "rows": [
+      {
+        "transaction_date": "2026-09-10",
+        "side": "ALIS",
+        "nominal": 46526835,
+        "price": 12.5
+      }
+    ],
+    "ownership_before_pct": 0.0,
+    "ownership_after_pct": 17.56,
+    "amends_source_id": "1608319"
+  }
+}

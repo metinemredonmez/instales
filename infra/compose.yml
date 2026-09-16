@@ -1,0 +1,35 @@
+# Production-shaped stack: postgres + api + scheduler + web. Works with docker/podman compose.
+# For Apple `container` (Berthly) use ./container-up.sh — it runs the same images without compose.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: instilens
+      POSTGRES_USER: instilens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U instilens"], interval: 10s, retries: 10 }
+
+  api:
+    build: ../backend
+    env_file: .env
+    environment:
+      INSTILENS_DATABASE_URL: postgresql+psycopg://instilens:${POSTGRES_PASSWORD}@db:5432/instilens
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["8000:8000"]
+
+  scheduler:
+    build: ../backend
+    command: ["instilens", "scheduler"]
+    env_file: .env
+    environment:
+      INSTILENS_DATABASE_URL: postgresql+psycopg://instilens:${POSTGRES_PASSWORD}@db:5432/instilens
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    build: ../frontend
+    depends_on: [api]
+    ports: ["8080:80"]
+
+volumes:
+  pgdata:

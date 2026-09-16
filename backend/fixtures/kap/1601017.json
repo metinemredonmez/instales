@@ -1,0 +1,36 @@
+{
+  "market": "TR",
+  "source": "KAP",
+  "source_id": "1601017",
+  "kind": "KAP_PORTFOLIO_REPORT",
+  "published_at": "2026-08-31T18:30:00",
+  "raw_uri": "https://www.kap.org.tr/tr/Bildirim/1601017",
+  "payload": {
+    "fund_code": "TLY",
+    "fund_name": "Tera Portföy Hisse Senedi Fonu",
+    "member_oid": "MOID-TERA",
+    "member_name": "Tera Portföy Yönetimi A.Ş.",
+    "as_of": "2026-08-31",
+    "total_value": 290700000,
+    "holdings": [
+      {
+        "symbol": "ASELS",
+        "quantity": 1200000,
+        "market_value": 192000000,
+        "weight_pct": 66.0475
+      },
+      {
+        "symbol": "THYAO",
+        "quantity": 250000,
+        "market_value": 77500000,
+        "weight_pct": 26.6598
+      },
+      {
+        "symbol": "KCHOL",
+        "quantity": 100000,
+        "market_value": 21200000,
+        "weight_pct": 7.2927
+      }
+    ]
+  }
+}
