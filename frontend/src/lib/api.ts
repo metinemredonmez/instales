@@ -181,6 +181,14 @@ export interface FundDetail {
   events: TxEvent[]
 }
 
+export interface SearchHit {
+  kind: "stock" | "fund" | "institution"
+  key: string
+  label: string
+  name: string
+  href: string
+}
+
 export interface ScreenerRow extends Omit<RadarRow, "confidence_multiplier" | "smart_money_score" | "consensus_score"> {
   smart_money_score: number
   consensus_score: number | null
@@ -309,6 +317,7 @@ export const api = {
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
   fund: (code: string) => get<FundDetail>(`/funds/${code}`),
   events: (market: Market, limit = 50) => get<TxEvent[]>("/events", { market, limit }),
+  search: (market: Market, q: string) => get<SearchHit[]>("/search", { market, q }),
   screener: (market: Market, f: ScreenerFilters) => get<ScreenerRow[]>("/screener", { market, ...f }),
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),

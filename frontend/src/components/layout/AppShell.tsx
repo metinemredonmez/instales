@@ -1,8 +1,9 @@
-import { NavLink, useNavigate } from "react-router-dom"
-import { Activity, Building2, GitCompare, LogOut, Moon, Radar, Search, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
-import { useState, type FormEvent } from "react"
+import { NavLink } from "react-router-dom"
+import { Activity, Building2, GitCompare, LogOut, Moon, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { Mark, Wordmark } from "@/components/layout/Brand"
+import { SearchBox } from "@/components/layout/SearchBox"
 import { useTheme } from "@/lib/theme"
 import { useMarket } from "@/lib/market"
 import { useAuth } from "@/lib/auth"
@@ -34,25 +35,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       withOneSignal((os) => os.login(String(user.id)))
     }).catch(() => {})
   }, [user])
-  const navigate = useNavigate()
-  const [q, setQ] = useState("")
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
-    const s = q.trim().toUpperCase()
-    if (!s) return
-    // TEFAS fund codes are 3 chars; BIST tickers are 4-5. Good enough until we have a search endpoint.
-    navigate(s.length === 3 ? `/funds/${s}` : `/stocks/${s}`)
-    setQ("")
-  }
-
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
-          <NavLink to="/" className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground text-xs font-black">IL</span>
-            <span className="hidden text-sm font-semibold tracking-tight lg:inline">InstiLens</span>
+          <NavLink to="/" className="flex items-center gap-2.5" aria-label="InstiLens — ana sayfa">
+            <Mark />
+            <Wordmark className="hidden h-[13px] lg:block" />
           </NavLink>
 
           <div className="flex rounded-md border border-border bg-card p-0.5 text-xs" role="tablist" aria-label="Piyasa">
@@ -89,15 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <form onSubmit={submit} className="ml-auto relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Hisse veya fon: ASELS, TMV…"
-              className="h-9 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
-            />
-          </form>
+          <SearchBox className="ml-auto w-full max-w-xs" />
 
           {user?.role === "ADMIN" && <NavLink to="/admin" aria-label="Admin" className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Shield className="size-4" /></NavLink>}
           <NavLink to="/watchlist" aria-label="Watchlist" className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Star className="size-4" /></NavLink>

@@ -2,7 +2,7 @@
 self.addEventListener("push", (event) => {
   let data = { title: "InstiLens", body: "", url: "/" }
   try { data = { ...data, ...event.data.json() } } catch { data.body = event.data ? event.data.text() : "" }
-  event.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: "/icon.svg", badge: "/icon.svg", data: { url: data.url }, tag: data.url }))
+  event.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: "/icon-192.png", badge: "/icon-192.png", data: { url: data.url }, tag: data.url }))
 })
 self.addEventListener("notificationclick", (event) => {
   event.notification.close()

@@ -166,6 +166,12 @@ async def stream_events(market: str = MarketParam, poll_seconds: float = 5.0):
     return EventSourceResponse(generator())
 
 
+@router.get("/search")
+def get_search(q: str = Query("", max_length=64), market: str = MarketParam, session: Session = Depends(get_session)):
+    """Header typeahead: stocks, funds and institutions of the selected market."""
+    return analytics.search(session, market, q)
+
+
 @router.get("/screener")
 def get_screener(
     market: str = MarketParam,

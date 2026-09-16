@@ -483,6 +483,44 @@ def compare_funds(session: Session, code_a: str, code_b: str) -> dict | None:
     }
 
 
+def search(session: Session, market: str, q: str, limit: int = 8) -> list[dict]:
+    """Typeahead over instruments, funds and institutions of a market.
+
+    Ranking: exact symbol/code → symbol/code prefix → name substring. Returns at most `limit`
+    rows per kind so a short query like "A" still shows funds and institutions, not only stocks.
+    """
+    q = q.strip()
+    if not q:
+        return []
+    up = q.upper()
+    like = f"%{q}%"
+    rank = lambda code_col: case((code_col == up, 0), (code_col.like(f"{up}%"), 1), else_=2)  # noqa: E731
+
+    stocks = session.scalars(
+        select(Instrument)
+        .where(Instrument.market_code == market, (Instrument.symbol.like(f"{up}%")) | (Instrument.name.ilike(like)))
+        .order_by(rank(Instrument.symbol), Instrument.symbol)
+        .limit(limit)
+    )
+    funds = session.scalars(
+        select(Fund)
+        .join(Institution)
+        .where(Institution.market_code == market, (Fund.code.like(f"{up}%")) | (Fund.name.ilike(like)))
+        .order_by(rank(Fund.code), Fund.code)
+        .limit(limit)
+    )
+    insts = session.scalars(
+        select(Institution)
+        .where(Institution.market_code == market, (Institution.code.like(f"{up}%")) | (Institution.name.ilike(like)))
+        .order_by(rank(Institution.code), Institution.name)
+        .limit(limit)
+    )
+    out = [{"kind": "stock", "key": i.symbol, "label": i.symbol, "name": i.name, "href": f"/stocks/{i.symbol}"} for i in stocks]
+    out += [{"kind": "fund", "key": f.code, "label": f.code, "name": f.name, "href": f"/funds/{f.code}"} for f in funds]
+    out += [{"kind": "institution", "key": i.code, "label": i.name, "name": i.kind, "href": f"/institutions/{i.code}"} for i in insts]
+    return out
+
+
 def institutions(session: Session, market: str) -> list[dict]:
     out = []
     for inst in session.scalars(select(Institution).where(Institution.market_code == market).order_by(Institution.name)):

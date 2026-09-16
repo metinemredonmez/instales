@@ -80,7 +80,8 @@ def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
     if not (settings.onesignal_app_id and settings.onesignal_rest_api_key):
         return False
     payload = {"app_id": settings.onesignal_app_id, "include_aliases": {"external_id": [owner_id]}, "target_channel": "push",
-               "headings": {"en": title, "tr": title}, "contents": {"en": body, "tr": body}, "url": link}
+               "headings": {"en": title, "tr": title}, "contents": {"en": body, "tr": body}, "url": link,
+               "chrome_web_icon": f"{settings.public_url}/icon-192.png", "firefox_icon": f"{settings.public_url}/icon-192.png"}
     for scheme in ("Key", "Basic"):  # new-style keys use "Key", legacy REST keys use "Basic"
         try:
             r = httpx.post("https://api.onesignal.com/notifications", json=payload, headers={"Authorization": f"{scheme} {settings.onesignal_rest_api_key}", "accept": "application/json"}, timeout=15)

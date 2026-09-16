@@ -3,6 +3,7 @@ import { Radar } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { Lockup, Mark } from "@/components/layout/Brand"
 
 export function LoginPage() {
   const { login, register } = useAuth()
@@ -29,11 +30,9 @@ export function LoginPage() {
   return (
     <div className="grid min-h-dvh bg-background text-foreground lg:grid-cols-[1.1fr_1fr]">
       <aside className="relative hidden overflow-hidden border-r border-border bg-card p-10 lg:flex lg:flex-col">
-        <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-black">IL</span>
-          <span className="font-semibold tracking-tight">InstiLens</span>
-        </div>
+        <Mark className="size-9 rounded-lg" />
         <div className="my-auto max-w-md">
+          <Lockup className="mb-10 max-w-sm" />
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">Profesyonel para <span className="text-primary">nereye</span> gidiyor?</h1>
           <p className="mt-4 text-muted-foreground">Fonların hangi hisseleri topladığını, azalttığını, yeni pozisyon açtığını ve terk ettiğini tek ekrandan takip et. Her rakam KAP kaynağına kadar izlenebilir.</p>
           <ul className="mt-8 space-y-3 text-sm">
@@ -55,7 +54,10 @@ export function LoginPage() {
 
       <main className="flex items-center justify-center p-6">
         <form onSubmit={submit} className="w-full max-w-sm space-y-5">
-          <div className="lg:hidden flex items-center gap-2"><span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-black">IL</span><span className="font-semibold">InstiLens</span></div>
+          <div className="flex flex-col items-center gap-4 pb-2 lg:hidden">
+            <Mark className="size-12 rounded-xl" />
+            <Lockup className="max-w-[260px]" />
+          </div>
           <div className="flex rounded-md border border-border p-0.5 text-sm">
             {(["login", "register"] as const).map((m) => (
               <button type="button" key={m} onClick={() => { setMode(m); setError(null) }} className={cn("flex-1 rounded-[5px] py-1.5 font-medium", mode === m ? "bg-secondary" : "text-muted-foreground")}>
