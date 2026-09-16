@@ -1,0 +1,5 @@
+#!/bin/sh
+# makensis shim for Apple-silicon Macs: Homebrew's NSIS 3.12 crashes (std::bad_alloc) on Tauri's installer.nsi,
+# so the compile runs in a tiny Debian container (Apple `container`). Paths are absolute under $HOME on both sides.
+# Build the image once:  container build -t nsis-linux scripts/nsis-image
+exec container run --rm -v "$HOME:$HOME" -w "$PWD" nsis-linux "$@"

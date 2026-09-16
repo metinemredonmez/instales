@@ -47,11 +47,13 @@ if rustup target list --installed | grep -q x86_64-apple-darwin; then
   echo "▶ macOS (Intel)…"
   if npx tauri build --target x86_64-apple-darwin >/tmp/il-macx.log 2>&1; then MACX="✓"; else MACX="✗ (/tmp/il-macx.log)"; fi
 fi
-if command -v cargo-xwin >/dev/null && command -v makensis >/dev/null; then
+if command -v cargo-xwin >/dev/null; then
+  # Homebrew's makensis crashes on Apple silicon; the shim in scripts/bin compiles the installer in a Linux container.
+  if command -v container >/dev/null && container images list 2>/dev/null | grep -q "^nsis-linux"; then export PATH="$ROOT/scripts/bin:$PATH"; fi
   echo "▶ Windows (cargo-xwin)…"
   if npx tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc >/tmp/il-win.log 2>&1; then WIN="✓"; else WIN="✗ (/tmp/il-win.log)"; tail -5 /tmp/il-win.log; fi
 else
-  WIN="✗ tools missing → brew install nsis && cargo install cargo-xwin && rustup target add x86_64-pc-windows-msvc"
+  WIN="✗ tools missing → cargo install cargo-xwin && rustup target add x86_64-pc-windows-msvc && container build -t nsis-linux scripts/nsis-image"
 fi
 
 # macOS dmg: Tauri's bundle_dmg.sh needs Finder automation; fall back to hdiutil.
