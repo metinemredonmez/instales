@@ -279,6 +279,7 @@ export const en: Record<Key, string> = {
   "tts.serverError": "Audio failed ({p}) — check the server key",
   "tts.female": "Female voice",
   "tts.male": "Male voice",
+  "tts.preparing": "Preparing…",
   "tts.listen": "Listen",
   "tts.stop": "Stop",
 

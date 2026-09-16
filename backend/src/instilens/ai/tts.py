@@ -60,3 +60,24 @@ def synthesize(text: str, lang: str = "tr", gender: str = "female") -> Path | No
     r.raise_for_status()
     out.write_bytes(r.content)
     return out
+
+
+def note_text(note) -> str:
+    """The exact text the audio endpoint narrates — keep in sync with routes/v1.get_note_audio."""
+    prefix = "Watch" if note.lang == "en" else "İzlenecek"
+    watch = " ".join(f"{prefix}: {w}." for w in (note.data or {}).get("watch", []))
+    return f"{note.content} {watch}"
+
+
+def warm(note) -> int:
+    """Pre-synthesise both voices for a note so the first 'Listen' click is instant. Returns files produced."""
+    if provider() is None or note is None:
+        return 0
+    n = 0
+    for gender in ("female", "male"):
+        try:
+            if synthesize(note_text(note), lang=note.lang, gender=gender):
+                n += 1
+        except Exception:  # noqa: BLE001 — cache warming must never break the job
+            continue
+    return n

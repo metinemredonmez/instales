@@ -15,6 +15,7 @@ from datetime import date
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from instilens.ai.tts import warm
 from instilens.db.session import get_engine, init_db, session_scope
 from instilens.ingestion.kap import build_kap_adapter
 from instilens.ingestion.prices.yahoo import load_prices
@@ -83,8 +84,10 @@ def briefs() -> None:
         for market in ("TR", "US"):
             try:
                 note = daily_brief(s, market, force=True)  # Turkish
-                daily_brief(s, market, force=True, lang="en")  # English, so EN users don't wait on first open
+                note_en = daily_brief(s, market, force=True, lang="en")  # English, so EN users don't wait on first open
                 log.info("%s brief %s, delivered %s", market, "ok" if note else "skipped", deliver_brief(s, note) if note and market == "TR" else 0)
+                s.flush()
+                log.info("%s tts warmed: %s files", market, warm(note) + warm(note_en))
             except Exception as exc:
                 log.warning("brief %s failed: %s", market, exc)
 

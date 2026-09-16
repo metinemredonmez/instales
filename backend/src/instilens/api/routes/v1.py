@@ -97,15 +97,13 @@ def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female
     """MP3 narration of an AI note. Voice follows the note's language and the chosen gender."""
     from fastapi.responses import FileResponse
 
-    from instilens.ai.tts import synthesize
+    from instilens.ai.tts import note_text, synthesize
     from instilens.domain.models import AiNote
 
     note = session.get(AiNote, note_id)
     if note is None:
         raise HTTPException(404, "note not found")
-    prefix = "Watch" if note.lang == "en" else "İzlenecek"
-    watch = " ".join(f"{prefix}: {w}." for w in (note.data or {}).get("watch", []))
-    path = synthesize(f"{note.content} {watch}", lang=note.lang, gender=gender)
+    path = synthesize(note_text(note), lang=note.lang, gender=gender)
     if path is None:
         raise HTTPException(404, "tts not configured")
     return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")

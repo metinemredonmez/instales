@@ -293,6 +293,7 @@ export const tr = {
   "tts.serverError": "Ses üretilemedi ({p}) — sunucu anahtarını kontrol et",
   "tts.female": "Kadın ses",
   "tts.male": "Erkek ses",
+  "tts.preparing": "Hazırlanıyor…",
   "tts.listen": "Dinle",
   "tts.stop": "Durdur",
 
