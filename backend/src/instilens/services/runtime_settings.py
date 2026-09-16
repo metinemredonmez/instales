@@ -34,6 +34,7 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "elevenlabs_extra_voices": {"type": "text", "group": "ai"},
     "breached_password_check": {"type": "bool", "group": "access"},
     "news_enabled": {"type": "bool", "group": "data"},
+    "live_tv_channels": {"type": "text", "group": "data"},
     "kap_adapter": {"type": "choice:public|api|fixture", "group": "data"},
     "kap_public_days_back": {"type": "int", "group": "data", "min": 1, "max": 60},
     "kap_public_max_details": {"type": "int", "group": "data", "min": 1, "max": 500},

@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     release_upload_key: str | None = None  # openssl rand -hex 32
     desktop_updater_pubkey: str | None = None  # from `tauri signer generate` (public half; safe to publish)
 
+    # Live TV widget: YouTube channel IDs that run 24/7 finance streams, "Name|CHANNEL_ID" comma-separated.
+    # (Bloomberg HT blocks embedding — "izlemeyi engelledi" — so it is not in the default list.)
+    live_tv_channels: str = "Ekotürk|UCAGVKxpAKwXMWdmcHbrvcwQ, TRT Haber|UCBgTP2LOFVPmq15W-RH-WXA, Yahoo Finance|UCEAZeUIeJs0IjQiqTCdVSIg, CNBC|UCvJJ_dzjViJCoLf5uKUTwoA, Bloomberg TV|UCdK2BueKxC9VxXh7e1Ne4oQ"
+
     # News ticker: RSS headlines (TR first, then global). Optional NewsAPI key adds a keyword source.
     news_enabled: bool = True
     newsapi_key: str | None = None

@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom"
-import { Activity, Bell, Building2, GitCompare, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
+import { Activity, Bell, Building2, GitCompare, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun, Tv } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -13,6 +13,7 @@ import type { Key } from "@/i18n/tr"
 import { NewsTicker } from "@/components/domain/NewsTicker"
 import { BellMenu } from "@/components/domain/BellMenu"
 import { UpdateBanner } from "@/components/domain/UpdateBanner"
+import { LiveTvWidget } from "@/components/domain/LiveTvWidget"
 import { registerSw } from "@/lib/push"
 import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
@@ -50,6 +51,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Sidebar: labels or icons only — the user's choice, remembered.
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("instilens.sidebar") !== "icons" } catch { return true } })
   const toggleWide = () => setWide((w) => { try { localStorage.setItem("instilens.sidebar", w ? "icons" : "wide") } catch { /* ignore */ } return !w })
+  const [tv, setTv] = useState(() => { try { return localStorage.getItem("instilens.tv.open") === "1" } catch { return false } })
+  const toggleTv = () => setTv((o) => { try { localStorage.setItem("instilens.tv.open", o ? "0" : "1") } catch { /* ignore */ } return !o })
 
   const item = ({ to, key, icon: Icon, end }: NavItem) => (
     <NavLink
@@ -121,6 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <UpdateBanner />
+      <LiveTvWidget open={tv} onClose={() => setTv(false)} />
       <NewsTicker market={market} />
 
       <div className="mx-auto flex max-w-[1600px]">
@@ -130,6 +134,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {NAV.map(item)}
           {group("nav.group.personal")}
           {MINE.map(item)}
+          <button onClick={toggleTv} title={t("nav.liveTv")} className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition", tv ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
+            <Tv className="size-4 shrink-0" /> {wide && <span className="hidden lg:inline">{t("nav.liveTv")}</span>}
+          </button>
           {user?.role === "ADMIN" && (
             <>
               {group("nav.group.system")}

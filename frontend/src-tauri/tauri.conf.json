@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://app.instilens.com https://*.onesignal.com; media-src 'self' blob: https://app.instilens.com; connect-src 'self' https://app.instilens.com http://localhost:8000 http://127.0.0.1:8000 https://*.onesignal.com https://onesignal.com; worker-src 'self' https://cdn.onesignal.com"
+      "csp": "default-src 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://app.instilens.com https://*.onesignal.com; media-src 'self' blob: https://app.instilens.com; connect-src 'self' https://app.instilens.com http://localhost:8000 http://127.0.0.1:8000 https://*.onesignal.com https://onesignal.com; worker-src 'self' https://cdn.onesignal.com; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
     }
   },
   "bundle": {

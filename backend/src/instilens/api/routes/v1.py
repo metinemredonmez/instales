@@ -138,6 +138,17 @@ def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female
     return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")
 
 
+@router.get("/live-tv")
+def live_tv():
+    """Channels for the live TV widget (YouTube live embeds); editable in Admin → Ayarlar."""
+    out = []
+    for part in (settings.live_tv_channels or "").split(","):
+        name, _, cid = part.strip().partition("|")
+        if name and cid:
+            out.append({"name": name.strip(), "channel_id": cid.strip(), "embed": f"https://www.youtube-nocookie.com/embed/live_stream?channel={cid.strip()}&autoplay=1&mute=1"})
+    return out
+
+
 @router.get("/tts/status")
 def tts_status():
     from instilens.ai.tts import provider
