@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     kap_api_base_url: str = "https://apigwdev.mkk.com.tr/api/vyk"
     kap_api_key: str | None = None
     kap_api_secret: str | None = None
-    kap_api_auth_header: str | None = None  # portal-issued Authorization value (API Traffic log); preferred over key/secret
+    kap_api_auth_header: str | None = None  # optional portal-issued Authorization value
+    kap_api_auth_mode: str = "auto"  # auto-detected on first call; pin (e.g. "apikey") once `kap-test` reports it
     kap_api_rate_per_min: int = 6  # Free plan throttle
     kap_api_max_calls: int = 120  # per run (~20 min at 6/min); the scheduler runs often
     # "public" = prototype adapter over kap.org.tr (polite, capped). Dev/validation only.

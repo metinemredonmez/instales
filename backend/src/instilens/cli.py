@@ -198,7 +198,7 @@ def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
         typer.echo(f"✓ {name}: {str(value)[:160]}")
 
     try:
-        probe(settings.kap_api_base_url, settings.kap_api_key or "", settings.kap_api_secret or "", dump, auth_header=settings.kap_api_auth_header)
+        probe(settings.kap_api_base_url, settings.kap_api_key or "", settings.kap_api_secret or "", dump, auth_header=settings.kap_api_auth_header, auth_mode=settings.kap_api_auth_mode)
     finally:
         with open(out, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=1, default=str)

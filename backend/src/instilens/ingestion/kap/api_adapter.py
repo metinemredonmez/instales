@@ -43,23 +43,67 @@ class KapApiAdapter:
         known_source_ids: set[str] | None = None,
         client: httpx.Client | None = None,
         auth_header: str | None = None,
+        auth_mode: str = "auto",
     ) -> None:
-        # The portal issues a ready-made `Authorization` header value per user (visible in API Traffic logs).
-        # When given, it wins; otherwise fall back to Basic key:secret as the OpenAPI spec declares.
-        headers = {"Accept": "application/json"}
-        if auth_header:
-            headers["Authorization"] = auth_header if " " in auth_header else f"Bearer {auth_header}"
-        self.client = client or httpx.Client(
-            base_url=base_url.rstrip("/"), auth=None if auth_header else (api_key, api_secret), timeout=45, headers=headers
-        )
+        # Gateway (Apinizer) accepts one of: Basic key:secret, an API-key header, or a token. Which one the
+        # portal configured is not visible in the UI, so "auto" probes the candidates once on first use.
+        self.base_url, self.api_key, self.api_secret, self.auth_header, self.auth_mode = base_url.rstrip("/"), api_key, api_secret, auth_header, auth_mode
+        self.client = client or httpx.Client(base_url=self.base_url, timeout=45, headers={"Accept": "application/json"})
+        self._configured = False
         self.min_interval = 60.0 / max(rate_per_min, 1)
         self.max_calls, self.pys_only, self.start_index = max_calls, pys_only, start_index
         self.known = known_source_ids or set()
         self._last_call = 0.0
         self._calls = 0
 
+    # ------------------------------------------------------------------ auth
+    def auth_candidates(self) -> list[tuple[str, dict, tuple | None]]:
+        k, sec = self.api_key, self.api_secret
+        cands: list[tuple[str, dict, tuple | None]] = []
+        if self.auth_header:
+            v = self.auth_header if " " in self.auth_header else f"Bearer {self.auth_header}"
+            cands.append(("authorization", {"Authorization": v}, None))
+        if k:
+            cands += [
+                ("basic", {}, (k, sec)),
+                ("apikey", {"apikey": k}, None),
+                ("apikey+secret", {"apikey": k, "apisecret": sec}, None),
+                ("x-api-key", {"x-api-key": k}, None),
+                ("x-api-key+secret", {"x-api-key": k, "x-api-secret": sec}, None),
+                ("bearer-key", {"Authorization": f"Bearer {k}"}, None),
+                ("bearer-secret", {"Authorization": f"Bearer {sec}"}, None),
+                ("api-key", {"api-key": k}, None),
+                ("apiKey", {"apiKey": k, "apiSecret": sec}, None),
+            ]
+        if self.auth_mode != "auto":
+            cands = [c for c in cands if c[0] == self.auth_mode] or cands
+        return cands
+
+    def _apply(self, headers: dict, basic: tuple | None) -> None:
+        for h in ("Authorization", "apikey", "apisecret", "x-api-key", "x-api-secret", "api-key", "apiKey", "apiSecret"):
+            self.client.headers.pop(h, None)
+        self.client.headers.update(headers)
+        self.client.auth = httpx.BasicAuth(*basic) if basic else None
+
+    def detect_auth(self) -> str:
+        """Try candidates against /lastDisclosureIndex until one returns 200; sticks with it."""
+        last_err = "no credentials configured"
+        for name, headers, basic in self.auth_candidates():
+            self._apply(headers, basic)
+            time.sleep(self.min_interval)
+            r = self.client.get("/lastDisclosureIndex")
+            self._calls += 1
+            if r.status_code == 200 and "lastDisclosureIndex" in r.text:
+                self.auth_mode = name
+                self._configured = True
+                return name
+            last_err = f"{name}: HTTP {r.status_code} {r.text[:120]}"
+        raise RuntimeError(f"KAP API authentication failed — last attempt {last_err}")
+
     # ------------------------------------------------------------------ transport
     def _get(self, path: str, **params) -> httpx.Response:
+        if not self._configured:
+            self.detect_auth()
         wait = self.min_interval - (time.monotonic() - self._last_call)
         if wait > 0:
             time.sleep(wait)
@@ -239,9 +283,10 @@ def _time(value) -> datetime:
         return datetime.now()
 
 
-def probe(base_url: str, api_key: str, api_secret: str, dump: Callable[[str, object], None], auth_header: str | None = None) -> None:
-    """One-off connectivity check used by `instilens kap-test`: 4 calls, dumps raw JSON for inspection."""
-    a = KapApiAdapter(base_url, api_key, api_secret, auth_header=auth_header)
+def probe(base_url: str, api_key: str, api_secret: str, dump: Callable[[str, object], None], auth_header: str | None = None, auth_mode: str = "auto") -> None:
+    """One-off connectivity check used by `instilens kap-test`: auth detection + 4 calls, raw JSON dumped."""
+    a = KapApiAdapter(base_url, api_key, api_secret, auth_header=auth_header, auth_mode=auth_mode)
+    dump("auth_mode", a.detect_auth())
     last = a.last_index()
     dump("lastDisclosureIndex", last)
     page = a.list_from(max(last - 60, 1))

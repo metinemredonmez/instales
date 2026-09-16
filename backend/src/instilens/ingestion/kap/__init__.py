@@ -18,6 +18,6 @@ def build_kap_adapter() -> SourceAdapter:
         return KapApiAdapter(
             settings.kap_api_base_url, settings.kap_api_key or "", settings.kap_api_secret or "",
             rate_per_min=settings.kap_api_rate_per_min, max_calls=settings.kap_api_max_calls,
-            auth_header=settings.kap_api_auth_header,
+            auth_header=settings.kap_api_auth_header, auth_mode=settings.kap_api_auth_mode,
         )
     return KapFixtureAdapter(settings.kap_fixture_dir)
