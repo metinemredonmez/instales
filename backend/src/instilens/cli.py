@@ -203,3 +203,12 @@ def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
         with open(out, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=1, default=str)
         typer.echo(f"raw responses saved to {out}")
+
+
+@app.command()
+def news(market: str = "TR") -> None:
+    """Pull headlines from the configured RSS feeds (and NewsAPI if a key is set)."""
+    from instilens.ingestion.news import fetch_feeds
+
+    with session_scope() as s:
+        typer.echo(f"{market}: +{fetch_feeds(s, market, newsapi_key=settings.newsapi_key)} headlines")

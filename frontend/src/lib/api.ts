@@ -65,6 +65,8 @@ export interface Review {
   failed_disclosures: { id: number; source: string; source_id: string; kind: string; error: string | null }[]
 }
 
+export interface NewsItem { id: number; source: string; title: string; url: string; published_at: string; symbols: string[] }
+
 export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
 
 export interface Radar {
@@ -272,6 +274,7 @@ export const api = {
   compare: (a: string, b: string) => get<FundCompare>(`/funds/${a}/compare/${b}`),
   institutions: (market: Market) => get<InstitutionRow[]>("/institutions", { market }),
   institution: (market: Market, code: string) => get<InstitutionDetail>(`/institutions/${code}`, { market }),
+  news: (market: Market, symbol?: string, limit = 40) => get<NewsItem[]>("/news", { market, symbol, limit }),
   freshness: (market: Market) => get<Freshness[]>("/freshness", { market }),
   signalPerformance: (market: Market) => get<SignalPerf>("/signals/performance", { market }),
   adminUsers: () => get<AdminUser[]>("/admin/users"),

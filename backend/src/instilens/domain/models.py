@@ -338,3 +338,22 @@ class Notification(Base):
     link: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+# --------------------------------------------------------------------------- news (headlines only)
+
+
+class NewsItem(Base):
+    """Headline + link from an RSS/News API source. Never the article body — that stays with the publisher."""
+
+    __tablename__ = "news_items"
+    __table_args__ = (UniqueConstraint("url"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), index=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    url: Mapped[str] = mapped_column(String(1024))
+    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    symbols: Mapped[list] = mapped_column(JSON, default=list)  # matched instrument symbols
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

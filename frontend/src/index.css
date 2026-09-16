@@ -152,3 +152,7 @@
   html { scroll-behavior: smooth; }
   .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 }
+
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.ticker-track { animation: ticker 90s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }

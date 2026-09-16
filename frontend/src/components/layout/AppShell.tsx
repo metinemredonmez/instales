@@ -8,6 +8,7 @@ import { useMarket } from "@/lib/market"
 import { useAuth } from "@/lib/auth"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { NewsTicker } from "@/components/domain/NewsTicker"
 
 const NAV = [
   { to: "/", label: "Radar", icon: Radar, end: true },
@@ -97,6 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+      <NewsTicker market={market} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">{children}</main>
       <footer className="mx-auto max-w-[1400px] px-4 pb-8 pt-4 text-xs text-muted-foreground">
         Veriler kamuya açık düzenleyici bildirimlerden (KAP, SEC) türetilmiştir; yatırım tavsiyesi değildir. Her rakam kaynağına kadar izlenebilir.

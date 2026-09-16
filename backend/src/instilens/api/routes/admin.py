@@ -82,8 +82,12 @@ def _run_pipeline_bg() -> None:
             out["kap_ingested"] = pipeline.ingest(s, build_kap_adapter())
             out["sec_ingested"] = pipeline.ingest(s, build_sec_adapter())
             out["parsed"] = pipeline.parse_pending(s)
+            from instilens.config import settings as _settings
+            from instilens.ingestion.news import fetch_feeds
+
             for m in ("TR", "US"):
                 out[f"prices_{m}"] = load_prices(s, m, days=60)
+                out[f"news_{m}"] = fetch_feeds(s, m, newsapi_key=_settings.newsapi_key)
             out["position_changes"] = pipeline.rebuild_positions(s)
             out["scored"] = pipeline.compute_intelligence(s, date.today())
             out["notifications"] = evaluate(s, date.today())

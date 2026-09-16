@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost"]
     auth_rate_limit_per_minute: int = 10  # per client IP on /auth/login and /auth/register
 
+    # News ticker: RSS headlines (TR first, then global). Optional NewsAPI key adds a keyword source.
+    news_enabled: bool = True
+    newsapi_key: str | None = None
+
     # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
     # "local" is reserved for a self-hosted model (phase 3).
     ai_provider: str = "claude"

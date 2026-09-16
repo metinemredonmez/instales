@@ -19,6 +19,7 @@ dependencies = [
   "pypdf>=6.18.1",
   "yfinance>=1.7.0",
   "apscheduler>=3.10,<4",
+  "feedparser>=6.0.14",
 ]
 
 [project.optional-dependencies]

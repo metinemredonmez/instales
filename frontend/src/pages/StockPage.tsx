@@ -102,6 +102,8 @@ export function StockPage() {
         </Section>
       )}
 
+      <RelatedNews symbol={d.symbol} market={market} />
+
       <Timeline symbol={d.symbol} market={market} />
 
       <Section title="KAP bildirimleri" hint={`${d.events.length}`}>
@@ -109,6 +111,24 @@ export function StockPage() {
         {d.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
       </Section>
     </div>
+  )
+}
+
+function RelatedNews({ symbol, market }: { symbol: string; market: "TR" | "US" }) {
+  const q = useQuery({ queryKey: ["news", market, symbol], queryFn: () => api.news(market, symbol, 10) })
+  if (!q.data?.length) return null
+  return (
+    <Section title="İlgili haberler" hint="başlık + kaynak; tam metin için kaynağa gider">
+      <ul className="divide-y divide-border/60 text-sm">
+        {q.data.map((n) => (
+          <li key={n.id} className="flex items-center gap-3 px-4 py-2">
+            <span className="num w-24 shrink-0 text-xs text-muted-foreground">{fmtDate(n.published_at)}</span>
+            <a href={n.url} target="_blank" rel="noreferrer" className="truncate hover:underline">{n.title}</a>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{n.source}</span>
+          </li>
+        ))}
+      </ul>
+    </Section>
   )
 }
 

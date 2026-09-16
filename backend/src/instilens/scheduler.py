@@ -53,6 +53,17 @@ def ingest_sec() -> None:
         compute()
 
 
+def news_pull() -> None:
+    from instilens.config import settings
+    from instilens.ingestion.news import fetch_feeds
+
+    if not settings.news_enabled:
+        return
+    with session_scope() as s:
+        for market in ("TR", "US"):
+            log.info("%s news +%s", market, fetch_feeds(s, market, newsapi_key=settings.newsapi_key))
+
+
 def prices(market: str) -> None:
     with session_scope() as s:
         log.info("%s prices %s", market, load_prices(s, market, days=30))
@@ -68,6 +79,7 @@ def main() -> None:
     sched.add_job(prices, CronTrigger(hour=19, minute=30, timezone=TZ), args=["TR"], id="prices_tr")
     sched.add_job(prices, CronTrigger(hour=0, minute=30, timezone=TZ), args=["US"], id="prices_us")
     sched.add_job(compute, CronTrigger(hour=2, minute=0, timezone=TZ), id="nightly_compute")
+    sched.add_job(news_pull, CronTrigger(minute="*/10", timezone=TZ), id="news")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 

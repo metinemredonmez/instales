@@ -27,6 +27,11 @@ def get_radar(market: str = MarketParam, limit: int = 20, window: int | None = Q
     return data
 
 
+@router.get("/news")
+def get_news(market: str = MarketParam, symbol: str | None = None, limit: int = 40, session: Session = Depends(get_session)):
+    return analytics.news(session, market, symbol, limit)
+
+
 @router.get("/freshness")
 def get_freshness(market: str = MarketParam, session: Session = Depends(get_session)):
     return analytics.data_freshness(session, market)

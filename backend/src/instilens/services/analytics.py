@@ -551,3 +551,13 @@ def data_freshness(session: Session, market: str) -> list[dict]:
         {"source": "KAP portfolio reports", "cadence": "Monthly snapshot", "last": last(select(func.max(PortfolioSnapshot.as_of)).join(Fund).join(Institution).where(Institution.market_code == "TR")), "delayed": True},
         {"source": "Market prices", "cadence": "Daily (Yahoo, delayed)", "last": last(select(func.max(MarketPrice.trade_date)).join(Instrument).where(Instrument.market_code == "TR")), "delayed": False},
     ]
+
+
+def news(session: Session, market: str, symbol: str | None = None, limit: int = 40) -> list[dict]:
+    from instilens.domain.models import NewsItem
+
+    stmt = select(NewsItem).where(NewsItem.market_code == market).order_by(NewsItem.published_at.desc()).limit(limit * (4 if symbol else 1))
+    rows = session.scalars(stmt).all()
+    if symbol:
+        rows = [n for n in rows if symbol.upper() in (n.symbols or [])][:limit]
+    return [{"id": n.id, "source": n.source, "title": n.title, "url": n.url, "published_at": n.published_at.isoformat(), "symbols": n.symbols or []} for n in rows]
