@@ -40,8 +40,38 @@ export function AccountSecurityCard() {
           <Button type="button" size="sm" variant="outline" onClick={() => all.mutate()} disabled={all.isPending}><LogOut className="size-4" /> {t("account.logoutAll")}</Button>
         </div>
       </form>
+      <EmailVerifySection />
       {user?.role === "ADMIN" && <MfaSection />}
     </Section>
+  )
+}
+
+/** E-mail verification status + resend. Login is never blocked on it; it is here so the warning in the header can be cleared. */
+function EmailVerifySection() {
+  const { t } = useI18n()
+  const { user, refreshUser } = useAuth()
+  const [msg, setMsg] = useState<string | null>(null)
+  const resend = useMutation({
+    mutationFn: api.verifyResend,
+    onSuccess: (r) => { setMsg(r.email_verified ? t("emailverify.already") : r.sent ? t("emailverify.sent", { email: user?.email ?? "" }) : t("emailverify.noSmtp")); refreshUser().catch(() => {}) },
+    onError: (e) => setMsg((e as Error).message),
+  })
+  const ok = user?.email_verified === true
+  return (
+    <div className="border-t border-border/60 p-4 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{t("emailverify.title")}</span>
+        <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${ok ? "border-positive/40 text-positive" : "border-warning/40 text-warning"}`}>{ok ? t("emailverify.ok") : t("emailverify.pending")}</span>
+        <span className="text-xs text-muted-foreground">{user?.email}</span>
+      </div>
+      {!ok && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => { setMsg(null); resend.mutate() }} disabled={resend.isPending}>{t("emailverify.send")}</Button>
+          <span className="text-[11px] text-muted-foreground">{t("emailverify.howto")}</span>
+        </div>
+      )}
+      {msg && <div className="mt-2 text-xs text-muted-foreground">{msg}</div>}
+    </div>
   )
 }
 

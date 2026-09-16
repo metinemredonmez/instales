@@ -339,6 +339,7 @@ export const api = {
   ttsVoices: (lang: "tr" | "en") => get<{ provider: string | null; lang: string; voices: TtsVoice[] }>("/tts/voices", { lang }),
   /** Public: whether the login page may offer self-registration. */
   authConfig: () => get<AuthConfig>("/auth/config"),
+  verifyResend: () => send<{ ok: boolean; sent: boolean; email_verified: boolean }>("POST", "/auth/verify/resend"),
   mfaSetup: () => send<MfaSetup>("POST", "/auth/mfa/setup"),
   mfaEnable: (code: string) => send<{ ok: boolean }>("POST", "/auth/mfa/enable", { code }),
   mfaDisable: (code: string) => send<{ ok: boolean }>("POST", "/auth/mfa/disable", { code }),
