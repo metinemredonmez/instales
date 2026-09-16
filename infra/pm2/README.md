@@ -39,7 +39,14 @@ bash /opt/instilens/infra/pm2/server-setup.sh
 ```
 Then open `http://SERVER_IP:8088` (open TCP 8088 in the Hetzner firewall).
 
-## 4. When you buy a domain
+## 4. When you buy a domain (one command)
+```bash
+# DNS: A record  app.yourdomain.com → 91.99.183.64  (wait until `dig +short app.yourdomain.com` shows the IP)
+bash /opt/instilens/infra/pm2/domain-setup.sh app.yourdomain.com you@mail.com
+```
+This writes the nginx site, gets a Let's Encrypt certificate, switches the app to https, enables Web Push (VAPID keys) and production mode.
+
+## 4b. Manual notes
 Edit `/etc/nginx/sites-available/instilens`: `listen 80; server_name app.yourdomain.com;`
 then `certbot --nginx -d app.yourdomain.com`, and add `https://app.yourdomain.com` to
 `INSTILENS_CORS_ORIGINS` + `pm2 restart instilens-api --update-env`.

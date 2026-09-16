@@ -33,10 +33,15 @@ from instilens.domain.models import (
 RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY"}
 
 
+WATCHLIST_STOCK_RULES = ("NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SIGNAL")
+WATCHLIST_FUND_RULES = ("FUND_ACTIVITY", "KAP_TRANSACTION")
+
+
 def evaluate(session: Session, as_of: date) -> int:
-    """Evaluate every active rule against the latest state. Returns notifications created."""
+    """Evaluate every active rule — explicit rules plus implicit ones for every watchlist item. Returns notifications created."""
     created = 0
-    rules = session.scalars(select(AlertRule).where(AlertRule.is_active.is_(True))).all()
+    rules = list(session.scalars(select(AlertRule).where(AlertRule.is_active.is_(True))))
+    rules += _watchlist_rules(session)
     for rule in rules:
         for key, title, body, link in _fire(session, rule, as_of):
             if _notify(session, rule, key, title, body, link):
@@ -45,12 +50,26 @@ def evaluate(session: Session, as_of: date) -> int:
     return created
 
 
+def _watchlist_rules(session: Session) -> list[AlertRule]:
+    """Watching a stock or fund means: tell me when something happens to it. No rule form needed."""
+    from instilens.domain.models import Watchlist, WatchlistItem
+
+    out: list[AlertRule] = []
+    for item, owner in session.execute(select(WatchlistItem, Watchlist.owner_id).join(Watchlist, Watchlist.id == WatchlistItem.watchlist_id)):
+        kinds = WATCHLIST_STOCK_RULES if item.instrument_id else WATCHLIST_FUND_RULES if item.fund_id else ()
+        for k in kinds:
+            r = AlertRule(owner_id=owner, instrument_id=item.instrument_id, fund_id=item.fund_id, rule_type=k, params={}, is_active=True)
+            r.id = -item.id  # transient; dedup keys become "wl:<item>:<kind>:…"
+            out.append(r)
+    return out
+
+
 def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, link: str | None) -> bool:
-    dedup = f"{rule.id}:{key}"[:160]
+    dedup = (f"wl:{-rule.id}:{rule.rule_type}:{key}" if (rule.id or 0) < 0 else f"{rule.id}:{key}")[:160]
     exists = session.scalar(select(Notification.id).where(Notification.owner_id == rule.owner_id, Notification.dedup_key == dedup))
     if exists:
         return False
-    session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id, dedup_key=dedup, title=title, body=body, link=link))
+    session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id if (rule.id or 0) > 0 else None, dedup_key=dedup, title=title, body=body, link=link))
     return True
 
 

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from instilens.config import settings
-from instilens.domain.models import AiNote, Notification, User
+from instilens.domain.models import AiNote, Notification, PushSubscription, User
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,35 @@ def send_email(to: str, subject: str, body: str) -> bool:
         return False
 
 
+def send_push(session: Session, owner_id: str, title: str, body: str, link: str) -> int:
+    """Web Push to every device of the user; dead subscriptions (410/404) are removed."""
+    if not (settings.vapid_private_key and settings.vapid_public_key):
+        return 0
+    import json
+
+    from pywebpush import WebPushException, webpush
+
+    sent = 0
+    for sub in session.scalars(select(PushSubscription).where(PushSubscription.owner_id == owner_id)):
+        try:
+            webpush(
+                subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}},
+                data=json.dumps({"title": title, "body": body, "url": link}),
+                vapid_private_key=settings.vapid_private_key,
+                vapid_claims={"sub": settings.vapid_subject},
+                ttl=3600,
+            )
+            sub.last_ok_at = datetime.now(UTC)
+            sent += 1
+        except WebPushException as exc:
+            code = getattr(exc.response, "status_code", None)
+            if code in (404, 410):
+                session.delete(sub)
+            else:
+                log.warning("push failed: %s", exc)
+    return sent
+
+
 def deliver_pending(session: Session) -> int:
     """Send every undelivered notification to its owner's configured channels."""
     sent = 0
@@ -57,6 +86,7 @@ def deliver_pending(session: Session) -> int:
             continue
         link = f"{settings.public_url}{n.link}" if n.link else settings.public_url
         ok = False
+        ok |= send_push(session, n.owner_id, n.title, n.body, link) > 0
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{n.title}</b>\n{n.body}\n{link}")
         if u.notify_email:
@@ -75,6 +105,7 @@ def deliver_brief(session: Session, note: AiNote) -> int:
     body = f"{note.content}\n\n{watch}\n\n{settings.public_url}\nBetimleyici AI notu; yatırım tavsiyesi değildir."
     for u in session.scalars(select(User).where(User.notify_brief.is_(True))):
         ok = False
+        ok |= send_push(session, str(u.id), title, note.content[:180] + "…", settings.public_url) > 0
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{title}</b>\n{body}")
         if u.notify_email:

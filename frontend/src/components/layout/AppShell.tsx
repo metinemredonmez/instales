@@ -1,14 +1,15 @@
 import { NavLink, useNavigate } from "react-router-dom"
-import { Activity, Bell, Building2, GitCompare, LogOut, Moon, Radar, Search, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
+import { Activity, Building2, GitCompare, LogOut, Moon, Radar, Search, Shield, SlidersHorizontal, Sparkles, Star, Sun } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/lib/theme"
 import { useMarket } from "@/lib/market"
 import { useAuth } from "@/lib/auth"
-import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 import { NewsTicker } from "@/components/domain/NewsTicker"
+import { BellMenu } from "@/components/domain/BellMenu"
+import { registerSw } from "@/lib/push"
+import { useEffect } from "react"
 
 const NAV = [
   { to: "/", label: "Radar", icon: Radar, end: true },
@@ -23,8 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme()
   const { market, setMarket } = useMarket()
   const { user, logout } = useAuth()
-  const notes = useQuery({ queryKey: ["notifications"], queryFn: api.notifications, refetchInterval: 60_000 })
-  const unread = notes.data?.filter((n) => !n.read_at).length ?? 0
+  useEffect(() => { registerSw().catch(() => {}) }, [])
   const navigate = useNavigate()
   const [q, setQ] = useState("")
 
@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {user?.role === "ADMIN" && <NavLink to="/admin" aria-label="Admin" className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Shield className="size-4" /></NavLink>}
           <NavLink to="/watchlist" aria-label="Watchlist" className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Star className="size-4" /></NavLink>
-          <NavLink to="/alerts" aria-label="Alerts" className={({ isActive }) => cn("relative grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Bell className="size-4" />{unread > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">{unread}</span>}</NavLink>
+          <BellMenu />
           <Button variant="ghost" size="icon" aria-label="Tema" onClick={toggle}>
             {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </Button>

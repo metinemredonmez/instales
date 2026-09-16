@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
     public_url: str = "http://localhost:5173"  # used in notification links
+    # Web Push (VAPID). Generate once: `instilens vapid-keys`. Push needs HTTPS on the site.
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str = "mailto:alerts@instilens.app"
 
     # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
     # "local" is reserved for a self-hosted model (phase 3).

@@ -115,3 +115,49 @@ def test_notification(user: User = Depends(current_user), session: Session = Dep
     if u.notify_email:
         out["email"] = send_email(u.email, "InstiLens test", "Bildirimler bu adrese gelecek.")
     return out
+
+
+class PushSubBody(BaseModel):
+    endpoint: str = Field(max_length=1024)
+    keys: dict = Field(default_factory=dict)
+    user_agent: str | None = Field(None, max_length=256)
+
+
+@router.get("/push/public-key")
+def push_public_key():
+    from instilens.config import settings as _s
+
+    return {"public_key": _s.vapid_public_key, "enabled": bool(_s.vapid_public_key)}
+
+
+@router.post("/push/subscribe", status_code=201)
+def push_subscribe(body: PushSubBody, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    from sqlalchemy import select as _select
+
+    from instilens.domain.models import PushSubscription
+
+    sub = session.scalar(_select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
+    if sub is None:
+        sub = PushSubscription(owner_id=str(user.id), endpoint=body.endpoint, p256dh=body.keys.get("p256dh", ""), auth=body.keys.get("auth", ""), user_agent=body.user_agent)
+        session.add(sub)
+    else:
+        sub.owner_id, sub.p256dh, sub.auth = str(user.id), body.keys.get("p256dh", ""), body.keys.get("auth", "")
+    session.flush()
+    return {"id": sub.id}
+
+
+@router.delete("/push/subscribe", status_code=204)
+def push_unsubscribe(endpoint: str, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    from sqlalchemy import delete as _delete
+
+    from instilens.domain.models import PushSubscription
+
+    session.execute(_delete(PushSubscription).where(PushSubscription.endpoint == endpoint, PushSubscription.owner_id == str(user.id)))
+
+
+@router.post("/push/test")
+def push_test(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    from instilens.config import settings as _s
+    from instilens.services.notify import send_push
+
+    return {"sent": send_push(session, str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)}

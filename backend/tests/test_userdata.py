@@ -79,3 +79,13 @@ def test_new_read_models(session, pipeline_run):
     assert compute_outcomes(session) == 6
     perf = analytics.signal_performance(session, "TR")
     assert {p["signal_type"] for p in perf["by_type"]} >= {"ACCUMULATION", "POSITIVE_DIVERGENCE"}
+
+
+def test_watchlist_items_notify_without_rules(session, pipeline_run):
+    c = _client(session)
+    assert c.post("/api/v1/watchlist", json={"symbol": "THYAO"}).status_code == 201   # 3 funds opened THYAO → NEW_FUND_POSITION
+    assert c.post("/api/v1/watchlist", json={"fund_code": "TMV"}).status_code == 201  # TMV had NEW/EXIT moves
+    first = alerts.evaluate(session, AS_OF)
+    assert first >= 2 and alerts.evaluate(session, AS_OF) == 0
+    titles = [n["title"] for n in c.get("/api/v1/alerts/notifications").json()]
+    assert any(t.startswith("THYAO") for t in titles) and any(t.startswith("TMV") for t in titles)
