@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "VITE_API_BASE=http://localhost:8000 tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "VITE_API_BASE=https://app.instilens.com tauri build"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

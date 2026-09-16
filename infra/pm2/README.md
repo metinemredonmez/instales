@@ -79,3 +79,18 @@ bash infra/pm2/landing-setup.sh instilens.com you@example.com
 
 The waitlist form posts to `/api/v1/public/waitlist` (proxied to the backend, rate-limited); signups show in
 Admin → Users. `robots.txt` + `sitemap.xml` live in `landing/`; the app itself is `noindex`.
+
+## Security hardening (after every deploy that touches nginx)
+
+```bash
+bash infra/pm2/harden-nginx.sh app.instilens.com   # CSP/HSTS/Permissions-Policy on the SPA, query-less access log
+```
+Findings and status: `docs/07-security.md`. Admin → Veri & pipeline shows the security event log.
+
+## Desktop (macOS)
+
+```bash
+cd frontend && npm run desktop:build     # → src-tauri/target/release/bundle/dmg/InstiLens_<version>_aarch64.dmg
+```
+The desktop bundle talks to https://app.instilens.com (VITE_API_BASE). Unsigned: first launch needs
+right-click → Open (or `xattr -d com.apple.quarantine`). Sign + notarize with an Apple Developer ID before wider distribution.
