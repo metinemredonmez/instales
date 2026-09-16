@@ -19,3 +19,22 @@ document.querySelectorAll("form.wait").forEach((form) => {
     } catch { msg.className = "msg err"; msg.textContent = T.err }
   })
 })
+
+// Desktop installers: shown only when a release is published (same-origin API via nginx).
+;(async () => {
+  const slot = document.getElementById("desktop-dl")
+  if (!slot) return
+  try {
+    const r = await fetch("/api/v1/public/desktop/latest")
+    const d = r.ok ? await r.json() : null
+    if (!d) return
+    const lang = document.documentElement.lang || "tr"
+    const ua = navigator.userAgent
+    const mine = /Mac/.test(ua) ? "darwin" : /Win/.test(ua) ? "windows" : /Linux/.test(ua) ? "linux" : ""
+    const files = d.files.filter((f) => f.kind === "INSTALLER")
+    const pick = files.find((f) => f.platform.startsWith(mine) && (mine !== "darwin" || f.platform.endsWith("aarch64"))) || files[0]
+    if (!pick) return
+    slot.hidden = false
+    slot.innerHTML = `<a class="btn" href="${pick.url}">${lang === "en" ? "Desktop app" : "Masaüstü uygulaması"} · ${pick.label} · v${d.version}</a>`
+  } catch {}
+})()

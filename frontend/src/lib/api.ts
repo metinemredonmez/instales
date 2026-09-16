@@ -188,6 +188,9 @@ export interface FundDetail {
 
 export interface RuntimeSetting { key: string; group: "access" | "ai" | "data"; type: string; min: number | null; max: number | null; value: unknown; default: unknown; overridden: boolean; updated_at: string | null; updated_by: string | null }
 
+export interface DesktopFile { id: number; platform: string; label: string; kind: "INSTALLER" | "UPDATE"; filename: string; size: number; sha256: string; signed: boolean; downloads: number; url: string }
+export interface DesktopRelease { id: number; version: string; status: "DRAFT" | "PUBLISHED" | "WITHDRAWN"; notes: string; created_by: string | null; created_at: string; published_at: string | null; files: DesktopFile[] }
+
 export interface AuditEvent { id: number; kind: string; actor: string | null; subject: string | null; ip: string | null; detail: string | null; created_at: string }
 
 export interface WaitlistRow { id: number; email: string; name: string | null; lang: string; source: string | null; created_at: string }
@@ -321,6 +324,10 @@ export const api = {
   logoutAll: () => send<{ ok: boolean }>("POST", "/auth/logout-all"),
   adminSettings: () => get<RuntimeSetting[]>("/admin/settings"),
   adminSaveSettings: (values: Record<string, unknown>) => send<{ changed: string[]; settings: RuntimeSetting[] }>("PUT", "/admin/settings", values),
+  adminReleases: () => get<{ platforms: { key: string; label: string }[]; updater_pubkey_set: boolean; upload_key_set: boolean; releases: DesktopRelease[] }>("/admin/releases"),
+  adminPatchRelease: (id: number, body: { status?: "DRAFT" | "PUBLISHED" | "WITHDRAWN"; notes?: string }) => send<DesktopRelease>("PATCH", `/admin/releases/${id}`, body),
+  adminDeleteRelease: (id: number) => send<void>("DELETE", `/admin/releases/${id}`),
+  desktopLatest: () => get<DesktopRelease | null>("/public/desktop/latest"),
   adminAudit: (limit = 100) => get<AuditEvent[]>("/admin/audit", { limit }),
   stockAi: (market: Market, symbol: string, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, lang, refresh: refresh || undefined }),
   brief: (market: Market, lang: "tr" | "en" = "tr", refresh = false) => get<AiNote | null>("/brief", { market, lang, refresh: refresh || undefined }),

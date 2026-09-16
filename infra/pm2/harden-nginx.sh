@@ -16,6 +16,8 @@ add_header X-Frame-Options DENY always;
 add_header Referrer-Policy strict-origin-when-cross-origin always;
 add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+# desktop installers are uploaded through /api/v1/public/desktop/ci/upload (up to ~400 MB)
+client_max_body_size 500m;
 CONF
 # include once, right after the 443 server's server_name line
 if ! grep -q "instilens-app-headers.conf" "$SITE"; then

@@ -393,6 +393,46 @@ class NewsRule(Base):
 # --------------------------------------------------------------------------- AI notes (cached model output)
 
 
+class Release(Base):
+    """A desktop app version. DRAFT while files are being uploaded, PUBLISHED when the updater may serve it,
+    WITHDRAWN if pulled. Version numbers are handed out by the server (`next_version`) so Mac and Linux/Windows
+    builds made on different machines land in the same release."""
+
+    __tablename__ = "releases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="DRAFT", index=True)  # DRAFT / PUBLISHED / WITHDRAWN
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str | None] = mapped_column(String(254))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    files: Mapped[list[ReleaseFile]] = relationship(back_populates="release", cascade="all, delete-orphan")
+
+
+class ReleaseFile(Base):
+    """One artifact of a release. `platform` is the Tauri target key (darwin-aarch64, darwin-x86_64,
+    windows-x86_64, linux-x86_64); `kind` INSTALLER (dmg/exe/deb/AppImage for humans) or UPDATE (the
+    updater bundle: .app.tar.gz / -setup.exe / .AppImage with its minisign signature)."""
+
+    __tablename__ = "release_files"
+    __table_args__ = (UniqueConstraint("release_id", "filename"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_id: Mapped[int] = mapped_column(ForeignKey("releases.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(16))  # INSTALLER / UPDATE
+    filename: Mapped[str] = mapped_column(String(256))
+    size: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    signature: Mapped[str | None] = mapped_column(Text)  # minisign signature (UPDATE files)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    downloads: Mapped[int] = mapped_column(Integer, default=0)
+
+    release: Mapped[Release] = relationship(back_populates="files")
+
+
 class AppSetting(Base):
     """Runtime override of a non-secret setting, edited from the admin UI. Secrets never live here."""
 

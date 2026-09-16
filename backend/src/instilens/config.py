@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     breached_password_check: bool = True  # NIST 800-63B-4: reject passwords seen in breaches (HIBP k-anonymity)
     ai_requests_per_hour: int = 30  # per user: /research and forced AI refreshes (paid calls)
 
+    # Desktop releases (Tauri). Installers live on this disk; CI/scripts upload with the key; the app's
+    # updater verifies the minisign signature made with TAURI_SIGNING_PRIVATE_KEY at build time.
+    releases_dir: Path = BACKEND_ROOT / "media" / "releases"
+    release_upload_key: str | None = None  # openssl rand -hex 32
+    desktop_updater_pubkey: str | None = None  # from `tauri signer generate` (public half; safe to publish)
+
     # News ticker: RSS headlines (TR first, then global). Optional NewsAPI key adds a keyword source.
     news_enabled: bool = True
     newsapi_key: str | None = None

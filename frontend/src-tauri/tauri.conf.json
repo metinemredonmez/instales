@@ -60,6 +60,15 @@
       "appimage": {
         "bundleMediaFramework": true
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://app.instilens.com/api/v1/public/desktop/update/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFENjBCRjFCOUJFMzAyMUIKUldRYkF1T2JHNzlncmVzSVJQTTdKWng4azBuZkJvd0JScTFYUk92eDdZbWFEb29HL2svQ3lDLy8K"
     }
   }
 }

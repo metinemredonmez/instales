@@ -12,6 +12,7 @@ import { useI18n, type Lang } from "@/lib/i18n"
 import type { Key } from "@/i18n/tr"
 import { NewsTicker } from "@/components/domain/NewsTicker"
 import { BellMenu } from "@/components/domain/BellMenu"
+import { UpdateBanner } from "@/components/domain/UpdateBanner"
 import { registerSw } from "@/lib/push"
 import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
@@ -119,6 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+      <UpdateBanner />
       <NewsTicker market={market} />
 
       <div className="mx-auto flex max-w-[1600px]">

@@ -15,7 +15,7 @@ TEXT = {
         "nav_product": "Ürün", "nav_how": "Nasıl çalışır", "nav_trust": "Güven", "nav_login": "Giriş yap",
         "h1": "Profesyonel para <em>nereye</em> gidiyor?",
         "lead": "Fonların hangi hisseleri topladığını, azalttığını, yeni pozisyon açtığını ve terk ettiğini tek ekrandan takip et. Her rakam KAP veya SEC kaynağına kadar izlenebilir.",
-        "cta_app": "Uygulamaya git", "cta_wait": "Erken erişim iste",
+        "cta_app": "Uygulamaya git", "cta_wait": "Erken erişim iste", "cta_desktop": "Masaüstü uygulaması",
         "wait_ph": "e-posta adresin", "wait_btn": "Listeye katıl", "wait_hint": "Davetle açılıyor. Spam yok, sadece yerin açılınca yazarız.",
         "shot_cap": "Radar — BIST, gerçek KAP verisi. Skorlar deterministik ve açıklanabilir; \"Neden 87?\" sorusunun cevabı her skorun altında.",
         "f_h2": "Ne görürsün", "f_sub": "Fiyat grafiği değil, para akışı. Kimin, ne zaman, ne kadar aldığı.",
@@ -50,7 +50,7 @@ TEXT = {
         "nav_product": "Product", "nav_how": "How it works", "nav_trust": "Trust", "nav_login": "Sign in",
         "h1": "See <em>where</em> smart money moves.",
         "lead": "Track which stocks funds accumulate, reduce, enter and abandon — on one screen. Every number is traceable to its KAP or SEC source.",
-        "cta_app": "Open the app", "cta_wait": "Request early access",
+        "cta_app": "Open the app", "cta_wait": "Request early access", "cta_desktop": "Desktop app",
         "wait_ph": "your e-mail", "wait_btn": "Join the list", "wait_hint": "Invite-only for now. No spam — we only write when your seat opens.",
         "shot_cap": "Radar — BIST, real KAP data. Scores are deterministic and explainable; the answer to \"Why 87?\" sits under every score.",
         "f_h2": "What you see", "f_sub": "Not a price chart — money flow. Who bought, when, how much.",
@@ -142,7 +142,7 @@ def page(lang: str) -> str:
     <button class="btn primary" type="submit">{t['wait_btn']}</button>
     <div class="msg">{t['wait_hint']}</div>
   </form>
-  <div class="cta"><a class="btn" href="{APP}">{t['cta_app']} →</a></div>
+  <div class="cta"><a class="btn" href="{APP}">{t['cta_app']} →</a><span id="desktop-dl" hidden></span></div>
   <figure class="shot"><img src="{a}assets/radar.webp" width="1400" height="780" alt="InstiLens Radar" loading="eager"><figcaption>{t['shot_cap']}</figcaption></figure>
 </div></section>
 

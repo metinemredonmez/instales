@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom"
-import { Database, Newspaper, Settings, ShieldCheck, Users } from "lucide-react"
+import { Database, Newspaper, Package, Settings, ShieldCheck, Users } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 import type { Key } from "@/i18n/tr"
@@ -12,6 +12,7 @@ const ITEMS: NavItem[] = [
   { to: "/admin/review", key: "admin.nav.review", icon: ShieldCheck },
   { to: "/admin/news", key: "admin.nav.news", icon: Newspaper },
   { to: "/admin/settings", key: "admin.nav.settings", icon: Settings },
+  { to: "/admin/releases", key: "admin.nav.releases", icon: Package },
 ]
 
 /** Admin area: side menu on wide screens, scrollable tab row on narrow ones; sub-pages render in the outlet. */

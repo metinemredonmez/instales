@@ -105,3 +105,23 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 (or Actions → desktop → Run workflow). Private repos: macOS runner minutes count 10×, Windows 2× against the
 free monthly quota — a full matrix run costs roughly 150–200 minutes of quota.
+
+## Desktop release management (Sürüm yönetimi)
+
+The store is our own server (Admin → Sürüm yönetimi): `releases` + `release_files`, files under
+`backend/media/releases/<version>/`. The app checks `/api/v1/public/desktop/update/{target}/{arch}/{version}`
+at launch and installs signed updates.
+
+One-time:
+```bash
+# server (root): toolchain for Linux (+ Windows via cargo-xwin), upload key, restart API
+bash infra/pm2/desktop-build.sh --setup
+# Mac → server: the updater signing key (private half; never in git)
+scp ~/.tauri/instilens.key root@91.99.183.64:/opt/instilens/.tauri/instilens.key
+```
+Every release — two commands, same version:
+```bash
+bash scripts/desktop-release.sh              # Mac: macOS (+Windows) → uploads, prints the version
+ssh instilens 'bash /opt/instilens/infra/pm2/desktop-build.sh <version>'   # Linux (+Windows) → same draft
+```
+Then Admin → Sürüm yönetimi → check the four columns → **Yayımla**. Users see "Güncelle ve yeniden başlat".

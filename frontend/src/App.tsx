@@ -18,6 +18,8 @@ import { AdminUsersPage } from "@/pages/admin/AdminUsersPage"
 import { AdminReviewPage } from "@/pages/admin/AdminReviewPage"
 import { AdminNewsPage } from "@/pages/admin/AdminNewsPage"
 import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage"
+import { AdminReleasesPage } from "@/pages/admin/AdminReleasesPage"
+import { DesktopPage } from "@/pages/DesktopPage"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 
@@ -40,12 +42,14 @@ export default function App() {
         <Route path="/institutions" element={<InstitutionsPage />} />
         <Route path="/institutions/:code" element={<InstitutionPage />} />
         <Route path="/compare" element={<ComparePage />} />
+        <Route path="/desktop" element={<DesktopPage />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminOverviewPage />} />
           <Route path="users" element={<AdminUsersPage />} />
           <Route path="review" element={<AdminReviewPage />} />
           <Route path="news" element={<AdminNewsPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="releases" element={<AdminReleasesPage />} />
         </Route>
       </Routes>
       {/* Narration widget: global so a note keeps reading while the user moves between pages */}

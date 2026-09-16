@@ -69,6 +69,62 @@ def put_runtime_settings(body: dict, request: Request, actor: User = Depends(req
     return {"changed": changed, "settings": runtime_settings.snapshot(session)}
 
 
+# ---------------------------------------------------------------- desktop releases
+@router.get("/releases")
+def list_releases(session: Session = Depends(get_session)):
+    from instilens.config import settings
+    from instilens.domain.models import Release
+    from instilens.services import releases
+
+    rows = session.scalars(select(Release).order_by(Release.created_at.desc())).all()
+    return {"platforms": [{"key": k, "label": releases.PLATFORM_LABEL[k]} for k in releases.PLATFORMS],
+            "updater_pubkey_set": bool(settings.desktop_updater_pubkey), "upload_key_set": bool(settings.release_upload_key),
+            "releases": [releases.release_json(r, settings.public_url) for r in rows]}
+
+
+class ReleasePatch(BaseModel):
+    status: str | None = Field(None, pattern="^(DRAFT|PUBLISHED|WITHDRAWN)$")
+    notes: str | None = Field(None, max_length=4000)
+
+
+@router.patch("/releases/{release_id}")
+def patch_release(release_id: int, body: ReleasePatch, request: Request, actor: User = Depends(require_admin), session: Session = Depends(get_session)):
+    from instilens.config import settings
+    from instilens.domain.models import Release
+    from instilens.services import releases
+
+    rel = session.get(Release, release_id)
+    if rel is None:
+        raise HTTPException(404, "not found")
+    if body.notes is not None:
+        rel.notes = body.notes
+    if body.status:
+        try:
+            releases.set_status(session, rel, body.status)
+        except releases.ReleaseError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        audit(session, "admin.release", actor=actor.email, subject=rel.version, ip=client_ip(request), detail=body.status)
+    return releases.release_json(rel, settings.public_url)
+
+
+@router.delete("/releases/{release_id}", status_code=204)
+def delete_release(release_id: int, request: Request, actor: User = Depends(require_admin), session: Session = Depends(get_session)):
+    """Only drafts can be deleted; published versions are withdrawn instead (someone may have installed them)."""
+    import shutil
+
+    from instilens.config import settings
+    from instilens.domain.models import Release
+
+    rel = session.get(Release, release_id)
+    if rel is None:
+        raise HTTPException(404, "not found")
+    if rel.status != "DRAFT":
+        raise HTTPException(400, "withdraw published releases instead of deleting them")
+    shutil.rmtree(settings.releases_dir / rel.version, ignore_errors=True)
+    session.delete(rel)
+    audit(session, "admin.release", actor=actor.email, subject=rel.version, ip=client_ip(request), detail="DELETED")
+
+
 @router.get("/audit")
 def audit_events(limit: int = Query(100, ge=1, le=500), session: Session = Depends(get_session)):
     """Security events, newest first (logins, lockouts, password/role changes)."""
