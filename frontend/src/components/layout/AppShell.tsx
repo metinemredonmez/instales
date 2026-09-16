@@ -55,14 +55,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="hidden text-sm font-semibold tracking-tight lg:inline">InstiLens</span>
           </NavLink>
 
-          <div className="flex rounded-md border border-border p-0.5 text-xs">
-            {(["TR", "US"] as const).map((m) => (
+          <div className="flex rounded-md border border-border bg-card p-0.5 text-xs" role="tablist" aria-label="Piyasa">
+            {([["TR", "BIST", "KAP · fonlar"], ["US", "Global", "SEC · 13F"]] as const).map(([m, label, hint]) => (
               <button
                 key={m}
+                role="tab"
+                aria-selected={market === m}
                 onClick={() => setMarket(m)}
-                className={cn("rounded-[5px] px-2.5 py-1 font-medium transition", market === m ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
+                title={hint}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 font-medium transition",
+                  market === m ? "bg-secondary text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
               >
-                {m === "TR" ? "🇹🇷 Türkiye" : "🌎 Global"}
+                <span className={cn("rounded-sm px-1 py-px font-mono text-[10px] tracking-wider", market === m ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{m}</span>
+                {label}
               </button>
             ))}
           </div>
