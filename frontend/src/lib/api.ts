@@ -76,6 +76,8 @@ export interface NewsRule {
 
 export interface AiNote { kind: string; subject: string; as_of: string; content: string; watch: string[]; headline_ids: number[]; confidence_note: string; model: string; created_at: string }
 
+export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; channels: { telegram: boolean; email: boolean } }
+
 export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
 
 export interface Radar {
@@ -316,6 +318,9 @@ export const api = {
   removeRule: (id: number) => send<void>("DELETE", `/alerts/rules/${id}`),
   notifications: () => get<Notification[]>("/alerts/notifications"),
   markRead: (id?: number) => send<{ marked: number }>("POST", `/alerts/notifications/read${id ? `?id=${id}` : ""}`),
+  mySettings: () => get<NotifySettings>("/me/settings"),
+  saveSettings: (body: { notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean }) => send<{ ok: boolean }>("PUT", "/me/settings", body),
+  testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
   eventStreamUrl: (market: Market) => `${BASE}/events/stream?market=${market}&token=${encodeURIComponent(getToken() ?? "")}`,
 }

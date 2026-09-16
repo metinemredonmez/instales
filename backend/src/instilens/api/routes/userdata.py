@@ -83,3 +83,35 @@ def evaluate_now(user: User = Depends(current_user), session: Session = Depends(
     from instilens.services.analytics import latest_score_date
 
     return {"created": evaluate(session, latest_score_date(session) or date.today())}
+
+
+class NotifySettings(BaseModel):
+    notify_email: bool = False
+    notify_telegram_chat_id: str | None = Field(None, max_length=32)
+    notify_brief: bool = True
+
+
+@router.get("/me/settings")
+def get_settings(user: User = Depends(current_user)):
+    return {"email": user.email, "notify_email": user.notify_email, "notify_telegram_chat_id": user.notify_telegram_chat_id, "notify_brief": user.notify_brief,
+            "channels": {"telegram": bool(__import__("instilens.config", fromlist=["settings"]).settings.telegram_bot_token), "email": bool(__import__("instilens.config", fromlist=["settings"]).settings.smtp_host)}}
+
+
+@router.put("/me/settings")
+def put_settings(body: NotifySettings, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    u = session.get(User, user.id)
+    u.notify_email, u.notify_telegram_chat_id, u.notify_brief = body.notify_email, (body.notify_telegram_chat_id or "").strip() or None, body.notify_brief
+    return {"ok": True}
+
+
+@router.post("/me/settings/test")
+def test_notification(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    from instilens.services.notify import send_email, send_telegram
+
+    u = session.get(User, user.id)
+    out = {"telegram": None, "email": None}
+    if u.notify_telegram_chat_id:
+        out["telegram"] = send_telegram(u.notify_telegram_chat_id, "InstiLens bildirimleri bu sohbete gelecek ✅")
+    if u.notify_email:
+        out["email"] = send_email(u.email, "InstiLens test", "Bildirimler bu adrese gelecek.")
+    return out

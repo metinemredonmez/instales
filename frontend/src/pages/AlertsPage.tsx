@@ -8,6 +8,7 @@ import { fmtDateTime } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { NotifySettingsCard } from "@/components/domain/NotifySettingsCard"
 
 const RULE_LABEL: Record<string, string> = {
   NEW_FUND_POSITION: "Yeni fon pozisyonu",
@@ -62,6 +63,7 @@ export function AlertsPage() {
               <Button type="submit" size="sm" className="w-full" disabled={add.isPending}>Kural ekle</Button>
             </form>
           </Section>
+          <NotifySettingsCard />
           <Section title="Aktif kurallar" hint={`${active.length}`}>
             <ul className="divide-y divide-border/60 text-sm">
               {active.map((r) => (

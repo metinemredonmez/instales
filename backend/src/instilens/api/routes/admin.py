@@ -91,6 +91,9 @@ def _run_pipeline_bg() -> None:
             out["position_changes"] = pipeline.rebuild_positions(s)
             out["scored"] = pipeline.compute_intelligence(s, date.today())
             out["notifications"] = evaluate(s, date.today())
+            from instilens.services.notify import deliver_pending
+
+            out["delivered"] = deliver_pending(s)
             out["outcomes"] = compute_outcomes(s)
         _RUN_STATE["result"] = out
     except Exception:

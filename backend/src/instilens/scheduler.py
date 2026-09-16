@@ -21,6 +21,7 @@ from instilens.ingestion.prices.yahoo import load_prices
 from instilens.ingestion.sec import build_sec_adapter
 from instilens.services import pipeline
 from instilens.services.alerts import evaluate
+from instilens.services.notify import deliver_brief, deliver_pending
 from instilens.services.outcomes import compute_outcomes
 
 log = logging.getLogger("instilens.scheduler")
@@ -32,6 +33,7 @@ def compute() -> None:
         log.info("positions %s", pipeline.rebuild_positions(s))
         log.info("scored %s", pipeline.compute_intelligence(s, date.today()))
         log.info("notifications %s", evaluate(s, date.today()))
+        log.info("delivered %s", deliver_pending(s))
         log.info("outcomes %s", compute_outcomes(s))
 
 
@@ -80,7 +82,8 @@ def briefs() -> None:
     with session_scope() as s:
         for market in ("TR", "US"):
             try:
-                log.info("%s brief %s", market, "ok" if daily_brief(s, market, force=True) else "skipped")
+                note = daily_brief(s, market, force=True)
+                log.info("%s brief %s, delivered %s", market, "ok" if note else "skipped", deliver_brief(s, note) if note and market == "TR" else 0)
             except Exception as exc:
                 log.warning("brief %s failed: %s", market, exc)
 

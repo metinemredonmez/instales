@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     ai_news_enabled: bool = True  # Claude tags/summaries for headlines (needs ANTHROPIC_API_KEY)
     ai_news_model: str = "claude-opus-5"  # set claude-haiku-4-5 for a cheaper tagging pass
 
+    # Notification delivery. Telegram: create a bot with @BotFather, put the token here; users paste their chat id.
+    telegram_bot_token: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    public_url: str = "http://localhost:5173"  # used in notification links
+
     # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
     # "local" is reserved for a self-hosted model (phase 3).
     ai_provider: str = "claude"

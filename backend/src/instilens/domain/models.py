@@ -289,6 +289,10 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(128))
     plan: Mapped[str] = mapped_column(String(16), default="FREE")  # FREE / PRO / PRO_PLUS
     role: Mapped[str] = mapped_column(String(16), default="USER")  # USER / ADMIN
+    # Delivery preferences for alerts and the morning brief.
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_telegram_chat_id: Mapped[str | None] = mapped_column(String(32))
+    notify_brief: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -338,6 +342,7 @@ class Notification(Base):
     link: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime)  # sent via email/telegram
 
 
 # --------------------------------------------------------------------------- news (headlines only)

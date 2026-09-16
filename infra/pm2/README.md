@@ -48,3 +48,8 @@ then `certbot --nginx -d app.yourdomain.com`, and add `https://app.yourdomain.co
 - `pm2 logs instilens-scheduler` — ingest cadence and errors
 - `pm2 restart instilens-api instilens-scheduler --update-env` after changing `.env`
 - Ports used: 8010 (api, localhost only), 8088 (nginx). Change both files if they collide.
+
+## Notifications (optional)
+Telegram: talk to @BotFather → `/newbot` → token → `.env`: `INSTILENS_TELEGRAM_BOT_TOKEN=...`; each user pastes their chat id in Alarmlar → Bildirim kanalları.
+E-mail: `INSTILENS_SMTP_HOST`, `INSTILENS_SMTP_PORT=587`, `INSTILENS_SMTP_USER`, `INSTILENS_SMTP_PASSWORD`, `INSTILENS_SMTP_FROM=alerts@yourdomain`.
+Links in messages use `INSTILENS_PUBLIC_URL` (e.g. `http://91.99.183.64:8088`).
