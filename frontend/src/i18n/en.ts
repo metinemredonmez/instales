@@ -342,6 +342,7 @@ export const en: Record<Key, string> = {
   "notify.push.unsupported": "This device/browser doesn't support it (HTTPS required)",
   "notify.push.noKey": "No push key configured on the server",
   "notify.push.sdk": "OneSignal SDK failed to load — reload the page and retry (ad blocker / CSP)",
+  "notify.push.noUser": "OneSignal user record was not created — clear this site's data in the browser (Application → Storage → Clear site data) and retry",
   "notify.push.turnOff": "Turn off",
   "notify.push.turnOn": "Turn on",
   "notify.push.testFailed": "Notification could not be delivered.",

@@ -6,7 +6,35 @@ export interface OneSignalApi {
   logout(): Promise<void>
   Slidedown: { promptPush(): Promise<void> }
   Notifications: { permission: boolean; requestPermission(): Promise<void>; isPushSupported(): boolean }
-  User: { PushSubscription: { optedIn?: boolean; optIn(): Promise<void>; optOut(): Promise<void> } }
+  User: {
+    /** Server-assigned id; undefined while the SDK only holds a local placeholder (user never created upstream). */
+    onesignalId?: string
+    externalId?: string
+    PushSubscription: { id?: string; token?: string; optedIn?: boolean; optIn(): Promise<void>; optOut(): Promise<void> }
+  }
+}
+
+/**
+ * OneSignal must own the service-worker scope "/". A leftover registration of our VAPID worker (/sw.js, from a deploy
+ * before OneSignal was configured) keeps the SDK from installing OneSignalSDKWorker.js, so the push token it obtains
+ * is bound to the wrong worker and the upstream user is never created. Drop it (and its subscription) once.
+ */
+export async function evictForeignWorker(): Promise<boolean> {
+  if (!("serviceWorker" in navigator)) return false
+  let evicted = false
+  for (const r of await navigator.serviceWorker.getRegistrations()) {
+    const url = (r.active ?? r.waiting ?? r.installing)?.scriptURL ?? ""
+    if (!url.endsWith("/sw.js")) continue
+    try { await (await r.pushManager.getSubscription())?.unsubscribe() } catch { /* already gone */ }
+    await r.unregister()
+    evicted = true
+  }
+  return evicted
+}
+
+export const waitFor = async (cond: () => boolean, ms: number, step = 250) => {
+  for (let t = 0; t < ms; t += step) { if (cond()) return true; await new Promise((r) => setTimeout(r, step)) }
+  return cond()
 }
 
 let loaded = false

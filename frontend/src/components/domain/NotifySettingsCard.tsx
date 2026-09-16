@@ -32,7 +32,7 @@ export function NotifySettingsCard() {
     if (push === "on") { await disablePush().catch(() => {}); setPush("off"); setPushMsg(""); return }
     const r = await enablePush(user?.id).catch(() => "disabled" as const)
     setPush(r === "ok" ? "on" : "off")
-    setPushMsg(r === "ok" ? t("notify.push.on") : r === "denied" ? t("notify.push.denied") : r === "unsupported" ? t("notify.push.unsupported") : r === "sdk" ? t("notify.push.sdk") : t("notify.push.noKey"))
+    setPushMsg(r === "ok" ? t("notify.push.on") : r === "denied" ? t("notify.push.denied") : r === "unsupported" ? t("notify.push.unsupported") : r === "sdk" ? t("notify.push.sdk") : r === "nouser" ? t("notify.push.noUser") : t("notify.push.noKey"))
   }
   const pushTest = useMutation({ mutationFn: api.pushTest })
   return (

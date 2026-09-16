@@ -1,5 +1,5 @@
 import { api } from "./api"
-import { loadOneSignal, oneSignalCall } from "./onesignal"
+import { evictForeignWorker, loadOneSignal, oneSignalCall, waitFor } from "./onesignal"
 
 function b64ToUint8(b64: string) {
   const pad = "=".repeat((4 - (b64.length % 4)) % 4)
@@ -27,7 +27,7 @@ export async function registerSw() {
 }
 
 /** Ask permission and subscribe this device (OneSignal or VAPID, per the server's configuration). */
-export type PushEnableResult = "ok" | "denied" | "unsupported" | "disabled" | "sdk"
+export type PushEnableResult = "ok" | "denied" | "unsupported" | "disabled" | "sdk" | "nouser"
 
 export async function enablePush(userId?: number | null): Promise<PushEnableResult> {
   if (!pushSupported()) return "unsupported"
@@ -35,11 +35,17 @@ export async function enablePush(userId?: number | null): Promise<PushEnableResu
   if (mode === "onesignal" && appId) {
     loadOneSignal(appId)
     return oneSignalCall(async (os) => {
+      await evictForeignWorker()
       if (userId) await os.login(String(userId))
       await os.Notifications.requestPermission()
       if (!os.Notifications.permission) return "denied" as const
       await os.User.PushSubscription.optIn()
-      return "ok" as const
+      // Delivery targets external_id upstream, so the user must exist there — a local-only id means createUser never
+      // landed. One logout/login cycle re-sends identity + subscription before we give up.
+      if (await waitFor(() => !!os.User.onesignalId, 6000)) return "ok" as const
+      await os.logout()
+      if (userId) await os.login(String(userId))
+      return (await waitFor(() => !!os.User.onesignalId, 8000)) ? ("ok" as const) : ("nouser" as const)
     }, "disabled", 8000, "sdk")
   }
   if (mode !== "vapid" || !publicKey) return "disabled"
@@ -68,7 +74,8 @@ export async function pushState(): Promise<"on" | "off"> {
   const { mode, appId } = await pushMode().catch(() => ({ mode: "none" as PushMode, appId: null }))
   if (mode === "onesignal" && appId) {
     loadOneSignal(appId)
-    return oneSignalCall(async (os) => (os.Notifications.permission && os.User.PushSubscription.optedIn !== false ? "on" : "off") as "on" | "off", "off")
+    // "on" only when the device can actually be reached: permission, an opted-in subscription and an upstream user.
+    return oneSignalCall(async (os) => (os.Notifications.permission && os.User.PushSubscription.optedIn === true && !!os.User.PushSubscription.id && !!os.User.onesignalId ? "on" : "off") as "on" | "off", "off")
   }
   if (mode !== "vapid") return "off"
   const reg = await navigator.serviceWorker.getRegistration()
