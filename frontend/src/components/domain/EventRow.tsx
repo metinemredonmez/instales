@@ -6,12 +6,12 @@ import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n"
 import { ConfidenceBadge, Flow } from "./badges"
 
-export function EventRow({ ev, compact }: { ev: TxEvent; compact?: boolean }) {
+export function EventRow({ ev, compact, fresh }: { ev: TxEvent; compact?: boolean; fresh?: boolean }) {
   const { t } = useI18n()
   const buy = ev.net_nominal > 0
   return (
-    <div className={cn("flex items-start gap-3 border-b border-border/60 px-4 py-3 last:border-0", compact && "py-2.5")}>
-      <div className={cn("mt-1 size-2 shrink-0 rounded-full", buy ? "bg-positive" : "bg-negative")} />
+    <div className={cn("flex items-start gap-3 border-b border-border/60 px-4 py-3 last:border-0", compact && "py-2.5", fresh && (buy ? "slide-in flash-pos" : "slide-in flash-neg"))}>
+      <div className={cn("mt-1 size-2 shrink-0 rounded-full", buy ? "bg-positive" : "bg-negative", fresh && (buy ? "live-dot text-positive" : "live-dot text-negative"))} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Link to={`/stocks/${ev.symbol}`} className="font-semibold hover:underline">{ev.symbol}</Link>

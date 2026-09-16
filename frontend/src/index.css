@@ -157,3 +157,29 @@
 .ticker-track { animation: ticker 150s linear infinite; }
 .group:hover .ticker-track { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
+
+/* ---- Motion: the "live console" feel. Everything here is off under prefers-reduced-motion. ---- */
+@keyframes il-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes il-slide-in { from { opacity: 0; transform: translateX(-8px); max-height: 0; } to { opacity: 1; transform: none; max-height: 200px; } }
+@keyframes il-flash { 0% { background-color: color-mix(in oklab, var(--primary) 22%, transparent); } 100% { background-color: transparent; } }
+@keyframes il-flash-pos { 0% { background-color: color-mix(in oklab, var(--positive) 22%, transparent); } 100% { background-color: transparent; } }
+@keyframes il-flash-neg { 0% { background-color: color-mix(in oklab, var(--negative) 22%, transparent); } 100% { background-color: transparent; } }
+@keyframes il-ping { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(2.6); opacity: 0; } }
+.rise { animation: il-rise .45s cubic-bezier(.2,.7,.2,1) both; }
+.rise-stagger > * { animation: il-rise .45s cubic-bezier(.2,.7,.2,1) both; }
+.rise-stagger > *:nth-child(1) { animation-delay: 0ms } .rise-stagger > *:nth-child(2) { animation-delay: 50ms } .rise-stagger > *:nth-child(3) { animation-delay: 100ms }
+.rise-stagger > *:nth-child(4) { animation-delay: 150ms } .rise-stagger > *:nth-child(5) { animation-delay: 200ms } .rise-stagger > *:nth-child(6) { animation-delay: 250ms }
+.rise-stagger > *:nth-child(n+7) { animation-delay: 300ms }
+.slide-in { animation: il-slide-in .5s cubic-bezier(.2,.7,.2,1) both; }
+.flash { animation: il-flash 1.6s ease-out both; }
+.flash-pos { animation: il-flash-pos 1.6s ease-out both; }
+.flash-neg { animation: il-flash-neg 1.6s ease-out both; }
+.live-dot { position: relative; }
+.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: currentColor; animation: il-ping 1.8s cubic-bezier(0,0,.2,1) infinite; }
+.bar-anim { transition: width .8s cubic-bezier(.2,.7,.2,1); }
+.num-anim { transition: color .4s ease; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .rise-stagger > *, .slide-in, .flash, .flash-pos, .flash-neg { animation: none !important; }
+  .live-dot::after { animation: none; display: none; }
+  .bar-anim { transition: none; }
+}

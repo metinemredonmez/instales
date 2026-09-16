@@ -5,6 +5,7 @@ import { Link } from "react-router-dom"
 import { api } from "@/lib/api"
 import { fmtDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useFlash } from "@/lib/motion"
 import { useI18n } from "@/lib/i18n"
 
 /** In-app notification center: unread badge, last 10, click-through, mark all read. */
@@ -17,6 +18,7 @@ export function BellMenu() {
   const markAll = useMutation({ mutationFn: () => api.markRead(), onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }) })
   const markOne = useMutation({ mutationFn: (id: number) => api.markRead(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }) })
   const unread = notes.data?.filter((n) => !n.read_at).length ?? 0
+  const pop = useFlash(unread)
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener("mousedown", onDoc)
@@ -26,7 +28,7 @@ export function BellMenu() {
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)} aria-label={t("alerts.notifications")} className={cn("relative grid size-9 place-items-center rounded-md hover:bg-accent", open && "bg-accent")}>
         <Bell className="size-4" />
-        {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">{unread}</span>}
+        {unread > 0 && <span className={cn("absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground", pop && "live-dot text-primary")}>{unread}</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-2rem))] rounded-lg border border-border bg-popover shadow-xl">

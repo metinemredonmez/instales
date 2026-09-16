@@ -13,7 +13,7 @@ export function WatchlistPage() {
   const { market } = useMarket()
   const { t } = useI18n()
   const qc = useQueryClient()
-  const wl = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist })
+  const wl = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist, refetchInterval: 60_000 })
   const [ref, setRef] = useState("")
   const [err, setErr] = useState<string | null>(null)
   const add = useMutation({

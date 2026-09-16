@@ -23,6 +23,7 @@ export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?:
   const refresh = async () => { setBusy(true); try { const n = symbol ? await api.stockAi(market, symbol, lang, true) : await api.brief(market, lang, true); qc.setQueryData(key, n) } finally { setBusy(false) } }
   const note = q.data as AiNote | null | undefined
   if (q.isLoading) return <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">{t("ai.preparing")}</div>
+  if (q.isError) return <div className="rounded-lg border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground">{t("ai.unavailable")}{user?.role === "ADMIN" ? ` — ${(q.error as Error).message}` : ""}</div>
   if (!note) return null
   return (
     <div className={cn("rounded-lg border border-primary/30 bg-primary/5", open ? "p-4" : "px-4 py-2.5")}>

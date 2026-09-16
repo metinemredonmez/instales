@@ -29,7 +29,7 @@ export function StockPage() {
   const { symbol = "" } = useParams()
   const { market } = useMarket()
   const { t } = useI18n()
-  const q = useQuery({ queryKey: ["stock", market, symbol], queryFn: () => api.stock(market, symbol) })
+  const q = useQuery({ queryKey: ["stock", market, symbol], queryFn: () => api.stock(market, symbol), refetchInterval: 60_000, placeholderData: (prev) => prev })
 
   if (q.isLoading) return <Skeleton className="h-96" />
   if (q.isError || !q.data)
@@ -53,7 +53,7 @@ export function StockPage() {
         <div className="flex flex-wrap items-center gap-2">{d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}<WatchButton symbol={d.symbol} market={market} /></div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="rise-stagger grid gap-3 md:grid-cols-3">
         <ScoreCard title="Smart Money Score" detail={sm} />
         <ScoreCard title={t("stock.consensus")} detail={cs} />
         <div className="rounded-lg border border-border bg-card p-4">

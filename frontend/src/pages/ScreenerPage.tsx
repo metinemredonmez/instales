@@ -21,7 +21,7 @@ export function ScreenerPage() {
   const { market } = useMarket()
   const { t } = useI18n()
   const [f, setF] = useState<ScreenerFilters>({})
-  const q = useQuery({ queryKey: ["screener", market, f], queryFn: () => api.screener(market, f) })
+  const q = useQuery({ queryKey: ["screener", market, f], queryFn: () => api.screener(market, f), refetchInterval: 60_000, placeholderData: (prev) => prev })
   const num = (k: keyof ScreenerFilters) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF({ ...f, [k]: e.target.value === "" ? undefined : Number(e.target.value) })
   const toggleSignal = (s: SignalType) => {

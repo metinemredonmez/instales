@@ -270,6 +270,7 @@ export const en: Record<Key, string> = {
   "compare.opposite": "Opposite views",
   "compare.commonPositions": "Common positions",
 
+  "ai.unavailable": "AI note unavailable right now (no model access).",
   "ai.preparing": "Preparing the AI note…",
   "ai.watch": "Watch",
   "ai.disclaimer": "Descriptive AI note · not investment advice · numbers from InstiLens data",

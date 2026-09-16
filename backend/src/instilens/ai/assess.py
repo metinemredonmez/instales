@@ -48,17 +48,19 @@ def _client() -> anthropic.Anthropic | None:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
 
 
+class AiUnavailable(RuntimeError):
+    """The model call failed (bad key, quota, outage). Routes turn this into a 503 instead of a 500."""
+
+
 def _write(session: Session, kind: str, market: str, subject: str, day: date, prompt: str, data: dict, lang: str = "tr") -> AiNote | None:
     client = _client()
     if client is None:
         return None
     prompt = f"Language: {'English' if lang == 'en' else 'Turkish'}.\n{prompt}"
-    r = client.messages.parse(
-        model=settings.ai_model, max_tokens=4000, thinking={"type": "adaptive"}, output_config={"effort": "medium"},
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": prompt + "\n\nDATA:\n" + json.dumps(data, ensure_ascii=False, default=str)}],
-        output_format=Note,
-    )
+    try:
+        r = _parse(client, prompt, data)
+    except anthropic.APIError as exc:
+        raise AiUnavailable(f"{type(exc).__name__}: {getattr(exc, 'message', exc)}") from exc
     if r.stop_reason == "refusal" or r.parsed_output is None:
         return None
     note = _cached(session, kind, market, subject, day, lang)
@@ -70,6 +72,15 @@ def _write(session: Session, kind: str, market: str, subject: str, day: date, pr
         note.content, note.data, note.model, note.created_at = r.parsed_output.text, payload, r.model, datetime.now(UTC)
     session.flush()
     return note
+
+
+def _parse(client: anthropic.Anthropic, prompt: str, data: dict):
+    return client.messages.parse(
+        model=settings.ai_model, max_tokens=4000, thinking={"type": "adaptive"}, output_config={"effort": "medium"},
+        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": prompt + "\n\nDATA:\n" + json.dumps(data, ensure_ascii=False, default=str)}],
+        output_format=Note,
+    )
 
 
 def _cached(session: Session, kind: str, market: str, subject: str, day: date, lang: str = "tr") -> AiNote | None:

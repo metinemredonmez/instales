@@ -284,6 +284,7 @@ export const tr = {
   "compare.commonPositions": "Ortak pozisyonlar",
 
   // ai / tts
+  "ai.unavailable": "AI notu şu an üretilemiyor (model erişimi yok).",
   "ai.preparing": "AI notu hazırlanıyor…",
   "ai.watch": "İzlenecek",
   "ai.disclaimer": "Betimleyici AI notu · yatırım tavsiyesi değildir · rakamlar InstiLens verisinden",

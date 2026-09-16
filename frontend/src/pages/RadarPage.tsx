@@ -6,13 +6,14 @@ import { useMarket } from "@/lib/market"
 import { useI18n, type T } from "@/lib/i18n"
 import { fmtDate } from "@/lib/format"
 import { Section, Stat } from "@/components/layout/Section"
-import { Flow, ScorePill, SignalBadge, ConfidenceBadge } from "@/components/domain/badges"
+import { Flow, Num, ScorePill, SignalBadge, ConfidenceBadge } from "@/components/domain/badges"
 import { EventRow } from "@/components/domain/EventRow"
 import { FreshnessBar } from "@/components/domain/Freshness"
 import { PipelineButton } from "@/components/domain/PipelineButton"
 import { AiNoteCard } from "@/components/domain/AiNoteCard"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useNewIds } from "@/lib/motion"
 
 // null = the market's own score window (TR 30D, US 100D ≈ latest 13F quarter)
 const windows = (t: T): Record<string, { label: string; days: number | null }[]> => ({
@@ -25,9 +26,10 @@ export function RadarPage() {
   const { t } = useI18n()
   const [window, setWindow] = useState<number | null>(null)
   useEffect(() => setWindow(null), [market])
-  const radar = useQuery({ queryKey: ["radar", market, window], queryFn: () => api.radar(market, 15, window) })
+  const radar = useQuery({ queryKey: ["radar", market, window], queryFn: () => api.radar(market, 15, window), refetchInterval: 60_000, placeholderData: (prev) => prev })
   const perf = useQuery({ queryKey: ["signal-perf", market], queryFn: () => api.signalPerformance(market) })
   const events = useQuery({ queryKey: ["events", market, 8], queryFn: () => api.events(market, 8), refetchInterval: 15_000 })
+  const freshEvents = useNewIds(events.data)
 
   if (radar.isLoading) return <RadarSkeleton />
   if (radar.isError || !radar.data) return <Empty market={market} />
@@ -45,7 +47,7 @@ export function RadarPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5"><span className="size-1.5 animate-pulse rounded-full bg-positive" /> LIVE</span>
+            <span className="inline-flex items-center gap-1.5"><span className="live-dot size-1.5 rounded-full bg-positive text-positive" /> LIVE</span>
             <span>·</span>
             <span>{t("radar.computed")} {fmtDate(r.as_of)}</span>
           </div>
@@ -61,11 +63,11 @@ export function RadarPage() {
 
       <AiNoteCard market={market} title={t("radar.brief")} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="rise-stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label={t("radar.stat.inflow")} value={<Flow value={totalIn} market={market} className="text-2xl" />} sub={t("radar.stat.accumulating", { n: r.accumulated.length })} />
         <Stat label={t("radar.stat.outflow")} value={<Flow value={totalOut} market={market} className="text-2xl" />} sub={t("radar.stat.distributing", { n: r.distributed.length })} />
-        <Stat label={t("radar.stat.new")} value={newPos} sub={t("radar.stat.fundXstock")} tone="pos" />
-        <Stat label={t("radar.stat.exit")} value={exits} sub={t("radar.stat.fundXstock")} tone="neg" />
+        <Stat label={t("radar.stat.new")} value={<Num value={newPos} />} sub={t("radar.stat.fundXstock")} tone="pos" />
+        <Stat label={t("radar.stat.exit")} value={<Num value={exits} />} sub={t("radar.stat.fundXstock")} tone="neg" />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
@@ -100,7 +102,7 @@ export function RadarPage() {
             </Section>
           )}
           <Section title={market === "TR" ? t("radar.liveKap") : t("radar.latestFilings")} hint={t("radar.latest.hint")} right={<Link to="/live" className="text-xs text-primary hover:underline">{t("common.all")} →</Link>}>
-            {events.data?.map((ev) => <EventRow key={ev.id} ev={ev} compact />)}
+            {events.data?.map((ev) => <EventRow key={ev.id} ev={ev} compact fresh={freshEvents.has(ev.id)} />)}
           </Section>
         </div>
       </div>
