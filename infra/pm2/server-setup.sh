@@ -33,6 +33,10 @@ cp "$ROOT/infra/pm2/nginx-instilens.conf" /etc/nginx/sites-available/instilens
 ln -sf /etc/nginx/sites-available/instilens /etc/nginx/sites-enabled/instilens
 nginx -t && systemctl reload nginx
 
+echo "== backup cron"
+chmod +x "$ROOT/infra/pm2/backup.sh"
+( crontab -l 2>/dev/null | grep -v 'instilens/infra/pm2/backup.sh'; echo "15 3 * * * /bin/bash $ROOT/infra/pm2/backup.sh >> /var/log/instilens-backup.log 2>&1" ) | crontab -
+
 echo "== pm2"
 pm2 startOrReload "$ROOT/infra/pm2/ecosystem.config.cjs" --update-env
 pm2 save >/dev/null

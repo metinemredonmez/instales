@@ -60,3 +60,10 @@ then `certbot --nginx -d app.yourdomain.com`, and add `https://app.yourdomain.co
 Telegram: talk to @BotFather → `/newbot` → token → `.env`: `INSTILENS_TELEGRAM_BOT_TOKEN=...`; each user pastes their chat id in Alarmlar → Bildirim kanalları.
 E-mail: `INSTILENS_SMTP_HOST`, `INSTILENS_SMTP_PORT=587`, `INSTILENS_SMTP_USER`, `INSTILENS_SMTP_PASSWORD`, `INSTILENS_SMTP_FROM=alerts@yourdomain`.
 Links in messages use `INSTILENS_PUBLIC_URL` (e.g. `http://91.99.183.64:8088`).
+
+## Backups
+`infra/pm2/backup.sh` runs nightly at 03:15 (cron installed by `server-setup.sh`) → `/var/backups/instilens/`, 14-day retention.
+Restore: `sudo -u postgres pg_restore -d instilens --clean --if-exists /var/backups/instilens/instilens-YYYY-MM-DD.dump`.
+
+## After the domain works
+`bash infra/pm2/close-ip-port.sh` removes the plain-HTTP :8088 listener. Set `INSTILENS_ALLOW_REGISTRATION=false` in `.env` to make the app invite-only.
