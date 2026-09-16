@@ -13,9 +13,18 @@ from instilens.config import BACKEND_ROOT, settings
 CACHE = BACKEND_ROOT / "media" / "tts"
 
 
-def _path(text: str, provider: str) -> Path:
+def _path(text: str, provider: str, voice: str) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
-    return CACHE / f"{provider}-{hashlib.sha1(text.encode()).hexdigest()[:20]}.mp3"
+    return CACHE / f"{provider}-{voice[:12]}-{hashlib.sha1(text.encode()).hexdigest()[:20]}.mp3"
+
+
+def pick_voice(lang: str = "tr", gender: str = "female") -> str:
+    lang, gender = ("en" if lang == "en" else "tr"), ("male" if gender == "male" else "female")
+    chosen = getattr(settings, f"elevenlabs_voice_{lang}_{gender}", "") or getattr(settings, f"elevenlabs_voice_en_{gender}", "")
+    return chosen or settings.elevenlabs_voice_id
+
+
+OPENAI_VOICES = {"female": "nova", "male": "onyx"}
 
 
 def provider() -> str | None:
@@ -26,16 +35,17 @@ def provider() -> str | None:
     return None
 
 
-def synthesize(text: str) -> Path | None:
+def synthesize(text: str, lang: str = "tr", gender: str = "female") -> Path | None:
     p = provider()
     if p is None:
         return None
-    out = _path(text, p)
+    voice = pick_voice(lang, gender) if p == "elevenlabs" else OPENAI_VOICES.get(gender, settings.openai_tts_voice)
+    out = _path(text, p, voice)
     if out.exists():
         return out
     if p == "elevenlabs":
         r = httpx.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}",
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
             headers={"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"},
             json={"text": text, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
             timeout=120,
@@ -44,7 +54,7 @@ def synthesize(text: str) -> Path | None:
         r = httpx.post(
             "https://api.openai.com/v1/audio/speech",
             headers={"Authorization": f"Bearer {settings.openai_api_key}"},
-            json={"model": "gpt-4o-mini-tts", "voice": settings.openai_tts_voice, "input": text, "response_format": "mp3"},
+            json={"model": "gpt-4o-mini-tts", "voice": voice, "input": text, "response_format": "mp3"},
             timeout=120,
         )
     r.raise_for_status()

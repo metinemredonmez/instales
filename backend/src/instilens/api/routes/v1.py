@@ -92,8 +92,8 @@ def get_brief(market: str = MarketParam, refresh: bool = False, session: Session
 
 
 @router.get("/ai-notes/{note_id}/audio")
-def get_note_audio(note_id: int, session: Session = Depends(get_session)):
-    """MP3 narration of an AI note (ElevenLabs/OpenAI). 404 when no TTS provider is configured."""
+def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female|male)$"), session: Session = Depends(get_session)):
+    """MP3 narration of an AI note. Voice follows the note's market (TR→Turkish, US→English) and the chosen gender."""
     from fastapi.responses import FileResponse
 
     from instilens.ai.tts import synthesize
@@ -103,7 +103,7 @@ def get_note_audio(note_id: int, session: Session = Depends(get_session)):
     if note is None:
         raise HTTPException(404, "note not found")
     watch = " ".join(f"İzlenecek: {w}." for w in (note.data or {}).get("watch", []))
-    path = synthesize(f"{note.content} {watch}")
+    path = synthesize(f"{note.content} {watch}", lang="en" if note.market_code == "US" else "tr", gender=gender)
     if path is None:
         raise HTTPException(404, "tts not configured")
     return FileResponse(path, media_type="audio/mpeg", filename=f"instilens-{note.kind.lower()}-{note.as_of}.mp3")

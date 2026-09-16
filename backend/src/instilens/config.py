@@ -70,7 +70,12 @@ class Settings(BaseSettings):
 
     # Text-to-speech for AI notes (optional). ElevenLabs preferred for Turkish; OpenAI as alternative.
     elevenlabs_api_key: str | None = None
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # "Rachel" default; pick a Turkish voice in the ElevenLabs library
+    elevenlabs_voice_id: str = "pFZP5JQG7iQjIQuC4Bku"  # fallback voice (Lily)
+    # Per language × gender; empty = fall back to elevenlabs_voice_id. Pick Turkish voices in the library.
+    elevenlabs_voice_tr_female: str = ""
+    elevenlabs_voice_tr_male: str = ""
+    elevenlabs_voice_en_female: str = "pFZP5JQG7iQjIQuC4Bku"  # Lily
+    elevenlabs_voice_en_male: str = "pNInz6obpgDQGcFmaJgB"  # Adam (ElevenLabs premade)
     openai_api_key: str | None = None
     openai_tts_voice: str = "alloy"
 

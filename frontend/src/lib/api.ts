@@ -286,7 +286,7 @@ export const api = {
   institutions: (market: Market) => get<InstitutionRow[]>("/institutions", { market }),
   institution: (market: Market, code: string) => get<InstitutionDetail>(`/institutions/${code}`, { market }),
   ttsStatus: () => get<{ provider: string | null }>("/tts/status"),
-  noteAudioUrl: (id: number) => `${BASE}/ai-notes/${id}/audio?token=${encodeURIComponent(getToken() ?? "")}`,
+  noteAudioUrl: (id: number, gender: "female" | "male" = "female") => `${BASE}/ai-notes/${id}/audio?gender=${gender}&token=${encodeURIComponent(getToken() ?? "")}`,
   stockAi: (market: Market, symbol: string, refresh = false) => get<AiNote>(`/stocks/${symbol}/ai`, { market, refresh: refresh || undefined }),
   brief: (market: Market, refresh = false) => get<AiNote | null>("/brief", { market, refresh: refresh || undefined }),
   news: (market: Market, symbol?: string, limit = 40) => get<NewsItem[]>("/news", { market, symbol, limit }),
