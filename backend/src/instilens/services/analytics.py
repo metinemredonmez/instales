@@ -560,4 +560,7 @@ def news(session: Session, market: str, symbol: str | None = None, limit: int = 
     rows = session.scalars(stmt).all()
     if symbol:
         rows = [n for n in rows if symbol.upper() in (n.symbols or [])][:limit]
-    return [{"id": n.id, "source": n.source, "title": n.title, "url": n.url, "published_at": n.published_at.isoformat(), "symbols": n.symbols or []} for n in rows]
+    return [
+        {"id": n.id, "source": n.source, "title": n.title, "url": n.url, "published_at": n.published_at.isoformat(), "symbols": n.symbols or [], "tags": n.tags or [], "ai": n.ai}
+        for n in rows
+    ]

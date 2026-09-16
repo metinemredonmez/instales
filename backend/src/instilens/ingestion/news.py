@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from instilens.domain.models import Instrument, NewsItem
+from instilens.services.news_rules import active_rules, apply_rules
 
 log = logging.getLogger(__name__)
 
@@ -75,22 +76,30 @@ def fetch_feeds(session: Session, market: str, feeds: list[tuple[str, str]] | No
             ts = e.get("published_parsed") or e.get("updated_parsed")
             published = datetime.fromtimestamp(time.mktime(ts), tz=UTC).replace(tzinfo=None) if ts else datetime.now(UTC).replace(tzinfo=None)
             entries.append((source, title, link, published))
+    rules = active_rules(session, market)
     if newsapi_key:
         entries += _newsapi(market, newsapi_key)
+        for r in rules:  # rule-specific NewsAPI queries (Newsomatic's query_string)
+            if r.newsapi_query:
+                entries += _newsapi(market, newsapi_key, query=r.newsapi_query, language=r.language or None)
     cutoff = datetime.now(UTC).replace(tzinfo=None).timestamp() - max_age_days * 86400
     for source, title, link, published in entries:
         if link in known or published.timestamp() < cutoff:
             continue
-        session.add(NewsItem(market_code=market, source=source, title=title[:512], url=link[:1024], published_at=published, symbols=match_symbols(title, keywords)))
+        item = NewsItem(market_code=market, source=source, title=title[:512], url=link[:1024], published_at=published, symbols=match_symbols(title, keywords), tags=[])
+        apply_rules(session, item, rules)
+        session.add(item)
         known.add(link)
         added += 1
     session.flush()
     return added
 
 
-def _newsapi(market: str, key: str) -> list[tuple[str, str, str, datetime]]:
+def _newsapi(market: str, key: str, query: str | None = None, language: str | None = None) -> list[tuple[str, str, str, datetime]]:
     """Optional NewsAPI.org source (the same API Newsomatic relies on). Free tier is delayed/non-commercial."""
     q = {"TR": {"q": "borsa OR BIST OR hisse", "language": "tr"}, "US": {"q": "stocks OR Wall Street", "language": "en"}}[market]
+    if query:
+        q = {"q": query, "language": language or q["language"]}
     try:
         r = httpx.get("https://newsapi.org/v2/everything", params={**q, "sortBy": "publishedAt", "pageSize": 50}, headers={"X-Api-Key": key}, timeout=20)
         r.raise_for_status()

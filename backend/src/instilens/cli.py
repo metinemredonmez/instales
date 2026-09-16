@@ -209,6 +209,17 @@ def kap_test(out: str = "/tmp/kap-api-probe.json") -> None:
 def news(market: str = "TR") -> None:
     """Pull headlines from the configured RSS feeds (and NewsAPI if a key is set)."""
     from instilens.ingestion.news import fetch_feeds
+    from instilens.services.news_rules import seed_default_rules
 
     with session_scope() as s:
+        seeded = seed_default_rules(s)
+        if seeded:
+            typer.echo(f"seeded {seeded} default news rules")
         typer.echo(f"{market}: +{fetch_feeds(s, market, newsapi_key=settings.newsapi_key)} headlines")
+        if settings.ai_news_enabled and settings.anthropic_api_key:
+            from instilens.ai.news_enrich import enrich
+
+            try:
+                typer.echo(f"{market}: ai-tagged {enrich(s, market)}")
+            except Exception as exc:  # enrichment is optional; a bad key must not block headlines
+                typer.echo(f"{market}: ai tagging skipped ({type(exc).__name__}: {str(exc)[:80]})")

@@ -5,6 +5,7 @@ import { fmtDateTime } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
 import { PipelineButton } from "@/components/domain/PipelineButton"
+import { NewsRulesAdmin } from "@/components/domain/NewsRulesAdmin"
 
 export function AdminPage() {
   const { user } = useAuth()
@@ -24,6 +25,7 @@ export function AdminPage() {
         <div><h1 className="text-2xl font-semibold tracking-tight">Admin</h1><p className="text-sm text-muted-foreground">Kullanıcılar ve entity review (otomatik oluşturulmuş, doğrulanmamış kayıtlar).</p></div>
         <div className="flex flex-wrap items-center gap-2"><PipelineButton /><Button variant="outline" size="sm" onClick={() => outcomes.mutate()} disabled={outcomes.isPending}>Sinyal outcome'larını hesapla{outcomes.data ? ` (${outcomes.data.updated})` : ""}</Button></div>
       </div>
+      <NewsRulesAdmin />
       <Section title="Kullanıcılar" hint={`${users.data?.length ?? 0}`}>
         <table className="w-full text-sm">
           <thead className="text-[11px] uppercase tracking-wider text-muted-foreground"><tr className="border-b border-border/60"><th className="px-4 py-2 text-left font-medium">E-posta</th><th className="px-2 py-2 text-left font-medium">Ad</th><th className="px-2 py-2 text-left font-medium">Plan</th><th className="px-2 py-2 text-left font-medium">Rol</th><th className="px-2 py-2 text-left font-medium">Son giriş</th><th className="px-4 py-2 text-right font-medium">Aktif</th></tr></thead>

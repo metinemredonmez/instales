@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # News ticker: RSS headlines (TR first, then global). Optional NewsAPI key adds a keyword source.
     news_enabled: bool = True
     newsapi_key: str | None = None
+    ai_news_enabled: bool = True  # Claude tags/summaries for headlines (needs ANTHROPIC_API_KEY)
+    ai_news_model: str = "claude-opus-5"  # set claude-haiku-4-5 for a cheaper tagging pass
 
     # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
     # "local" is reserved for a self-hosted model (phase 3).

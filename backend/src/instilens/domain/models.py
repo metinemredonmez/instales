@@ -356,4 +356,27 @@ class NewsItem(Base):
     url: Mapped[str] = mapped_column(String(1024))
     published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     symbols: Mapped[list] = mapped_column(JSON, default=list)  # matched instrument symbols
+    tags: Mapped[list] = mapped_column(JSON, default=list)  # names of the news rules that matched
+    ai: Mapped[dict | None] = mapped_column(JSON)  # {"summary_tr", "symbols", "sentiment", "sector"} from the AI pass
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class NewsRule(Base):
+    """Newsomatic-style import rule, ported: keywords / exclusions / source filters / language / age → tags & symbols."""
+
+    __tablename__ = "news_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), default="TR")
+    query: Mapped[str] = mapped_column(String(512), default="")  # "banka, faiz, halka arz"  (any of; comma-separated; supports "a+b" for all-of)
+    exclusion: Mapped[str] = mapped_column(String(512), default="")  # comma-separated words that reject the headline
+    only_sources: Mapped[str] = mapped_column(String(512), default="")  # comma-separated source names; empty = all
+    remove_sources: Mapped[str] = mapped_column(String(512), default="")
+    language: Mapped[str] = mapped_column(String(8), default="")  # "tr" / "en" / "" (NewsAPI queries only)
+    max_age_days: Mapped[int] = mapped_column(Integer, default=3)
+    symbols: Mapped[list] = mapped_column(JSON, default=list)  # instruments to tag matched headlines with
+    newsapi_query: Mapped[str] = mapped_column(String(256), default="")  # extra NewsAPI "everything" query
+    ai_summary: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

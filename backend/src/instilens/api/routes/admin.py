@@ -113,3 +113,87 @@ def pipeline_run():
 @router.get("/pipeline/status")
 def pipeline_status():
     return _RUN_STATE
+
+
+# ---------------------------------------------------------------------- news rules (Newsomatic-style)
+
+
+class NewsRuleBody(BaseModel):
+    name: str = Field(min_length=2, max_length=64)
+    market_code: str = Field("TR", pattern="^(TR|US)$")
+    query: str = Field("", max_length=512)
+    exclusion: str = Field("", max_length=512)
+    only_sources: str = Field("", max_length=512)
+    remove_sources: str = Field("", max_length=512)
+    language: str = Field("", max_length=8)
+    max_age_days: int = Field(3, ge=1, le=30)
+    symbols: list[str] = Field(default_factory=list, max_length=20)
+    newsapi_query: str = Field("", max_length=256)
+    ai_summary: bool = True
+    is_active: bool = True
+
+
+def _rule_json(r) -> dict:
+    return {k: getattr(r, k) for k in ("id", "name", "market_code", "query", "exclusion", "only_sources", "remove_sources", "language", "max_age_days", "symbols", "newsapi_query", "ai_summary", "is_active")}
+
+
+@router.get("/news/rules")
+def list_news_rules(session: Session = Depends(get_session)):
+    from sqlalchemy import select
+
+    from instilens.domain.models import NewsRule
+
+    return [_rule_json(r) for r in session.scalars(select(NewsRule).order_by(NewsRule.id))]
+
+
+@router.post("/news/rules", status_code=201)
+def create_news_rule(body: NewsRuleBody, session: Session = Depends(get_session)):
+    from instilens.domain.models import NewsRule
+
+    r = NewsRule(**body.model_dump())
+    session.add(r)
+    session.flush()
+    return _rule_json(r)
+
+
+@router.put("/news/rules/{rule_id}")
+def update_news_rule(rule_id: int, body: NewsRuleBody, session: Session = Depends(get_session)):
+    from instilens.domain.models import NewsRule
+
+    r = session.get(NewsRule, rule_id)
+    if r is None:
+        raise HTTPException(404, "not found")
+    for k, v in body.model_dump().items():
+        setattr(r, k, v)
+    return _rule_json(r)
+
+
+@router.delete("/news/rules/{rule_id}", status_code=204)
+def delete_news_rule(rule_id: int, session: Session = Depends(get_session)):
+    from instilens.domain.models import NewsRule
+
+    r = session.get(NewsRule, rule_id)
+    if r is None:
+        raise HTTPException(404, "not found")
+    session.delete(r)
+
+
+@router.post("/news/rules/seed")
+def seed_news_rules(session: Session = Depends(get_session)):
+    from instilens.services.news_rules import seed_default_rules
+
+    return {"created": seed_default_rules(session)}
+
+
+@router.post("/news/reapply")
+def reapply_news_rules(session: Session = Depends(get_session)):
+    from instilens.services.news_rules import reapply_all
+
+    return {"TR": reapply_all(session, "TR"), "US": reapply_all(session, "US")}
+
+
+@router.post("/news/enrich")
+def enrich_news(market: str = "TR", session: Session = Depends(get_session)):
+    from instilens.ai.news_enrich import enrich
+
+    return {"tagged": enrich(session, market)}

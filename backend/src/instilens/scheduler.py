@@ -59,9 +59,16 @@ def news_pull() -> None:
 
     if not settings.news_enabled:
         return
+    from instilens.ai.news_enrich import enrich
+
     with session_scope() as s:
         for market in ("TR", "US"):
             log.info("%s news +%s", market, fetch_feeds(s, market, newsapi_key=settings.newsapi_key))
+            if settings.ai_news_enabled and settings.anthropic_api_key:
+                try:
+                    log.info("%s news ai-tagged %s", market, enrich(s, market))
+                except Exception as exc:  # AI is an enrichment; never break the feed
+                    log.warning("news enrich failed: %s", exc)
 
 
 def prices(market: str) -> None:

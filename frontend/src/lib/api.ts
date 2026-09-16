@@ -65,7 +65,14 @@ export interface Review {
   failed_disclosures: { id: number; source: string; source_id: string; kind: string; error: string | null }[]
 }
 
-export interface NewsItem { id: number; source: string; title: string; url: string; published_at: string; symbols: string[] }
+export interface NewsItem {
+  id: number; source: string; title: string; url: string; published_at: string; symbols: string[]; tags: string[]
+  ai: { summary_tr: string; sector: string; sentiment: "positive" | "negative" | "neutral"; relevance: number; symbols?: string[] } | null
+}
+export interface NewsRule {
+  id: number; name: string; market_code: Market; query: string; exclusion: string; only_sources: string; remove_sources: string
+  language: string; max_age_days: number; symbols: string[]; newsapi_query: string; ai_summary: boolean; is_active: boolean
+}
 
 export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
 
@@ -262,7 +269,7 @@ async function get<T>(path: string, params: Record<string, unknown> = {}): Promi
   return handle<T>(await fetch(`${BASE}${path}${qs.size ? `?${qs}` : ""}`, { headers: authHeaders() }))
 }
 
-async function send<T>(method: "POST" | "DELETE" | "PATCH", path: string, body?: unknown): Promise<T> {
+async function send<T>(method: "POST" | "DELETE" | "PATCH" | "PUT", path: string, body?: unknown): Promise<T> {
   return handle<T>(
     await fetch(`${BASE}${path}`, { method, headers: { "content-type": "application/json", ...authHeaders() }, body: body === undefined ? undefined : JSON.stringify(body) }),
   )
@@ -282,6 +289,13 @@ export const api = {
   adminReview: () => get<Review>("/admin/review"),
   adminVerify: (body: { kind: "instrument" | "fund" | "institution"; id: number; name?: string }) => send<{ ok: boolean }>("POST", "/admin/review/verify", body),
   adminComputeOutcomes: () => send<{ updated: number }>("POST", "/admin/outcomes/compute"),
+  adminNewsRules: () => get<NewsRule[]>("/admin/news/rules"),
+  adminNewsRuleCreate: (body: Omit<NewsRule, "id">) => send<NewsRule>("POST", "/admin/news/rules", body),
+  adminNewsRuleUpdate: (id: number, body: Omit<NewsRule, "id">) => send<NewsRule>("PUT", `/admin/news/rules/${id}`, body),
+  adminNewsRuleDelete: (id: number) => send<void>("DELETE", `/admin/news/rules/${id}`),
+  adminNewsSeed: () => send<{ created: number }>("POST", "/admin/news/rules/seed"),
+  adminNewsReapply: () => send<{ TR: number; US: number }>("POST", "/admin/news/reapply"),
+  adminNewsEnrich: (market: Market) => send<{ tagged: number }>("POST", `/admin/news/enrich?market=${market}`),
   adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
   adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
