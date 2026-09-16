@@ -15,10 +15,10 @@ export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?:
   const { lang, t } = useI18n()
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
-  // Collapsed state is remembered per kind (brief vs stock note) so the card stays out of the way once closed.
+  // Open by default on every load; "Kapat" only lasts for this tab session (sessionStorage), never across reloads.
   const storeKey = `instilens.ainote.${symbol ? "stock" : "brief"}`
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(storeKey) !== "closed" } catch { return true } })
-  const toggleOpen = () => { setOpen((o) => { try { localStorage.setItem(storeKey, o ? "closed" : "open") } catch { /* ignore */ } return !o }) }
+  const [open, setOpen] = useState(() => { try { return sessionStorage.getItem(storeKey) !== "closed" } catch { return true } })
+  const toggleOpen = () => { setOpen((o) => { try { sessionStorage.setItem(storeKey, o ? "closed" : "open") } catch { /* ignore */ } return !o }) }
   const key = ["ai-note", market, symbol ?? "market", lang]
   const q = useQuery({ queryKey: key, queryFn: () => (symbol ? api.stockAi(market, symbol, lang) : api.brief(market, lang)), retry: false, staleTime: 5 * 60_000 })
   const refresh = async () => { setBusy(true); try { const n = symbol ? await api.stockAi(market, symbol, lang, true) : await api.brief(market, lang, true); qc.setQueryData(key, n) } finally { setBusy(false) } }
