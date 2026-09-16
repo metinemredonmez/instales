@@ -31,7 +31,7 @@ document.querySelectorAll("form.wait").forEach((form) => {
     const lang = document.documentElement.lang || "tr"
     const ua = navigator.userAgent
     const mine = /Mac/.test(ua) ? "darwin" : /Win/.test(ua) ? "windows" : /Linux/.test(ua) ? "linux" : ""
-    const files = d.files.filter((f) => f.kind === "INSTALLER")
+    const files = d.files.filter((f) => f.downloadable)
     const pick = files.find((f) => f.platform.startsWith(mine) && (mine !== "darwin" || f.platform.endsWith("aarch64"))) || files[0]
     if (!pick) return
     slot.hidden = false

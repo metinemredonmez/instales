@@ -243,3 +243,27 @@ def vapid_keys() -> None:
     b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()  # noqa: E731
     typer.echo(f"INSTILENS_VAPID_PUBLIC_KEY={b64(pub)}")
     typer.echo(f"INSTILENS_VAPID_PRIVATE_KEY={b64(priv)}")
+
+
+@app.command("releases-prune")
+def releases_prune() -> None:
+    """Drop artifacts whose file name carries a different version than their release (leftovers from builds that
+    joined the same draft), keeping one file per platform/kind/extension."""
+    from sqlalchemy import select
+
+    from instilens.domain.models import Release
+    from instilens.services import releases as rs
+
+    with session_scope() as s:
+        removed = 0
+        for rel in s.scalars(select(Release)):
+            seen: set[tuple[str, str, str]] = set()
+            for f in sorted(rel.files, key=lambda x: x.uploaded_at, reverse=True):
+                key = (f.platform, f.kind, rs._ext(f.filename))
+                if rel.version not in f.filename or key in seen:
+                    rs.file_path(f).unlink(missing_ok=True)
+                    s.delete(f)
+                    removed += 1
+                else:
+                    seen.add(key)
+        typer.echo(f"removed {removed} stale artifact(s)")

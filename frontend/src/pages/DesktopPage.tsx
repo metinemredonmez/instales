@@ -11,7 +11,7 @@ export function DesktopPage() {
   const { t } = useI18n()
   const q = useQuery({ queryKey: ["desktop-latest"], queryFn: api.desktopLatest })
   const r = q.data
-  const installers = r?.files.filter((f) => f.kind === "INSTALLER") ?? []
+  const installers = r?.files.filter((f) => f.downloadable) ?? []
   const ua = navigator.userAgent
   const mine = /Mac/.test(ua) ? "darwin" : /Win/.test(ua) ? "windows" : /Linux/.test(ua) ? "linux" : ""
   return (

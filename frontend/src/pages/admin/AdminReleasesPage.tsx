@@ -54,7 +54,7 @@ function ReleaseCard({ r, platforms, notes, setNotes, patch, del }: { r: Desktop
     <Section title={`v${r.version}`} hint={`${fmtDateTime(r.created_at)}${r.created_by ? ` · ${r.created_by}` : ""}`} right={
       <div className="flex items-center gap-2">
         <span className={cn("rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone)}>{label}</span>
-        {r.status !== "PUBLISHED" && <Button size="sm" onClick={() => patch({ status: "PUBLISHED", notes })} disabled={!r.files.some((f) => f.kind === "INSTALLER")}><Check className="size-4" /> {t("rel.publish")}</Button>}
+        {r.status !== "PUBLISHED" && <Button size="sm" onClick={() => patch({ status: "PUBLISHED", notes })} disabled={!r.files.some((f) => f.downloadable)}><Check className="size-4" /> {t("rel.publish")}</Button>}
         {r.status === "PUBLISHED" && <Button size="sm" variant="outline" onClick={() => patch({ status: "WITHDRAWN" })}><Undo2 className="size-4" /> {t("rel.withdraw")}</Button>}
         {r.status === "DRAFT" && <Button size="sm" variant="ghost" onClick={del} aria-label={t("common.delete")}><Trash2 className="size-4" /></Button>}
       </div>
@@ -62,8 +62,8 @@ function ReleaseCard({ r, platforms, notes, setNotes, patch, del }: { r: Desktop
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
         {platforms.map((p) => {
           const files = r.files.filter((f) => f.platform === p.key)
-          const installer = files.find((f) => f.kind === "INSTALLER")
-          const update = files.find((f) => f.kind === "UPDATE")
+          const installer = files.find((f) => f.downloadable)
+          const update = files.find((f) => f.kind === "UPDATE" && f !== installer)
           return (
             <div key={p.key} className={cn("rounded-md border p-3 text-xs", files.length ? "border-border bg-card" : "border-dashed border-border/60 text-muted-foreground")}>
               <div className="font-medium text-foreground">{p.label}</div>

@@ -194,7 +194,7 @@ export interface FundDetail {
 
 export interface RuntimeSetting { key: string; group: "access" | "ai" | "data"; type: string; min: number | null; max: number | null; value: unknown; default: unknown; overridden: boolean; updated_at: string | null; updated_by: string | null }
 
-export interface DesktopFile { id: number; platform: string; label: string; kind: "INSTALLER" | "UPDATE"; filename: string; size: number; sha256: string; signed: boolean; downloads: number; url: string }
+export interface DesktopFile { id: number; platform: string; label: string; kind: "INSTALLER" | "UPDATE"; filename: string; size: number; sha256: string; signed: boolean; downloads: number; downloadable: boolean; url: string }
 export interface DesktopRelease { id: number; version: string; status: "DRAFT" | "PUBLISHED" | "WITHDRAWN"; notes: string; created_by: string | null; created_at: string; published_at: string | null; files: DesktopFile[] }
 
 export interface TtsVoice { id: string; name: string; gender: "female" | "male"; lang: "tr" | "en"; source: "config" | "extra" | "library" }

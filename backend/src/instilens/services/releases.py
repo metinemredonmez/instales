@@ -121,7 +121,32 @@ def store_file(session: Session, rel: Release, filename: str, data: bytes, signa
     else:
         row.platform, row.kind, row.size, row.sha256, row.signature, row.uploaded_at = platform, kind, len(data), digest, signature, datetime.now(UTC)
     session.flush()
+    # One artifact per (platform, kind, extension): a re-upload or a build from another machine replaces the older one,
+    # so a draft that collected several builds never lists stale files (e.g. 0.2.0 leftovers inside 0.2.2).
+    ext = _ext(filename)
+    for old in list(rel.files):
+        if old.id != row.id and old.platform == platform and old.kind == kind and _ext(old.filename) == ext:
+            (folder / old.filename).unlink(missing_ok=True)
+            session.delete(old)
+    session.flush()
     return row
+
+
+def _ext(name: str) -> str:
+    n = name.lower()
+    for e in (".app.tar.gz", "-setup.exe", ".appimage", ".dmg", ".msi", ".exe", ".deb", ".rpm"):
+        if n.endswith(e):
+            return e
+    return n.rsplit(".", 1)[-1]
+
+
+def downloadable(f: ReleaseFile, siblings: list[ReleaseFile]) -> bool:
+    """What humans download: INSTALLER files, plus a Windows -setup.exe (it is the installer AND the updater bundle)
+    when the release has no separate .msi."""
+    if f.kind == "INSTALLER":
+        return True
+    return f.platform == "windows-x86_64" and f.filename.lower().endswith("-setup.exe") and not any(
+        x.platform == f.platform and x.kind == "INSTALLER" for x in siblings)
 
 
 def file_path(row: ReleaseFile) -> Path:
@@ -132,7 +157,7 @@ def set_status(session: Session, rel: Release, status: str) -> None:
     if status not in ("DRAFT", "PUBLISHED", "WITHDRAWN"):
         raise ReleaseError("bad status")
     if status == "PUBLISHED":
-        if not any(f.kind == "INSTALLER" for f in rel.files):
+        if not any(downloadable(f, rel.files) for f in rel.files):
             raise ReleaseError("nothing to publish: no installer uploaded yet")
         rel.published_at = datetime.now(UTC)
     rel.status = status
@@ -143,7 +168,7 @@ def release_json(rel: Release, base_url: str) -> dict:
         "id": rel.id, "version": rel.version, "status": rel.status, "notes": rel.notes, "created_by": rel.created_by,
         "created_at": rel.created_at.isoformat(), "published_at": rel.published_at.isoformat() if rel.published_at else None,
         "files": [{"id": f.id, "platform": f.platform, "label": PLATFORM_LABEL.get(f.platform, f.platform), "kind": f.kind, "filename": f.filename,
-                   "size": f.size, "sha256": f.sha256, "signed": bool(f.signature), "downloads": f.downloads,
+                   "size": f.size, "sha256": f.sha256, "signed": bool(f.signature), "downloads": f.downloads, "downloadable": downloadable(f, rel.files),
                    "url": f"{base_url}/api/v1/public/desktop/download/{f.id}/{f.filename}"} for f in sorted(rel.files, key=lambda x: (x.platform, x.kind, x.filename))],
     }
 
