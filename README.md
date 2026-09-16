@@ -38,13 +38,17 @@ cd backend
 uv sync
 uv run instilens run                         # migrate → KAP + SEC ingest → parse → Yahoo prices → positions → signals → scores → alerts → outcomes
 uv run instilens api                         # http://127.0.0.1:8000/docs
-uv run pytest -q                             # 34 tests, SQLite in-memory, no network
-cd ../frontend && npm install && npm run dev  # http://localhost:5173 (proxies /api to :8000) → register on the login screen
+uv run pytest -q                             # 76 tests, SQLite in-memory, no network
+cd ../frontend && npm install && npm run dev  # http://localhost:5173 (proxies /api to :8000) → register on the login screen — Node ≥ 22
 npm run desktop:dev                          # Tauri window (needs Rust toolchain)
 ```
 
-Environment (backend `.env` or `INSTILENS_*`): `DATABASE_URL`, `JWT_SECRET` (required when `ENVIRONMENT=production`),
-`ALLOW_REGISTRATION`, `CORS_ORIGINS`, `KAP_ADAPTER=fixture|api`, `KAP_API_KEY`, `SEC_ADAPTER=fixture|edgar`, `SEC_CIKS`, `SEC_USER_AGENT`, `AI_PROVIDER=claude|local`, `ANTHROPIC_API_KEY` (plain name, read from `backend/.env`).
+Environment: `cp backend/.env.example backend/.env` — every `INSTILENS_*` setting with a one-line comment (data sources, AI budget,
+trusted proxies, ElevenLabs voices, live TV channels, desktop releases, backup passphrase/remote). As copied it boots in development;
+production refuses to start until `INSTILENS_JWT_SECRET` is replaced (≥ 32 random chars). `ANTHROPIC_API_KEY` keeps its plain name.
+
+Toolchain: Python 3.12 + `uv`; **Node 22** (CI, the desktop workflow and `server-setup.sh` all use 22 — `frontend/package.json`
+should carry `"engines": { "node": ">=22" }` so an older local Node fails loudly instead of at build time).
 
 Real KAP (prototype, polite): `INSTILENS_KAP_ADAPTER=public uv run instilens ingest && uv run instilens parse && uv run instilens compute` — transactions + weekly fund portfolio PDFs.
 Prices (prototype, Yahoo): `uv run instilens prices --market TR` / `--market US`.
@@ -63,6 +67,10 @@ licensed Veri Yayın Servisi is signed), SEC EDGAR (free), Yahoo Finance prices 
 - `infra/compose.yml` for Docker/Podman hosts; `infra/container-up.sh` for Apple `container` / Berthly (no compose)
 - `instilens scheduler` = background worker (KAP every 5 min in the evening rush, SEC daily, prices at close, nightly compute)
 - Copy `infra/.env.example` → `infra/.env`; set `POSTGRES_PASSWORD`, `INSTILENS_JWT_SECRET`, `ANTHROPIC_API_KEY`
+- Plain Ubuntu box (pm2 + nginx): `infra/pm2/README.md` — `deploy.sh` (pull → build → migrate → reload → `/health` check, automatic
+  rollback to the previous commit on failure), nightly `backup.sh` (DB + desktop installers + encrypted `.env`, optional off-site copy)
+- Desktop installers: `.github/workflows/desktop.yml` builds all platforms and uploads them to our release store when the
+  `INSTILENS_RELEASE_UPLOAD_KEY` secret is set (GitHub Release otherwise); `scripts/desktop-release.sh` does the same from a Mac
 
 ## Docs
 

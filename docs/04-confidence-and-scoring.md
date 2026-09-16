@@ -31,6 +31,14 @@ Saturation is concave (`sqrt(x / sat)`), so halfway to saturation earns ~0.7, no
 `50 + 50 × clamp(agreement + tilt)` where `agreement = (inc − red) / active`,
 `tilt = 0.25 × (new − exited) / active`. Confidence pulls toward 50, never below.
 
+Consensus counts **parties**, not money: every party is one vote whatever its position size or flow value —
+it is *not* size-weighted. A party is a fund seen in a snapshot diff or an EXACT event (one key, so a fund is
+never counted twice) or, for a GROUPED event, the disclosing institution (breadth law). `active` is the number
+of distinct parties that increased, reduced or held. Money only enters through the confidence multiplier.
+`new` / `exited` are the same parties the NEW/EXIT clusters count — a snapshot diff's NEW/EXIT plus the
+first-time entries and full exits disclosed by uncovered events — so the score components, the cluster signals
+and the leaderboard's `funds_new` / `funds_exited` (`analytics.window_flows`) always agree.
+
 ## Conviction Score (fund × instrument, 0–100)
 ```
 0.45 · sat(weight_delta_pts, 5)  +  0.35 · sat(relative_growth, 200%)  +  0.20 · sat(new_weight, 8%)
@@ -41,8 +49,14 @@ A NEW position counts as +200% relative growth. `1.8% → 7.4%` scores ~96.
 | Signal | Rule | Strength |
 |---|---|---|
 | ACCUMULATION / DISTRIBUTION | ≥3 consecutive periods of same-sign net flow | 50 + 10·extra periods + 10·growing periods |
-| NEW_POSITION_CLUSTER / EXIT_CLUSTER | ≥3 distinct funds NEW/EXIT in the window | 40 + 12·(funds − 2) |
+| NEW_POSITION_CLUSTER / EXIT_CLUSTER | ≥3 distinct parties entering / fully exiting in the window (see below) | 40 + 12·(parties − 2) |
 | POSITIVE / NEGATIVE_DIVERGENCE | |price Δ| ≥ 5% and |holdings Δ| ≥ 10% in opposite directions | 40 + |price Δ| + |holdings Δ| |
+
+Cluster parties come from two sources. Snapshot diffs: a fund whose activity is NEW / EXIT. Transaction events
+(only those not yet covered by a snapshot, per the de-dup law): a buy that takes ownership from 0 % (or unknown)
+to above 0 % is an entry, a sell that takes it to 0 % is a full exit. An EXACT event's fund uses the same key as
+a snapshot diff, so it is one party either way; a GROUPED event is its institution and is dropped when one of its
+funds is already counted for that move. `evidence` lists `funds` (all parties), `from_snapshots` and `from_events`.
 
 All thresholds are module constants in `engine/signals.py` and `engine/scoring.py`; changing one is a
 methodology change and must be reflected here.

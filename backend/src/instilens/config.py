@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     news_enabled: bool = True
     newsapi_key: str | None = None
     ai_news_enabled: bool = True  # Claude tags/summaries for headlines (needs ANTHROPIC_API_KEY)
-    ai_news_model: str = "claude-opus-5"  # set claude-haiku-4-5 for a cheaper tagging pass
+    ai_news_model: str = "claude-haiku-4-5"  # headline tagging is a cheap pass; ai_model (briefs/research) stays the strong one
 
     # Notification delivery. Telegram: create a bot with @BotFather, put the token here; users paste their chat id.
     telegram_bot_token: str | None = None
@@ -112,7 +112,8 @@ class Settings(BaseSettings):
     ai_provider: str = "claude"
     # Read from backend/.env or the environment as ANTHROPIC_API_KEY (or INSTILENS_ANTHROPIC_API_KEY).
     anthropic_api_key: str | None = Field(None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "INSTILENS_ANTHROPIC_API_KEY"))
-    ai_model: str = "claude-opus-5"
+    ai_model: str = "claude-opus-5"  # briefs, stock notes, research
+    ai_extract_model: str = "claude-haiku-4-5"  # KAP filing extraction: every number is validated against the source text, so the cheap model is enough
     ai_local_base_url: str = "http://127.0.0.1:11434"
     ai_local_model: str = ""
 

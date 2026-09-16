@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import { useState } from "react"
 import { ChevronDown } from "lucide-react"
-import { api, type PositionChange, type ScoreDetail } from "@/lib/api"
+import { api, MARKET_WINDOW_DAYS, type PositionChange, type ScoreDetail } from "@/lib/api"
 import { useMarket } from "@/lib/market"
 import { useI18n, type T } from "@/lib/i18n"
 import { fmtDate, fmtLots } from "@/lib/format"
@@ -57,7 +57,7 @@ export function StockPage() {
         <ScoreCard title="Smart Money Score" detail={sm} />
         <ScoreCard title={t("stock.consensus")} detail={cs} />
         <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("stock.activity30")}</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("stock.activityWindow", { d: MARKET_WINDOW_DAYS[d.market] ?? MARKET_WINDOW_DAYS[market] })}</div>
           {act ? (
             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <Row k={t("common.increasing")} v={act.funds_increasing} tone="pos" />
@@ -111,9 +111,9 @@ export function StockPage() {
 
       <Timeline symbol={d.symbol} market={market} />
 
-      <Section title={t("common.kapDisclosures")} hint={`${d.events.length}`}>
+      <Section title={t(d.market === "US" ? "common.secDisclosures" : "common.kapDisclosures")} hint={`${d.events.length}`}>
         {d.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("stock.noEvents")}</div>}
-        {d.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+        {d.events.map((ev) => <EventRow key={ev.id} ev={ev} market={d.market} />)}
       </Section>
     </div>
   )

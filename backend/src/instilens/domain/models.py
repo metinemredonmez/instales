@@ -29,6 +29,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from instilens.domain.enums import PipelineStatus
+
 Money = Numeric(20, 4)
 Pct = Numeric(9, 4)
 
@@ -294,11 +296,72 @@ class User(Base):
     notify_telegram_chat_id: Mapped[str | None] = mapped_column(String(32))
     notify_brief: Mapped[bool] = mapped_column(Boolean, default=True)
     lang: Mapped[str] = mapped_column(String(2), default="tr")  # UI + AI note + delivery language: "tr" / "en"
+    brief_markets: Mapped[list] = mapped_column(JSON, default=lambda: ["TR"])  # which morning briefs to deliver: subset of ["TR", "US"]
     # Bumped on password change / role change / "log out everywhere": tokens carry it and older ones die.
     token_version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)  # set by the e-mailed verification link; login is not blocked on it
+    totp_secret: Mapped[str | None] = mapped_column(String(64))  # base32 TOTP secret once MFA is enabled (admin accounts)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AuthToken(Base):
+    """Single-use e-mail tokens (password reset, e-mail verification). Only the SHA-256 of the token is stored,
+    so a database leak does not hand out working links; `used_at` makes each link one-shot."""
+
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # domain.enums.AuthTokenKind
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class RateHit(Base):
+    """One counted request for a rate-limit / lockout key. Shared across uvicorn workers via the database;
+    rows older than the longest window are swept on the fly (see api/hardening)."""
+
+    __tablename__ = "rate_hits"
+    __table_args__ = (Index("ix_rate_hits_key_ts", "key", "ts"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(160))
+    ts: Mapped[datetime] = mapped_column(DateTime)
+
+
+class PipelineRun(Base):
+    """One admin-triggered pipeline run. `lock_key` is PIPELINE_LOCK while it is in progress and NULL afterwards; the
+    unique constraint is the cross-process lock, so two admins (or two workers) cannot start two runs at once."""
+
+    __tablename__ = "pipeline_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lock_key: Mapped[str | None] = mapped_column(String(16), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default=PipelineStatus.RUNNING.value, index=True)  # domain.enums.PipelineStatus
+    started_by: Mapped[str | None] = mapped_column(String(254))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    result: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class BriefDelivery(Base):
+    """Record of one morning brief handed to one user, so re-running the 08:30 job never re-sends."""
+
+    __tablename__ = "brief_deliveries"
+    __table_args__ = (UniqueConstraint("user_id", "market", "day", "lang", "channel"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    market: Mapped[str] = mapped_column(String(8))
+    day: Mapped[date] = mapped_column(Date)
+    lang: Mapped[str] = mapped_column(String(2))
+    channel: Mapped[str] = mapped_column(String(16))  # domain.enums.DeliveryChannel
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 

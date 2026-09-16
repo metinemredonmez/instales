@@ -1,27 +1,43 @@
 import { useState, type FormEvent } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Gauge, Radar, TrendingDown } from "lucide-react"
-import { useAuth } from "@/lib/auth"
+import { api } from "@/lib/api"
+import { authPost, useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { GradientWordmark, Mark } from "@/components/layout/Brand"
 
+type Mode = "login" | "register" | "forgot" | "mfa"
+
 export function LoginPage() {
-  const { login, register } = useAuth()
+  const { login, register, verifyMfa } = useAuth()
   const { lang, setLang, t } = useI18n()
-  const [mode, setMode] = useState<"login" | "register">("login")
+  // Self-registration is a server switch; until the answer arrives only "sign in" shows (never a tab that 403s).
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: api.authConfig, staleTime: 5 * 60_000, retry: 0 })
+  const allowRegistration = config.data?.allow_registration === true
+  const [mode, setMode] = useState<Mode>("login")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
+  const [code, setCode] = useState("")
+  const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const switchMode = (m: Mode) => { setMode(m); setError(null); setNotice(null); setCode("") }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setBusy(true)
     try {
-      mode === "login" ? await login(email, password) : await register(email, password, name)
+      if (mode === "login") {
+        const challenge = await login(email, password)
+        if (challenge) { setMfaToken(challenge.mfa_token); switchMode("mfa") }
+      } else if (mode === "register") await register(email, password, name)
+      else if (mode === "forgot") { await authPost("forgot", { email }); setNotice(t("login.forgot.sent")) }
+      else if (mode === "mfa" && mfaToken) await verifyMfa(mfaToken, code.replace(/\s/g, ""))
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -85,23 +101,47 @@ export function LoginPage() {
           <div className="hidden items-center gap-3 lg:flex">
             <Mark className="size-9" />
             <div>
-              <div className="text-base font-semibold leading-tight">{mode === "login" ? t("login.welcome") : t("login.createAccount")}</div>
-              <div className="text-xs text-muted-foreground">{t("login.welcomeSub")}</div>
+              <div className="text-base font-semibold leading-tight">{mode === "login" ? t("login.welcome") : mode === "register" ? t("login.createAccount") : mode === "forgot" ? t("login.forgot.title") : t("login.mfa.title")}</div>
+              <div className="text-xs text-muted-foreground">{mode === "forgot" ? t("login.forgot.sub") : mode === "mfa" ? t("login.mfa.sub") : t("login.welcomeSub")}</div>
             </div>
           </div>
-          <div className="flex rounded-md border border-border p-0.5 text-sm">
-            {(["login", "register"] as const).map((m) => (
-              <button type="button" key={m} onClick={() => { setMode(m); setError(null) }} className={cn("flex-1 rounded-[5px] py-1.5 font-medium", mode === m ? "bg-secondary" : "text-muted-foreground")}>
-                {m === "login" ? t("login.signIn") : t("login.signUp")}
-              </button>
-            ))}
-          </div>
-          {mode === "register" && <Field label={t("field.name")} value={name} onChange={setName} autoComplete="name" />}
-          <Field label={t("field.email")} type="email" value={email} onChange={setEmail} autoComplete="email" required />
-          <Field label={t("field.password")} type="password" value={password} onChange={setPassword} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={8} hint={mode === "register" ? t("login.min8") : undefined} />
-          {error && <div className="rounded-md border border-negative/40 bg-negative/10 px-3 py-2 text-sm">{error}</div>}
-          <Button type="submit" className="w-full" disabled={busy}>{busy ? "…" : mode === "login" ? t("login.signIn") : t("login.createAccount")}</Button>
-          <p className="text-center text-xs text-muted-foreground">{t("login.invite")}</p>
+          {(mode === "login" || mode === "register") && allowRegistration && (
+            <div className="flex rounded-md border border-border p-0.5 text-sm">
+              {(["login", "register"] as const).map((m) => (
+                <button type="button" key={m} onClick={() => switchMode(m)} className={cn("flex-1 rounded-[5px] py-1.5 font-medium", mode === m ? "bg-secondary" : "text-muted-foreground")}>
+                  {m === "login" ? t("login.signIn") : t("login.signUp")}
+                </button>
+              ))}
+            </div>
+          )}
+          {mode === "mfa" ? (
+            <>
+              <Field label={t("login.mfa.code")} value={code} onChange={setCode} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required autoFocus />
+              {error && <div className="rounded-md border border-negative/40 bg-negative/10 px-3 py-2 text-sm">{error}</div>}
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "…" : t("login.mfa.verify")}</Button>
+              <button type="button" onClick={() => { setMfaToken(null); switchMode("login") }} className="block w-full text-center text-xs text-muted-foreground hover:text-foreground">{t("login.back")}</button>
+            </>
+          ) : mode === "forgot" ? (
+            <>
+              <Field label={t("field.email")} type="email" value={email} onChange={setEmail} autoComplete="email" required />
+              {error && <div className="rounded-md border border-negative/40 bg-negative/10 px-3 py-2 text-sm">{error}</div>}
+              {notice && <div className="rounded-md border border-positive/40 bg-positive/10 px-3 py-2 text-sm">{notice}</div>}
+              <Button type="submit" className="w-full" disabled={busy || !!notice}>{busy ? "…" : t("login.forgot.send")}</Button>
+              <button type="button" onClick={() => switchMode("login")} className="block w-full text-center text-xs text-muted-foreground hover:text-foreground">{t("login.back")}</button>
+            </>
+          ) : (
+            <>
+              {mode === "register" && <Field label={t("field.name")} value={name} onChange={setName} autoComplete="name" />}
+              <Field label={t("field.email")} type="email" value={email} onChange={setEmail} autoComplete="email" required />
+              <Field label={t("field.password")} type="password" value={password} onChange={setPassword} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={8} hint={mode === "register" ? t("login.min8") : undefined} />
+              {error && <div className="rounded-md border border-negative/40 bg-negative/10 px-3 py-2 text-sm">{error}</div>}
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "…" : mode === "login" ? t("login.signIn") : t("login.createAccount")}</Button>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <button type="button" onClick={() => switchMode("forgot")} className="hover:text-foreground hover:underline">{t("login.forgot")}</button>
+                {!allowRegistration && <span>{t("login.invite")}</span>}
+              </div>
+            </>
+          )}
         </form>
       </main>
     </div>

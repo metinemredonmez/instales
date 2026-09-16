@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from instilens import __version__
+from instilens.ai.assess import AiUnavailable
 from instilens.api.hardening import (
     AuthRateLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -39,6 +41,13 @@ app.include_router(ticket_router)
 app.include_router(userdata_router)
 app.include_router(admin_router)
 app.include_router(public_router)
+
+
+@app.exception_handler(AiUnavailable)
+def _ai_unavailable(_request: Request, exc: AiUnavailable) -> JSONResponse:
+    """Any route that reaches the model (notes, briefs, news tagging) answers 503 when the model side fails.
+    Importing the class here is cheap: ai/assess pulls the anthropic SDK in lazily, inside _client()."""
+    return JSONResponse({"detail": f"ai unavailable: {exc}"}, status_code=503, headers={"Retry-After": "60"})
 
 
 @app.on_event("startup")

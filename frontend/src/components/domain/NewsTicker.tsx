@@ -90,6 +90,7 @@ export function NewsTicker({ market }: { market: Market }) {
                 )}
               </div>
               <div className="mt-1.5 text-[15px] font-semibold leading-snug">{open.news.title}</div>
+              {foreign && <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">{sourceLangNote}</div>}
               {lang === "tr" && open.news.ai?.summary_tr && <p className="mt-1.5 text-muted-foreground">{open.news.ai.summary_tr} <span className="text-[10px] uppercase tracking-wider">· {t("ticker.aiSummary")}</span></p>}
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {open.news.symbols.map((s) => <Link key={s} to={`/stocks/${s}`} className="rounded-sm border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary hover:bg-primary/20">{s}</Link>)}

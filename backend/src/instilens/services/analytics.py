@@ -372,18 +372,23 @@ def stock_series(session: Session, market: str, symbol: str) -> dict | None:
 def window_flows(session: Session, market: str, window_days: int, as_of: date | None = None) -> dict:
     """Net institutional flow per instrument for an arbitrary window, straight from the fact tables.
 
-    Scores are always 30D; this powers the Today/7D/3M leaderboards. Uses the same de-dup law as
-    the score engine (snapshot diffs are canonical; events count only after the last snapshot).
+    Scores use each market's own window (`pipeline.MARKET_WINDOW_DAYS`: 30 days TR, 100 days US); this powers
+    the Today/7D/3M leaderboards for any window. Party counting follows the breadth law (a fund from a snapshot
+    diff or an EXACT event is one party, a GROUPED event is its institution) and the de-dup law of the score
+    engine: snapshot diffs are canonical, an event counts only after the latest snapshot known on `as_of`.
+    `funds_new` / `funds_exited` count the same parties the score engine counts — a snapshot diff's NEW/EXIT plus
+    the first-time entries and full exits disclosed by uncovered events.
     """
     from collections import defaultdict
     from datetime import timedelta
 
+    from instilens.domain.enums import ActivityType
     from instilens.domain.models import PositionChange, TransactionEvent, TransactionEventFund
-    from instilens.services.pipeline import _event_is_uncovered
+    from instilens.services.pipeline import _event_is_uncovered, _party_moves, latest_snapshot_as_of
 
     as_of = as_of or latest_score_date(session) or date.today()
     start = as_of - timedelta(days=window_days)
-    agg: dict[int, dict] = defaultdict(lambda: {"net_flow_value": 0.0, "net_qty": 0, "inc": set(), "red": set(), "new": 0, "exited": 0})
+    agg: dict[int, dict] = defaultdict(lambda: {"net_flow_value": 0.0, "net_qty": 0, "inc": set(), "red": set(), "changes": [], "events": []})
     for c in session.scalars(
         select(PositionChange).join(Instrument, Instrument.id == PositionChange.instrument_id)
         .where(Instrument.market_code == market, PositionChange.period_end > start, PositionChange.period_end <= as_of)
@@ -395,9 +400,8 @@ def window_flows(session: Session, market: str, window_days: int, as_of: date | 
             a["inc"].add(f"fund:{c.fund_id}")
         elif c.activity in ("REDUCE", "EXIT"):
             a["red"].add(f"fund:{c.fund_id}")
-        a["new"] += c.activity == "NEW"
-        a["exited"] += c.activity == "EXIT"
-    latest_snap = {fid: d for fid, d in session.execute(select(PortfolioSnapshot.fund_id, func.max(PortfolioSnapshot.as_of)).group_by(PortfolioSnapshot.fund_id))}
+        a["changes"].append(c)
+    latest_snap = latest_snapshot_as_of(session, as_of)
     for e in session.scalars(
         select(TransactionEvent).where(TransactionEvent.market_code == market, TransactionEvent.is_superseded.is_(False), TransactionEvent.effective_date > start, TransactionEvent.effective_date <= as_of)
     ):
@@ -408,12 +412,17 @@ def window_flows(session: Session, market: str, window_days: int, as_of: date | 
         a["net_qty"] += e.net_nominal
         party = f"fund:{e.funds[0].fund_id}" if e.confidence == "EXACT" and e.funds else f"inst:{e.institution_id}"
         (a["inc"] if e.net_nominal > 0 else a["red"]).add(party)
+        a["events"].append(e)
     _ = TransactionEventFund  # imported for relationship resolution
     rows = []
     for iid, a in agg.items():
         inst = session.get(Instrument, iid)
+        snapshot_moves, event_moves = _party_moves(a["changes"], a["events"])
+        moves = snapshot_moves + event_moves
         rows.append({"symbol": inst.symbol, "name": inst.name, "net_flow_value": a["net_flow_value"], "net_qty": a["net_qty"],
-                     "funds_increasing": len(a["inc"]), "funds_reducing": len(a["red"]), "funds_new": a["new"], "funds_exited": a["exited"]})
+                     "funds_increasing": len(a["inc"]), "funds_reducing": len(a["red"]),
+                     "funds_new": len({m.fund_code for m in moves if m.activity is ActivityType.NEW}),
+                     "funds_exited": len({m.fund_code for m in moves if m.activity is ActivityType.EXIT})})
     return {"as_of": as_of.isoformat(), "window_days": window_days, "window_start": start.isoformat(),
             "accumulated": sorted((r for r in rows if r["net_flow_value"] > 0), key=lambda r: -r["net_flow_value"]),
             "distributed": sorted((r for r in rows if r["net_flow_value"] < 0), key=lambda r: r["net_flow_value"])}

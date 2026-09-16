@@ -115,9 +115,8 @@ def get_stock_ai(symbol: str, request: Request, market: str = MarketParam, refre
 
     if refresh:
         require_admin(user)
-        _ai_budget(request, user)
-    try:
-        note = stock_assessment(session, market, symbol, force=refresh, lang=lang)
+    try:  # the budget is charged inside, only when the model is really called (first generation or refresh) — never on a cache hit
+        note = stock_assessment(session, market, symbol, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user))
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
     _warm_audio_later(note)
@@ -133,9 +132,8 @@ def get_brief(request: Request, market: str = MarketParam, refresh: bool = False
 
     if refresh:
         require_admin(user)
-        _ai_budget(request, user)
-    try:
-        note = daily_brief(session, market, force=refresh, lang=lang)
+    try:  # budget charged only on a real model call, never on a cache hit
+        note = daily_brief(session, market, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user))
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
     if refresh:

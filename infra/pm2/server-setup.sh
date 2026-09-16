@@ -9,7 +9,12 @@ echo "== system packages"
 apt-get update -qq
 apt-get install -y -qq postgresql nginx curl git >/dev/null
 command -v uv >/dev/null || (curl -LsSf https://astral.sh/uv/install.sh | sh && ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv)
-command -v node >/dev/null || { curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs; }
+# Node ≥ 22 (Vite 7 / frontend engines); NodeSource replaces an older nodejs in place, pm2 keeps running.
+NODE_MAJOR="$(node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')"
+if [ "${NODE_MAJOR:-0}" -lt 22 ]; then
+  echo "   node ${NODE_MAJOR:+v$NODE_MAJOR }→ 22 (nodesource)"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null && apt-get install -y -qq nodejs >/dev/null
+fi
 command -v pm2 >/dev/null || npm i -g pm2
 
 echo "== postgres role + db"

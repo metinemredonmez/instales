@@ -102,7 +102,7 @@ export function RadarPage() {
             </Section>
           )}
           <Section title={market === "TR" ? t("radar.liveKap") : t("radar.latestFilings")} hint={t("radar.latest.hint")} right={<Link to="/live" className="text-xs text-primary hover:underline">{t("common.all")} →</Link>}>
-            {events.data?.map((ev) => <EventRow key={ev.id} ev={ev} compact fresh={freshEvents.has(ev.id)} />)}
+            {events.data?.map((ev) => <EventRow key={ev.id} ev={ev} market={market} compact fresh={freshEvents.has(ev.id)} />)}
           </Section>
         </div>
       </div>

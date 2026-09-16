@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import queue
 import smtplib
+import threading
+import time
 from datetime import UTC, datetime
 from email.message import EmailMessage
 
@@ -12,7 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from instilens.config import settings
-from instilens.domain.models import AiNote, Notification, PushSubscription, User
+from instilens.domain.enums import DeliveryChannel
+from instilens.domain.models import AiNote, BriefDelivery, Notification, PushSubscription, User
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +33,8 @@ def send_telegram(chat_id: str, text: str) -> bool:
 
 
 def send_email(to: str, subject: str, body: str) -> bool:
-    if not (settings.smtp_host and settings.smtp_from):
+    """Blocking SMTP send. Use queue_email() from anything that answers an HTTP request."""
+    if not smtp_configured():
         return False
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = settings.smtp_from, to, subject
@@ -44,6 +49,56 @@ def send_email(to: str, subject: str, body: str) -> bool:
     except (smtplib.SMTPException, OSError) as exc:
         log.warning("email failed: %s", exc)
         return False
+
+
+def smtp_configured() -> bool:
+    return bool(settings.smtp_host and settings.smtp_from)
+
+
+# ---------------------------------------------------------------- out-of-band mail
+# smtplib blocks for up to 20 s. Inside a request that is two bugs at once: it pins a threadpool worker
+# (100 unauthenticated /auth/forgot calls a minute can starve the pool) and it makes the response measurably
+# slower for addresses that exist — the account-enumeration oracle /auth/forgot is built to close. So request
+# handlers enqueue and return; one daemon thread drains the queue.
+_MAILQ: queue.Queue[tuple[str, str, str]] = queue.Queue(maxsize=500)
+_mail_worker: threading.Thread | None = None
+_mail_lock = threading.Lock()
+
+
+def _drain_mail() -> None:
+    while True:
+        to, subject, body = _MAILQ.get()
+        try:
+            send_email(to, subject, body)  # module attribute on purpose: tests capture the outbox here
+        except Exception:  # noqa: BLE001 — a bad message must never kill the sender thread
+            log.exception("mail worker failed for %s", to)
+        finally:
+            _MAILQ.task_done()
+
+
+def queue_email(to: str, subject: str, body: str) -> bool:
+    """Hand a message to the background sender and return at once. True = SMTP is configured and it was queued."""
+    if not smtp_configured():
+        return False
+    global _mail_worker
+    with _mail_lock:
+        if _mail_worker is None or not _mail_worker.is_alive():
+            _mail_worker = threading.Thread(target=_drain_mail, name="instilens-mail", daemon=True)
+            _mail_worker.start()
+    try:
+        _MAILQ.put_nowait((to, subject, body))
+    except queue.Full:
+        log.warning("mail queue full; dropped message to %s", to)
+        return False
+    return True
+
+
+def flush_mail(timeout: float = 5.0) -> bool:
+    """Block until the queue is drained (tests, graceful shutdown). False if it was still busy at `timeout`."""
+    deadline = time.monotonic() + timeout
+    while not _MAILQ.empty() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return _MAILQ.empty()
 
 
 def send_push(session: Session, owner_id: str, title: str, body: str, link: str) -> int:
@@ -97,6 +152,20 @@ def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
     return False
 
 
+def onesignal_configured() -> bool:
+    return bool(settings.onesignal_app_id and settings.onesignal_rest_api_key)
+
+
+def push_user(session: Session, owner_id: str, title: str, body: str, link: str) -> str | None:
+    """One push path per user: OneSignal when it is configured (and reaches the user), otherwise VAPID.
+    Never both, so a phone with both registrations does not buzz twice. Returns the channel that delivered."""
+    if onesignal_configured() and send_onesignal(owner_id, title, body, link):
+        return DeliveryChannel.ONESIGNAL.value
+    if send_push(session, owner_id, title, body, link) > 0:
+        return DeliveryChannel.PUSH.value
+    return None
+
+
 def deliver_pending(session: Session) -> int:
     """Send every undelivered notification to its owner's configured channels."""
     sent = 0
@@ -107,9 +176,7 @@ def deliver_pending(session: Session) -> int:
             n.delivered_at = datetime.now(UTC)
             continue
         link = f"{settings.public_url}{n.link}" if n.link else settings.public_url
-        ok = False
-        ok |= send_push(session, n.owner_id, n.title, n.body, link) > 0
-        ok |= send_onesignal(n.owner_id, n.title, n.body, link)
+        ok = push_user(session, n.owner_id, n.title, n.body, link) is not None
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{n.title}</b>\n{n.body}\n{link}")
         if u.notify_email:
@@ -121,13 +188,27 @@ def deliver_pending(session: Session) -> int:
     return sent
 
 
+def user_brief_markets(u: User) -> list[str]:
+    markets = [m for m in (u.brief_markets or []) if m in ("TR", "US")]
+    return markets or ["TR"]
+
+
+def _delivered(session: Session, u: User, market: str, day, lang: str) -> set[str]:
+    rows = session.scalars(select(BriefDelivery.channel).where(BriefDelivery.user_id == u.id, BriefDelivery.market == market, BriefDelivery.day == day, BriefDelivery.lang == lang))
+    return set(rows)
+
+
 def deliver_brief(session: Session, note: AiNote) -> int:
-    """Send the morning brief to every opted-in user, in the user's language (EN generated on demand)."""
+    """Send the morning brief to every user who opted in for this market, in the user's language (EN generated on
+    demand). Every (user, market, day, lang, channel) delivery is recorded in `brief_deliveries`, so running the
+    08:30 job twice never sends the same brief twice. Returns the number of users reached for the first time."""
     from instilens.ai.assess import daily_brief
 
     notes: dict[str, AiNote | None] = {note.lang: note}
     sent = 0
-    for u in session.scalars(select(User).where(User.notify_brief.is_(True))):
+    for u in session.scalars(select(User).where(User.notify_brief.is_(True), User.is_active.is_(True))):
+        if note.market_code not in user_brief_markets(u):
+            continue
         lang = u.lang if u.lang in ("tr", "en") else "tr"
         if lang not in notes:
             try:
@@ -144,12 +225,19 @@ def deliver_brief(session: Session, note: AiNote) -> int:
             footer = "Betimleyici AI notu; yatırım tavsiyesi değildir."
         watch = "\n".join(f"• {w}" for w in (n.data or {}).get("watch", []))
         body = f"{n.content}\n\n{watch}\n\n{settings.public_url}\n{footer}"
-        ok = False
-        ok |= send_push(session, str(u.id), title, n.content[:180] + "…", settings.public_url) > 0
-        ok |= send_onesignal(str(u.id), title, n.content[:180] + "…", settings.public_url)
-        if u.notify_telegram_chat_id:
-            ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{title}</b>\n{body}")
-        if u.notify_email:
-            ok |= send_email(u.email, title, body)
-        sent += int(ok)
+        done = _delivered(session, u, n.market_code, n.as_of, n.lang)
+        got: list[str] = []
+        if not done & {DeliveryChannel.PUSH, DeliveryChannel.ONESIGNAL}:
+            ch = push_user(session, str(u.id), title, n.content[:180] + "…", settings.public_url)
+            if ch:
+                got.append(ch)
+        if u.notify_telegram_chat_id and DeliveryChannel.TELEGRAM not in done and send_telegram(u.notify_telegram_chat_id, f"<b>{title}</b>\n{body}"):
+            got.append(DeliveryChannel.TELEGRAM.value)
+        if u.notify_email and DeliveryChannel.EMAIL not in done and send_email(u.email, title, body):
+            got.append(DeliveryChannel.EMAIL.value)
+        for ch in got:
+            session.add(BriefDelivery(user_id=u.id, market=n.market_code, day=n.as_of, lang=n.lang, channel=ch))
+        if got and not done:
+            sent += 1
+    session.flush()
     return sent

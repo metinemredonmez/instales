@@ -59,7 +59,9 @@ def extract_transactions(text: str) -> tuple[list[dict], list[str], str | None]:
         return [], [], None
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     r = client.messages.parse(
-        model=settings.ai_model, max_tokens=4000, thinking={"type": "adaptive"}, output_config={"effort": "low"},
+        # Haiku 4.5 request shape: adaptive thinking and output_config.effort are 4.6+ parameters and 400 here —
+        # this model takes an explicit thinking budget (< max_tokens, min 1024) and no effort.
+        model=settings.ai_extract_model, max_tokens=4000, thinking={"type": "enabled", "budget_tokens": 2000},
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": text[:12000]}],
         output_format=TxExtraction,

@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom"
-import { Activity, Bell, Building2, GitCompare, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Radar, Shield, SlidersHorizontal, Sparkles, Star, Sun, Tv } from "lucide-react"
+import { Activity, Bell, Building2, GitCompare, LogOut, MailWarning, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star, Sun, Tv } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -30,6 +30,8 @@ const NAV: NavItem[] = [
 const MINE: NavItem[] = [
   { to: "/watchlist", key: "nav.watchlist", icon: Star, mobile: true },
   { to: "/alerts", key: "alerts.title", icon: Bell },
+  { to: "/settings", key: "nav.settings", icon: Settings },
+  { to: "/desktop", key: "nav.desktop", icon: Monitor },
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -37,12 +39,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { market, setMarket } = useMarket()
   const { user, logout } = useAuth()
   const { lang, setLang, t } = useI18n()
-  useEffect(() => { registerSw().catch(() => {}) }, [])
+  // One push path per deployment: OneSignal (its own worker + identity) when configured, else our /sw.js for VAPID.
   useEffect(() => {
     api.pushPublicKey().then((k) => {
-      if (!k.onesignal_app_id || !user) return
-      loadOneSignal(k.onesignal_app_id)
-      withOneSignal((os) => os.login(String(user.id)))
+      if (k.onesignal_app_id) {
+        loadOneSignal(k.onesignal_app_id)
+        if (user) withOneSignal((os) => os.login(String(user.id)))
+      } else registerSw().catch(() => {})
     }).catch(() => {})
   }, [user])
   // The account's language wins on login; switching in the header saves it back.
@@ -118,7 +121,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="hidden shrink-0 items-center gap-2 border-l border-border pl-3 sm:flex">
             <div className="leading-tight">
               <div className="text-xs font-medium">{user?.name}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{user?.plan}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{user?.role === "ADMIN" ? t("plan.admin") : t(({ FREE: "plan.free", PRO: "plan.pro", PRO_PLUS: "plan.proPlus" } as const)[user?.plan ?? "FREE"])}</div>
+              {user?.email_verified === false && (
+                <NavLink to="/settings" className="mt-0.5 flex items-center gap-1 text-[10px] text-warning hover:underline" title={t("account.unverified")}>
+                  <MailWarning className="size-3" /> {t("account.unverified")}
+                </NavLink>
+              )}
             </div>
             <Button variant="ghost" size="icon" aria-label={t("nav.logout")} title={t("nav.logout")} onClick={() => { withOneSignal((os) => os.logout()); logout() }}><LogOut className="size-4" /></Button>
           </div>

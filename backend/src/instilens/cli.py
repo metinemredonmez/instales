@@ -105,8 +105,10 @@ def compute(as_of: str | None = typer.Option(None, help="YYYY-MM-DD, default tod
         typer.echo(f"position changes: {pipeline.rebuild_positions(s)}")
         typer.echo(f"instruments scored: {pipeline.compute_intelligence(s, day)}")
         from instilens.services.alerts import evaluate
+        from instilens.services.notify import deliver_pending
 
         typer.echo(f"notifications: {evaluate(s, day)}")
+        typer.echo(f"delivered: {deliver_pending(s)}")
 
 
 @app.command()
@@ -114,6 +116,7 @@ def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> No
     """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (Yahoo) → positions → intelligence → alerts → outcomes."""
     from instilens.ingestion.prices.yahoo import load_prices
     from instilens.services.alerts import evaluate
+    from instilens.services.notify import deliver_pending
     from instilens.services.outcomes import compute_outcomes
 
     init_db(get_engine())
@@ -137,6 +140,7 @@ def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> No
         typer.echo(f"position changes {pipeline.rebuild_positions(s)}")
         typer.echo(f"instruments scored {pipeline.compute_intelligence(s, day)}")
         typer.echo(f"notifications {evaluate(s, day)}")
+        typer.echo(f"delivered {deliver_pending(s)}")
         typer.echo(f"signal outcomes {compute_outcomes(s)}")
 
 

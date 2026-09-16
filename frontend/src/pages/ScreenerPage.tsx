@@ -49,7 +49,8 @@ export function ScreenerPage() {
           <Field label={`${t("screener.fundsIncreasing")} ≥`} value={f.min_funds_increasing} onChange={num("min_funds_increasing")} />
           <Field label={`${t("common.newPosition")} ≥`} value={f.min_funds_new} onChange={num("min_funds_new")} />
           <Field label={`${t("common.netFlow")} ≥ (${market === "US" ? "$" : "₺"})`} value={f.min_net_flow_value} onChange={num("min_net_flow_value")} />
-          <Field label={`${t("screener.priceChange30")} ≤ (%)`} value={f.max_price_change_30d_pct} onChange={num("max_price_change_30d_pct")} />
+          {/* The API's price change is a fixed 30 calendar days for both markets (not the 100D US score window) — the label says 30D on purpose. */}
+          <Field label={`${t("screener.priceChange30")} ≤ (%)`} title={t("screener.price30.hint")} value={f.max_price_change_30d_pct} onChange={num("max_price_change_30d_pct")} />
           <div>
             <div className="mb-1.5 text-xs text-muted-foreground">{t("screener.signalAny")}</div>
             <div className="flex flex-wrap gap-1.5">
@@ -70,7 +71,7 @@ export function ScreenerPage() {
                 <th className="px-2 py-2 text-right font-medium">{t("common.consensus")}</th>
                 <th className="px-2 py-2 text-right font-medium">{t("common.fund")} ↑/↓</th>
                 <th className="px-2 py-2 text-right font-medium">{t("common.netFlow")}</th>
-                <th className="px-2 py-2 text-right font-medium">{t("screener.price30")}</th>
+                <th className="px-2 py-2 text-right font-medium" title={t("screener.price30.hint")}>{t("screener.price30")}</th>
                 <th className="px-4 py-2 text-left font-medium">{t("common.signals")}</th>
               </tr>
             </thead>
@@ -95,9 +96,9 @@ export function ScreenerPage() {
   )
 }
 
-function Field({ label, value, onChange }: { label: string; value: number | undefined; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+function Field({ label, title, value, onChange }: { label: string; title?: string; value: number | undefined; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
   return (
-    <label className="block">
+    <label className="block" title={title}>
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       <input type="number" value={value ?? ""} onChange={onChange} className="num h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring/40" />
     </label>

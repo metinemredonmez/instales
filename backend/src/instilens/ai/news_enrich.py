@@ -11,10 +11,11 @@ import json
 from typing import Literal
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from instilens.ai.assess import AiUnavailable
 from instilens.config import settings
 from instilens.domain.models import Instrument, NewsItem
 
@@ -49,15 +50,21 @@ def enrich(session: Session, market: str, limit: int = 40, model: str | None = N
     known = sorted({i.symbol for i in session.scalars(select(Instrument).where(Instrument.market_code == market)) if i.symbol.isalpha()})
     payload = [{"id": n.id, "source": n.source, "title": n.title} for n in items]
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    response = client.messages.parse(
-        model=model or settings.ai_news_model,
-        max_tokens=8000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "low"},
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": f"Known tickers ({market}): {', '.join(known[:400])}\n\nHeadlines:\n{json.dumps(payload, ensure_ascii=False)}"}],
-        output_format=HeadlineBatch,
-    )
+    try:
+        response = client.messages.parse(
+            model=model or settings.ai_news_model,
+            max_tokens=8000,
+            # Haiku 4.5 takes an explicit thinking budget; adaptive thinking and output_config.effort are
+            # 4.6+ parameters and 400 on this model (they only worked while the call used ai_model).
+            thinking={"type": "enabled", "budget_tokens": 2000},
+            system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": f"Known tickers ({market}): {', '.join(known[:400])}\n\nHeadlines:\n{json.dumps(payload, ensure_ascii=False)}"}],
+            output_format=HeadlineBatch,
+        )
+    except anthropic.APIError as exc:
+        raise AiUnavailable(f"{type(exc).__name__}: {getattr(exc, 'message', exc)}") from exc
+    except ValidationError as exc:  # a summary over 200 chars etc.; the batch stays untagged and is retried next pull
+        raise AiUnavailable(f"model output rejected: {exc.error_count()} field(s) outside the schema") from exc
     if response.stop_reason == "refusal" or response.parsed_output is None:
         return 0
     by_id = {n.id: n for n in items}

@@ -31,6 +31,7 @@ from instilens.domain.enums import (
 from instilens.domain.models import (
     Disclosure,
     Fund,
+    Institution,
     Instrument,
     MarketPrice,
     PortfolioSnapshot,
@@ -109,6 +110,10 @@ def _store_raw(session: Session, raw: RawDisclosure) -> Disclosure | None:
     session.flush()
 
     amends = raw.payload.get("amends_source_id")
+    if _is_additive_amendment(raw.payload):
+        amends = None  # a NEW HOLDINGS 13F-HR/A completes the original filing; it never replaces it
+    elif not amends and raw.kind is DisclosureKind.SEC_13F and raw.payload.get("amendment"):
+        amends = _sec_original_accession(session, raw)
     if amends:
         old = session.scalar(
             select(Disclosure).where(Disclosure.source == raw.source, Disclosure.source_id == str(amends))
@@ -118,7 +123,45 @@ def _store_raw(session: Session, raw: RawDisclosure) -> Disclosure | None:
             old.is_superseded = True
             for ev in session.scalars(select(TransactionEvent).where(TransactionEvent.disclosure_id == old.id)):
                 ev.is_superseded = True
+            _drop_snapshots_of(session, old)
     return row
+
+
+def _is_additive_amendment(payload: dict) -> bool:
+    """13F-HR/A cover pages carry an `amendmentType`: RESTATEMENT replaces the original holdings table, NEW HOLDINGS
+    lists only the positions the original left out. An unknown type is read as the historical default, a
+    restatement. Additive amendments are merged into the original snapshot by `_write_snapshot`."""
+    from instilens.ingestion.sec.edgar_client import is_additive_amendment
+
+    return is_additive_amendment(payload)
+
+
+def _drop_snapshots_of(session: Session, disc: Disclosure) -> None:
+    """A superseded filing's snapshot must not survive its correction: the replacement writes its own. Without
+    this, a correction that also fixes the report date would leave two snapshots for one (fund, period) — the
+    same-`as_of` replacement in `_write_snapshot` only catches corrections that keep the date."""
+    for snap in session.scalars(select(PortfolioSnapshot).where(PortfolioSnapshot.disclosure_id == disc.id)):
+        session.execute(delete(PositionChange).where((PositionChange.from_snapshot_id == snap.id) | (PositionChange.to_snapshot_id == snap.id)))
+        session.delete(snap)
+    session.flush()
+
+
+def _sec_original_accession(session: Session, raw: RawDisclosure) -> str | None:
+    """A 13F-HR/A names no original; the original is the latest earlier 13F of the same filer for the same
+    period (same CIK + period, filed earlier). Accession prefixes belong to filing agents, not filers, so
+    "earlier" means the filing date. Payloads are JSON, so the small SEC set is filtered in Python."""
+    cik, period = str(raw.payload.get("cik")), str(raw.payload.get("period"))
+    candidates = [
+        (d.published_at, d.source_id)
+        for d in session.scalars(
+            select(Disclosure).where(
+                Disclosure.source == raw.source, Disclosure.kind == DisclosureKind.SEC_13F,
+                Disclosure.source_id != raw.source_id, Disclosure.published_at <= raw.published_at,
+            )
+        )
+        if str(d.payload.get("cik")) == cik and str(d.payload.get("period")) == period
+    ]
+    return max(candidates)[1] if candidates else None
 
 
 # --------------------------------------------------------------------------- stage 2: parse
@@ -195,11 +238,17 @@ def _write_snapshot(session: Session, resolver: EntityResolver, disc: Disclosure
     institution = resolver.institution(snap.market, snap.institution_ref, snap.institution_name)
     fund = resolver.fund(snap.fund_code, institution, snap.fund_name)
     disc.institution_id = institution.id
-    # A corrected report (KAP düzeltme, 13F-HR/A) for the same date replaces the earlier snapshot.
+    if disc.is_superseded:  # a correction already replaced this filing; its snapshot must not resurface
+        return
+    # A corrected report (KAP düzeltme, restating 13F-HR/A) for the same date replaces the earlier snapshot.
     existing = session.scalar(
         select(PortfolioSnapshot).where(PortfolioSnapshot.fund_id == fund.id, PortfolioSnapshot.as_of == snap.as_of)
     )
+    if existing is not None and _is_additive_amendment(disc.payload):
+        _merge_into_snapshot(session, resolver, existing, snap)
+        return
     if existing is not None:
+        session.execute(delete(PositionChange).where((PositionChange.from_snapshot_id == existing.id) | (PositionChange.to_snapshot_id == existing.id)))
         session.delete(existing)
         session.flush()
     row = PortfolioSnapshot(
@@ -221,6 +270,30 @@ def _write_snapshot(session: Session, resolver: EntityResolver, disc: Disclosure
             )
         )
     session.add(row)
+
+
+def _merge_into_snapshot(session: Session, resolver: EntityResolver, existing: PortfolioSnapshot, snap) -> None:
+    """A NEW HOLDINGS 13F-HR/A adds the positions its original left out, so its rows join the existing snapshot
+    (one snapshot per fund and period stays true) instead of replacing a full book with a handful of holdings.
+    Weights are recomputed over the completed book; `existing.disclosure_id` keeps naming the original filing,
+    the amendment stays linked to it through `Disclosure.payload["amends_source_id"]`."""
+    by_instrument = {h.instrument_id: h for h in existing.holdings}
+    for h in snap.holdings:
+        instrument = resolver.instrument(snap.market, h.instrument_symbol)
+        row = by_instrument.get(instrument.id)
+        if row is None:
+            row = SnapshotHolding(instrument_id=instrument.id, quantity=h.quantity, market_value=h.market_value, weight_pct=h.weight_pct)
+            existing.holdings.append(row)
+            by_instrument[instrument.id] = row
+        else:  # the amendment restates a position it also lists — its numbers are the newer ones
+            row.quantity, row.market_value, row.weight_pct = h.quantity, h.market_value, h.weight_pct
+    total = sum((h.market_value for h in existing.holdings if h.market_value is not None), Decimal(0))
+    if total:
+        existing.total_value = total
+        for h in existing.holdings:
+            if h.market_value is not None:
+                h.weight_pct = (h.market_value / total * 100).quantize(Decimal("0.0001"))
+    session.flush()
 
 
 # --------------------------------------------------------------------------- stage 3: positions
@@ -344,12 +417,7 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
         )
         if e.effective_date > start_for(e.instrument_id)
     ]
-    latest_snapshot_by_fund = {
-        fund_id: as_of_date
-        for fund_id, as_of_date in session.execute(
-            select(PortfolioSnapshot.fund_id, func.max(PortfolioSnapshot.as_of)).group_by(PortfolioSnapshot.fund_id)
-        )
-    }
+    latest_snapshot_by_fund = latest_snapshot_as_of(session, as_of)
 
     by_instrument: dict[int, list[PositionChange]] = defaultdict(list)
     for c in changes:
@@ -373,7 +441,7 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
             if c.activity in (ActivityType.ADD, ActivityType.NEW):
                 conv = scoring.conviction_score(c.from_weight_pct, c.to_weight_pct)
                 session.add(_score_row(instrument_id, c.fund_id, ScoreType.CONVICTION, as_of, conv, {}))
-        for sig in _detect_signals(session, instrument_id, by_instrument[instrument_id], activity, start_for(instrument_id), as_of):
+        for sig in _detect_signals(session, instrument_id, by_instrument[instrument_id], events_by_instrument[instrument_id], activity, start_for(instrument_id), as_of):
             # One row per signal EPISODE: if the same signal was already open for this instrument (its window_end
             # is the previous compute day or later), extend it instead of inserting a duplicate every day.
             open_row = session.scalar(
@@ -403,10 +471,22 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
     return written
 
 
+def latest_snapshot_as_of(session: Session, as_of: date) -> dict[int, date]:
+    """Latest snapshot date per fund *as known on `as_of`*. Backfills (`compute_intelligence(as_of=<past>)`) must
+    reproduce what was known then: a snapshot published later does not retroactively cover an event."""
+    return {
+        fund_id: as_of_date
+        for fund_id, as_of_date in session.execute(
+            select(PortfolioSnapshot.fund_id, func.max(PortfolioSnapshot.as_of)).where(PortfolioSnapshot.as_of <= as_of).group_by(PortfolioSnapshot.fund_id)
+        )
+    }
+
+
 def _event_is_uncovered(e: TransactionEvent, latest_snapshot_by_fund: dict[int, date]) -> bool:
     """De-duplication law: a transaction event only counts while no later snapshot of any related
-    fund exists. Once a snapshot covers the trade date, the snapshot diff is the canonical record.
-    Conservative on purpose — we would rather undercount than double count."""
+    fund exists (as of the compute date — see `latest_snapshot_as_of`). Once a snapshot covers the
+    trade date, the snapshot diff is the canonical record. Conservative on purpose — we would rather
+    undercount than double count."""
     covers = [latest_snapshot_by_fund.get(f.fund_id) for f in e.funds]
     covers = [d for d in covers if d is not None]
     return not covers or e.effective_date > max(covers)
@@ -424,8 +504,12 @@ def _instrument_activity(
     inc: set[str] = {f"fund:{c.fund_id}" for c in changes if c.activity in (ActivityType.ADD, ActivityType.NEW)}
     red: set[str] = {f"fund:{c.fund_id}" for c in changes if c.activity in (ActivityType.REDUCE, ActivityType.EXIT)}
     hold: set[str] = {f"fund:{c.fund_id}" for c in changes if c.activity == ActivityType.HOLD}
-    new = {c.fund_id for c in changes if c.activity == ActivityType.NEW}
-    exited = {c.fund_id for c in changes if c.activity == ActivityType.EXIT}
+    # First-time entries and full exits are counted the same way the NEW/EXIT clusters count them: snapshot diffs
+    # plus the entries/exits disclosed by uncovered events, de-duplicated on the party key.
+    snapshot_moves, event_moves = _party_moves(changes, events)
+    moves = snapshot_moves + event_moves
+    new = {m.fund_code for m in moves if m.activity is ActivityType.NEW}
+    exited = {m.fund_code for m in moves if m.activity is ActivityType.EXIT}
 
     flow_by_conf: dict[Confidence, Decimal] = defaultdict(Decimal)
     net_flow = Decimal(0)
@@ -494,14 +578,18 @@ def _persistence(session: Session, instrument_id: int, as_of: date) -> int:
     return count if sign > 0 else 0
 
 
-def _detect_signals(session, instrument_id, changes, activity, window_start, as_of):
+def _detect_signals(session, instrument_id, changes, events, activity, window_start, as_of):
     out = []
     if sig := detect_accumulation(_period_flows(session, instrument_id, as_of)):
         out.append(sig)
-    moves = [FundMove(str(c.fund_id), ActivityType(c.activity), c.period_end) for c in changes]
+    snapshot_moves, event_moves = _party_moves(changes, events)
     for kind in (ActivityType.NEW, ActivityType.EXIT):
-        if sig := detect_cluster(moves, kind):
-            sig.evidence["funds"] = _fund_codes(session, [int(f) for f in sig.evidence["funds"]])
+        if sig := detect_cluster(snapshot_moves + event_moves, kind):
+            from_snapshots = {m.fund_code for m in snapshot_moves if m.activity is kind}
+            from_events = {m.fund_code for m in event_moves if m.activity is kind} - from_snapshots
+            sig.evidence["from_snapshots"] = _party_labels(session, from_snapshots)
+            sig.evidence["from_events"] = _party_labels(session, from_events)
+            sig.evidence["funds"] = _party_labels(session, from_snapshots | from_events)
             out.append(sig)
     price_change = _price_change_pct(session, instrument_id, window_start, as_of)
     from_qty = sum(c.from_qty for c in changes)
@@ -513,8 +601,54 @@ def _detect_signals(session, instrument_id, changes, activity, window_start, as_
     return out
 
 
+def _party_moves(changes: list[PositionChange], events: list[TransactionEvent]) -> tuple[list[FundMove], list[FundMove]]:
+    """The window's moves per party, split by where they came from. Parties use the breadth-law keys: "fund:<id>"
+    for snapshot diffs and EXACT events (one key, so the same fund is never counted twice), "inst:<id>" for a
+    GROUPED event. Events only reach here when uncovered by a snapshot."""
+    snapshot_moves = [FundMove(f"fund:{c.fund_id}", ActivityType(c.activity), c.period_end) for c in changes]
+    return snapshot_moves, _event_moves(events, snapshot_moves)
+
+
+def _event_moves(events: list[TransactionEvent], snapshot_moves: list[FundMove]) -> list[FundMove]:
+    """Entries and exits disclosed by transaction events: ownership 0 %/unknown → >0 % on a buy is a first-time
+    entry, → 0 % on a sell is a full exit. A GROUPED event is its institution; it is dropped when one of its
+    funds is already counted for that move (snapshot diff or EXACT event), so a fund is never counted twice."""
+    kinds: dict[int, ActivityType] = {}
+    for e in events:
+        before, after = e.ownership_before_pct, e.ownership_after_pct
+        if after is None:
+            continue
+        if e.net_nominal > 0 and (before is None or before == 0) and after > 0:
+            kinds[e.id] = ActivityType.NEW
+        elif e.net_nominal < 0 and after == 0:
+            kinds[e.id] = ActivityType.EXIT
+    counted: dict[ActivityType, set[str]] = {k: {m.fund_code for m in snapshot_moves if m.activity is k} for k in (ActivityType.NEW, ActivityType.EXIT)}
+    out: list[FundMove] = []
+    exact = [e for e in events if e.id in kinds and e.confidence == Confidence.EXACT and e.funds]
+    grouped = [e for e in events if e.id in kinds and not (e.confidence == Confidence.EXACT and e.funds)]
+    for e in exact:  # EXACT first: a fund named explicitly must never be hidden behind an institution party
+        party = f"fund:{e.funds[0].fund_id}"
+        counted[kinds[e.id]].add(party)
+        out.append(FundMove(party, kinds[e.id], e.effective_date))
+    for e in grouped:
+        if any(f"fund:{f.fund_id}" in counted[kinds[e.id]] for f in e.funds):
+            continue
+        out.append(FundMove(f"inst:{e.institution_id}", kinds[e.id], e.effective_date))
+    return out
+
+
+def _party_labels(session: Session, parties: set[str]) -> list[str]:
+    """Human-readable party keys for evidence JSON: fund codes, institution codes for GROUPED parties."""
+    fund_ids = [int(p[5:]) for p in parties if p.startswith("fund:")]
+    inst_ids = [int(p[5:]) for p in parties if p.startswith("inst:")]
+    labels = _fund_codes(session, fund_ids)
+    if inst_ids:
+        labels += [f"inst:{code}" for code in session.scalars(select(Institution.code).where(Institution.id.in_(inst_ids)))]
+    return sorted(labels)
+
+
 def _fund_codes(session: Session, fund_ids: list[int]) -> list[str]:
-    return sorted(session.scalars(select(Fund.code).where(Fund.id.in_(fund_ids))))
+    return sorted(session.scalars(select(Fund.code).where(Fund.id.in_(fund_ids)))) if fund_ids else []
 
 
 def _price_change_pct(session: Session, instrument_id: int, start: date, end: date) -> Decimal | None:

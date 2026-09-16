@@ -24,6 +24,8 @@ same status vocabulary: **Giderildi** (fixed + tested), **Güvenceye alındı** 
 | S17 | 7.14 | Session token in `localStorage` | Kabul edildi (kalan risk) | needed for Tauri/mobile bearer flow; mitigated by CSP, 7-day TTL, revocation; move to httpOnly cookie for web-only later |
 | S18 | 7.16 | SSRF | Temiz | no user-controlled URLs are fetched; feeds/APIs are fixed hosts |
 | S19 | 7.5 | BOLA | Temiz | every user-data query is owner-scoped; admin router gated |
-| S20 | 7.7 | MFA | Doğrulanacak | not implemented; TOTP for ADMIN accounts is the next step (P1) |
+| S20 | 7.7 | MFA | Giderildi | TOTP (pyotp) for any account, enforced on login AND on password reset; setup/enable/disable in Ayarlar → Hesap güvenliği; rate-limited /mfa/verify |
+| S21 | 7.7 | Password reset / e-mail verification | Giderildi | single-use hashed tokens (30 min), always-200 /forgot, verification link at registration |
+| S22 | 7.17 | Limiter state per process | Giderildi | rate_hits table shared across uvicorn workers, fail-closed lockout on DB error; pipeline run lock row |
 
 Re-test: `uv run pytest -q` (auth tests cover S2–S5, S7–S10). Operational: run `harden-nginx.sh` once after deploy.

@@ -55,7 +55,7 @@ export function InstitutionPage() {
         <AggTable title={t("inst.topIncreased")} rows={d.top_increased} market={market} />
         <AggTable title={t("inst.topReduced")} rows={d.top_reduced} market={market} negative />
       </div>
-      <Section title={t("common.kapDisclosures")} hint={`${d.events.length}`}>{d.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}{d.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.none")}</div>}</Section>
+      <Section title={t(market === "US" ? "common.secDisclosures" : "common.kapDisclosures")} hint={`${d.events.length}`}>{d.events.map((ev) => <EventRow key={ev.id} ev={ev} market={market} />)}{d.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.none")}</div>}</Section>
     </div>
   )
 }

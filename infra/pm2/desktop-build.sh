@@ -22,19 +22,22 @@ if [ "${1:-}" = "--setup" ]; then
   echo "✓ setup done"; exit 0
 fi
 # shellcheck disable=SC1090
-[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+if [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
 KEY="$(sed -n 's/^INSTILENS_RELEASE_UPLOAD_KEY=//p' "$ENV" | head -1 | tr -d '"\r')"
 [ -n "$KEY" ] || { echo "❌ INSTILENS_RELEASE_UPLOAD_KEY missing in $ENV (run --setup)"; exit 1; }
+# curl reads the key from a 0600 header file (-H @file) so it never shows up in this box's `ps`
+HDR="$(mktemp "${TMPDIR:-/tmp}/il-hdr.XXXXXX")"; chmod 600 "$HDR"; printf 'x-release-key: %s\n' "$KEY" > "$HDR"
+trap 'rm -f "$HDR"' EXIT                     # replaced by restore() below, which also removes it
 [ -f "$ROOT/.tauri/instilens.key" ] || { echo "❌ $ROOT/.tauri/instilens.key missing (updater signing key)"; exit 1; }
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$ROOT/.tauri/instilens.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 
 VERSION="${1:-}"
-[ -n "$VERSION" ] || VERSION="$(curl -fsS -X POST "$API/ci/next" -H "x-release-key: $KEY" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
+[ -n "$VERSION" ] || VERSION="$(curl -fsS -X POST "$API/ci/next" -H "@$HDR" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
 [ -n "$VERSION" ] || { echo "❌ no version from the API"; exit 1; }
 echo "▶ version $VERSION"
 
 cd "$ROOT/frontend"
-restore() { git -C "$ROOT" checkout -- frontend/src-tauri/tauri.conf.json frontend/src-tauri/Cargo.toml frontend/src-tauri/Cargo.lock 2>/dev/null || true; }
+restore() { rm -f "$HDR"; git -C "$ROOT" checkout -- frontend/src-tauri/tauri.conf.json frontend/src-tauri/Cargo.toml frontend/src-tauri/Cargo.lock 2>/dev/null || true; }
 trap restore EXIT
 python3 - "$VERSION" <<'PY'
 import json,pathlib,re,sys
@@ -52,8 +55,9 @@ if command -v cargo-xwin >/dev/null && command -v makensis >/dev/null; then
   if npx tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc >/tmp/il-win.log 2>&1; then WIN="✓"; else WIN="✗ (/tmp/il-win.log)"; tail -5 /tmp/il-win.log; fi
 else WIN="✗ tools missing (run --setup)"; fi
 
-upload() { local f="$1" sig=""; [ -n "${2:-}" ] && [ -f "$2" ] && sig="$(cat "$2")"
-  if curl -fsS -X POST "$API/ci/upload" -H "x-release-key: $KEY" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=$sig"} >/dev/null; then echo "   ↑ $(basename "$f")"; else echo "   ✗ $(basename "$f")"; fi; }
+upload() { local f="$1" sig=""; if [ -n "${2:-}" ] && [ -f "$2" ]; then sig="$2"; fi
+  # -H @file / -F "signature=<file": neither the key nor the signature ever reaches a command line
+  if curl -fsS -X POST "$API/ci/upload" -H "@$HDR" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=<$sig"} >/dev/null; then echo "   ↑ $(basename "$f")"; else echo "   ✗ $(basename "$f")"; fi; }
 shopt -s nullglob
 B="src-tauri/target/release/bundle"
 for f in "$B"/appimage/*.AppImage; do upload "$f" "$f.sig"; done

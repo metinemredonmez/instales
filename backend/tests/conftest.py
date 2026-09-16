@@ -14,24 +14,34 @@ FIXTURES = BACKEND_ROOT / "fixtures"
 AS_OF = date(2026, 9, 14)
 
 
+def _memory_engine():
+    return create_engine(
+        "sqlite+pysqlite:///:memory:", future=True,
+        connect_args={"check_same_thread": False}, poolclass=StaticPool,  # TestClient runs in a thread
+    )
+
+
 @pytest.fixture(autouse=True)
 def _offline_password_policy():
-    """Tests never call the HIBP breach API; the policy itself is covered in test_auth."""
-    from instilens.api.hardening import reset_rate_limits
+    """Tests never call the HIBP breach API; the policy itself is covered in test_auth.
+    Rate-limit / lockout counters and the pipeline lock get their own throwaway in-memory database."""
+    from instilens.api import hardening
     from instilens.config import settings
 
     settings.breached_password_check = False
-    reset_rate_limits()
+    store = _memory_engine()
+    Base.metadata.create_all(store)
+    hardening.use_engine(store)
+    hardening.reset_rate_limits()
     yield
-    reset_rate_limits()
+    hardening.reset_rate_limits()
+    hardening.use_engine(None)
+    store.dispose()
 
 
 @pytest.fixture
 def session() -> Session:
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:", future=True,
-        connect_args={"check_same_thread": False}, poolclass=StaticPool,  # TestClient runs in a thread
-    )
+    engine = _memory_engine()
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, expire_on_commit=False)()
     yield s

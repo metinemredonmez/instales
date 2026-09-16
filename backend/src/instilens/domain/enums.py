@@ -92,3 +92,28 @@ class InstitutionKind(StrEnum):
     HEDGE_FUND = "HEDGE_FUND"
     ASSET_MANAGER = "ASSET_MANAGER"
     OTHER = "OTHER"
+
+
+class PipelineStatus(StrEnum):
+    """State of one admin-triggered pipeline run (`pipeline_runs.status`)."""
+
+    RUNNING = "RUNNING"
+    OK = "OK"
+    ERROR = "ERROR"
+    ABANDONED = "ABANDONED"  # a worker died mid-run and the lock was taken over
+
+
+class AuthTokenKind(StrEnum):
+    """What an e-mailed single-use token (`auth_tokens.kind`) unlocks."""
+
+    RESET = "RESET"
+    VERIFY = "VERIFY"
+
+
+class DeliveryChannel(StrEnum):
+    """How a notification or a morning brief reached the user (`brief_deliveries.channel`)."""
+
+    PUSH = "push"  # VAPID Web Push
+    ONESIGNAL = "onesignal"
+    TELEGRAM = "telegram"
+    EMAIL = "email"

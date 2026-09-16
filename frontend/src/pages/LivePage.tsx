@@ -8,6 +8,9 @@ import { EventRow } from "@/components/domain/EventRow"
 import { ConfidenceBadge } from "@/components/domain/badges"
 import { useNewIds } from "@/lib/motion"
 
+/** Upper bound on rows kept in memory; the stream is unbounded, the page is not. */
+const MAX_ROWS = 300
+
 export function LivePage() {
   const { market } = useMarket()
   const { t } = useI18n()
@@ -16,7 +19,9 @@ export function LivePage() {
   const [connected, setConnected] = useState(false)
 
   // The stream URL carries a 5-minute ticket (not the session token). On error we fetch a fresh ticket and reconnect.
+  // Switching market drops what the previous stream accumulated — those rows belong to the other feed.
   useEffect(() => {
+    setLive([])
     let es: EventSource | null = null
     let timer: number | undefined
     let stopped = false
@@ -27,7 +32,7 @@ export function LivePage() {
         es = new EventSource(api.eventStreamUrl(market, ticket))
         es.onopen = () => setConnected(true)
         es.onerror = () => { setConnected(false); es?.close(); if (!stopped) timer = window.setTimeout(connect, 5000) }
-        es.addEventListener("transaction", (e) => setLive((prev) => [JSON.parse((e as MessageEvent).data) as TxEvent, ...prev]))
+        es.addEventListener("transaction", (e) => setLive((prev) => [JSON.parse((e as MessageEvent).data) as TxEvent, ...prev].slice(0, MAX_ROWS)))
       } catch { if (!stopped) timer = window.setTimeout(connect, 10_000) }
     }
     connect()
@@ -35,7 +40,7 @@ export function LivePage() {
   }, [market])
 
   const seen = new Set(live.map((e) => e.id))
-  const rows = [...live, ...(initial.data ?? []).filter((e) => !seen.has(e.id))]
+  const rows = [...live, ...(initial.data ?? []).filter((e) => !seen.has(e.id))].slice(0, MAX_ROWS)
   const fresh = useNewIds(rows)
 
   return (
@@ -52,7 +57,7 @@ export function LivePage() {
         </div>
       </div>
       <Section title={t("live.section")} hint={`${rows.length} · ${t("live.newestFirst")}`}>
-        {rows.map((ev) => <EventRow key={ev.id} ev={ev} fresh={fresh.has(ev.id)} />)}
+        {rows.map((ev) => <EventRow key={ev.id} ev={ev} market={market} fresh={fresh.has(ev.id)} />)}
         {rows.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("live.none")}</div>}
       </Section>
     </div>

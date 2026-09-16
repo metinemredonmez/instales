@@ -82,7 +82,7 @@ export function FundPage() {
 
       <Section title={t("common.kapDisclosures")} hint={`${f.events.length}`}>
         {f.events.length === 0 && <div className="px-4 py-6 text-sm text-muted-foreground">{t("fund.noEvents")}</div>}
-        {f.events.map((ev) => <EventRow key={ev.id} ev={ev} />)}
+        {f.events.map((ev) => <EventRow key={ev.id} ev={ev} market="TR" />)}
       </Section>
     </div>
   )

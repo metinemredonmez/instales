@@ -181,13 +181,12 @@ def compute_outcomes(session: Session = Depends(get_session)):
     return {"updated": run(session)}
 
 
-_RUN_STATE: dict = {"running": False, "started_at": None, "finished_at": None, "result": None, "error": None}
-
-
-def _run_pipeline_bg() -> None:
+def _run_pipeline_bg(run_id: int) -> None:
+    """Runs under the database lock row `run_id` (see hardening.acquire_pipeline_lock) so several workers never overlap."""
     import traceback
-    from datetime import UTC, date, datetime
+    from datetime import date
 
+    from instilens.api.hardening import finish_pipeline_run
     from instilens.db.session import session_scope
     from instilens.ingestion.kap import build_kap_adapter
     from instilens.ingestion.prices.yahoo import load_prices
@@ -196,7 +195,6 @@ def _run_pipeline_bg() -> None:
     from instilens.services.alerts import evaluate
     from instilens.services.outcomes import compute_outcomes
 
-    _RUN_STATE.update(running=True, started_at=datetime.now(UTC).isoformat(), finished_at=None, result=None, error=None)
     try:
         out: dict = {}
         with session_scope() as s:
@@ -216,27 +214,31 @@ def _run_pipeline_bg() -> None:
 
             out["delivered"] = deliver_pending(s)
             out["outcomes"] = compute_outcomes(s)
-        _RUN_STATE["result"] = out
+        finish_pipeline_run(run_id, result=out)
     except Exception:
-        _RUN_STATE["error"] = traceback.format_exc()[-2000:]
-    finally:
-        _RUN_STATE.update(running=False, finished_at=datetime.now(UTC).isoformat())
+        finish_pipeline_run(run_id, error=traceback.format_exc()[-2000:])
 
 
 @router.post("/pipeline/run")
-def pipeline_run():
-    """Kick off a full data pull in the background (same as `instilens run`). Admin only."""
+def pipeline_run(actor: User = Depends(require_admin)):
+    """Kick off a full data pull in the background (same as `instilens run`). Admin only.
+    The `pipeline_runs` row is the lock: a second admin (or worker) gets started=false while one is running."""
     import threading
 
-    if _RUN_STATE["running"]:
-        return {"started": False, **_RUN_STATE}
-    threading.Thread(target=_run_pipeline_bg, name="instilens-pipeline", daemon=True).start()
-    return {"started": True, **_RUN_STATE}
+    from instilens.api.hardening import acquire_pipeline_lock, pipeline_run_status
+
+    run_id = acquire_pipeline_lock(actor.email)
+    if run_id is None:
+        return {"started": False, **pipeline_run_status()}
+    threading.Thread(target=_run_pipeline_bg, args=(run_id,), name="instilens-pipeline", daemon=True).start()
+    return {"started": True, **pipeline_run_status()}
 
 
 @router.get("/pipeline/status")
 def pipeline_status():
-    return _RUN_STATE
+    from instilens.api.hardening import pipeline_run_status
+
+    return pipeline_run_status()
 
 
 # ---------------------------------------------------------------------- news rules (Newsomatic-style)

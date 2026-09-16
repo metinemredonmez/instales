@@ -10,16 +10,20 @@ are referenced by their id so the UI can link them.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
-import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from instilens.config import settings
 from instilens.domain.models import AiNote
 from instilens.services import analytics
+
+if TYPE_CHECKING:  # the SDK is imported lazily at call time; see _client
+    import anthropic
 
 SYSTEM = """You are InstiLens' analyst. You write short, factual notes for investors about institutional
 (fund) activity in a stock or market, combining the structured data and the headlines you are given.
@@ -57,22 +61,36 @@ class Note(BaseModel):
 
 
 def _client() -> anthropic.Anthropic | None:
+    """The SDK is imported here, not at module scope: api/main imports this module for AiUnavailable, and an
+    API worker that never reaches the model should not pay for the anthropic import graph at startup."""
+    import anthropic
+
     return anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
 
 
 class AiUnavailable(RuntimeError):
-    """The model call failed (bad key, quota, outage). Routes turn this into a 503 instead of a 500."""
+    """The model call failed (bad key, quota, outage) or answered outside the schema (a field over its limit).
+    Routes turn this into a 503 instead of a 500 (see the handler in api/main)."""
 
 
-def _write(session: Session, kind: str, market: str, subject: str, day: date, prompt: str, data: dict, lang: str = "tr") -> AiNote | None:
+Budget = Callable[[], None] | None  # charged right before a paid model call; never on a cache hit or when AI is off
+
+
+def _write(session: Session, kind: str, market: str, subject: str, day: date, prompt: str, data: dict, lang: str = "tr", budget: Budget = None) -> AiNote | None:
+    import anthropic  # local: see _client
+
     client = _client()
     if client is None:
         return None
+    if budget is not None:
+        budget()
     prompt = f"Language: {'English' if lang == 'en' else 'Turkish'}.\n{prompt}"
     try:
         r = _parse(client, prompt, data)
     except anthropic.APIError as exc:
         raise AiUnavailable(f"{type(exc).__name__}: {getattr(exc, 'message', exc)}") from exc
+    except ValidationError as exc:  # the model overran a max_length; a retry usually lands, so it is a 503 not a 500
+        raise AiUnavailable(f"model output rejected: {exc.error_count()} field(s) outside the schema") from exc
     if r.stop_reason == "refusal" or r.parsed_output is None:
         return None
     note = _cached(session, kind, market, subject, day, lang)
@@ -100,7 +118,8 @@ def _cached(session: Session, kind: str, market: str, subject: str, day: date, l
     return session.scalar(select(AiNote).where(AiNote.kind == kind, AiNote.market_code == market, AiNote.subject == subject, AiNote.as_of == day, AiNote.lang == lang))
 
 
-def stock_assessment(session: Session, market: str, symbol: str, day: date | None = None, force: bool = False, lang: str = "tr") -> AiNote | None:
+def stock_assessment(session: Session, market: str, symbol: str, day: date | None = None, force: bool = False, lang: str = "tr", budget: Budget = None) -> AiNote | None:
+    """`budget` (per-user hourly cap) is charged only when the model is actually called: first generation or force."""
     day, lang = day or date.today(), norm_lang(lang)
     if not force and (c := _cached(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, lang)):
         return c
@@ -116,10 +135,10 @@ def stock_assessment(session: Session, market: str, symbol: str, day: date | Non
     }
     prompt = (f"Write a short institutional-flow assessment for {symbol.upper()} (3-5 sentences)." if lang == "en"
               else f"{symbol.upper()} için kısa kurumsal akış değerlendirmesi yaz (3-5 cümle).")
-    return _write(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, prompt, data, lang)
+    return _write(session, "STOCK_ASSESSMENT", market, symbol.upper(), day, prompt, data, lang, budget)
 
 
-def daily_brief(session: Session, market: str, day: date | None = None, force: bool = False, lang: str = "tr") -> AiNote | None:
+def daily_brief(session: Session, market: str, day: date | None = None, force: bool = False, lang: str = "tr", budget: Budget = None) -> AiNote | None:
     day, lang = day or date.today(), norm_lang(lang)
     if not force and (c := _cached(session, "DAILY_BRIEF", market, "market", day, lang)):
         return c
@@ -141,7 +160,7 @@ def daily_brief(session: Session, market: str, day: date | None = None, force: b
     else:
         label = "Türkiye (BIST / KAP)" if market == "TR" else "ABD (SEC 13F)"
         prompt = f"{label} için sabah brifingi yaz: dün/son dönemde fonlar ne yaptı, aktif sinyaller, ilgili haberler, bugün izlenecekler. 5-8 cümle, başlıksız düz metin."
-    return _write(session, "DAILY_BRIEF", market, "market", day, prompt, data, lang)
+    return _write(session, "DAILY_BRIEF", market, "market", day, prompt, data, lang, budget)
 
 
 def _symbols_in(data: dict) -> list[str]:

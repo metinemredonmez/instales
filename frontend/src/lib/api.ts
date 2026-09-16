@@ -1,6 +1,8 @@
 /** Typed client for the InstiLens API. Shapes mirror backend/src/instilens/services/analytics.py. */
 
 export type Market = "TR" | "US"
+/** Score / activity window per market (mirrors backend MARKET_WINDOW_DAYS: 30D for BIST, 100D ≈ latest 13F quarter). */
+export const MARKET_WINDOW_DAYS: Record<Market, number> = { TR: 30, US: 100 }
 export type Confidence = "EXACT" | "GROUPED" | "INFERRED"
 export type Activity = "NEW" | "ADD" | "REDUCE" | "EXIT" | "HOLD"
 export type SignalType =
@@ -81,7 +83,10 @@ export interface AiNote {
   model: string; created_at: string
 }
 
-export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en"; channels: { telegram: boolean; email: boolean } }
+export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; brief_markets?: Market[]; lang: "tr" | "en"; channels: { telegram: boolean; email: boolean } }
+
+export interface AuthConfig { allow_registration: boolean }
+export interface MfaSetup { secret: string; otpauth_uri: string }
 
 export interface PipelineState { running: boolean; started_at: string | null; finished_at: string | null; result: Record<string, number> | null; error: string | null }
 
@@ -137,6 +142,7 @@ export interface PositionChange {
 
 export interface TxEvent {
   id: number
+  market?: Market
   published_at: string
   effective_date: string
   symbol: string
@@ -325,6 +331,11 @@ export const api = {
   liveTv: () => get<{ name: string; channel_id: string; embed: string }[]>("/live-tv"),
   ttsPreviewUrl: (voiceId: string, lang: "tr" | "en", ticket: string) => `${BASE}/tts/preview/${encodeURIComponent(voiceId)}?lang=${lang}&ticket=${encodeURIComponent(ticket)}`,
   ttsVoices: (lang: "tr" | "en") => get<{ provider: string | null; lang: string; voices: TtsVoice[] }>("/tts/voices", { lang }),
+  /** Public: whether the login page may offer self-registration. */
+  authConfig: () => get<AuthConfig>("/auth/config"),
+  mfaSetup: () => send<MfaSetup>("POST", "/auth/mfa/setup"),
+  mfaEnable: (code: string) => send<{ ok: boolean }>("POST", "/auth/mfa/enable", { code }),
+  mfaDisable: (code: string) => send<{ ok: boolean }>("POST", "/auth/mfa/disable", { code }),
   changePassword: (current_password: string, new_password: string) => send<{ access_token: string; token_type: string; user: import("./auth").User }>("POST", "/auth/password", { current_password, new_password }),
   logoutAll: () => send<{ ok: boolean }>("POST", "/auth/logout-all"),
   adminSettings: () => get<RuntimeSetting[]>("/admin/settings"),
@@ -375,7 +386,7 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => send<void>("DELETE", `/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`),
   pushTest: () => send<{ sent: number; onesignal: boolean }>("POST", "/push/test"),
   mySettings: () => get<NotifySettings>("/me/settings"),
-  saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
+  saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; brief_markets: Market[]; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
   eventStreamUrl: (market: Market, ticket: string) => `${BASE}/events/stream?market=${market}&ticket=${encodeURIComponent(ticket)}`,

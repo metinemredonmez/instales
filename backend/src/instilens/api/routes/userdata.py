@@ -91,12 +91,16 @@ class NotifySettings(BaseModel):
     notify_email: bool | None = None
     notify_telegram_chat_id: str | None = Field(None, max_length=32)
     notify_brief: bool | None = None
+    brief_markets: list[str] | None = Field(None, max_length=2)  # which morning briefs to receive: subset of TR / US
     lang: str | None = Field(None, pattern="^(tr|en)$")
 
 
 @router.get("/me/settings")
 def get_settings(user: User = Depends(current_user)):
-    return {"email": user.email, "notify_email": user.notify_email, "notify_telegram_chat_id": user.notify_telegram_chat_id, "notify_brief": user.notify_brief, "lang": user.lang,
+    from instilens.services.notify import user_brief_markets
+
+    return {"email": user.email, "notify_email": user.notify_email, "notify_telegram_chat_id": user.notify_telegram_chat_id, "notify_brief": user.notify_brief,
+            "brief_markets": user_brief_markets(user), "lang": user.lang, "email_verified": bool(user.email_verified),
             "channels": {"telegram": bool(__import__("instilens.config", fromlist=["settings"]).settings.telegram_bot_token), "email": bool(__import__("instilens.config", fromlist=["settings"]).settings.smtp_host)}}
 
 
@@ -110,6 +114,11 @@ def put_settings(body: NotifySettings, user: User = Depends(current_user), sessi
         u.notify_telegram_chat_id = (body.notify_telegram_chat_id or "").strip() or None
     if "notify_brief" in given:
         u.notify_brief = bool(body.notify_brief)
+    if "brief_markets" in given:
+        markets = [m.upper() for m in (body.brief_markets or [])]
+        if any(m not in ("TR", "US") for m in markets) or not markets:
+            raise HTTPException(400, "brief_markets must be a non-empty subset of TR, US")
+        u.brief_markets = sorted(set(markets))
     if body.lang:
         u.lang = body.lang
     return {"ok": True}
@@ -151,8 +160,10 @@ def push_subscribe(body: PushSubBody, user: User = Depends(current_user), sessio
     if sub is None:
         sub = PushSubscription(owner_id=str(user.id), endpoint=body.endpoint, p256dh=body.keys.get("p256dh", ""), auth=body.keys.get("auth", ""), user_agent=body.user_agent)
         session.add(sub)
+    elif sub.owner_id != str(user.id):
+        raise HTTPException(409, "this device is registered to another account; unsubscribe there first")  # no endpoint takeover
     else:
-        sub.owner_id, sub.p256dh, sub.auth = str(user.id), body.keys.get("p256dh", ""), body.keys.get("auth", "")
+        sub.p256dh, sub.auth, sub.user_agent = body.keys.get("p256dh", ""), body.keys.get("auth", ""), body.user_agent or sub.user_agent
     session.flush()
     return {"id": sub.id}
 

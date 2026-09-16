@@ -48,9 +48,18 @@ transaction_events (+ event_funds)        portfolio_snapshots (+ holdings)
 ## Laws enforced in code
 - **Allocation law** — `parsing/kap_share_transaction.py`: one fund ⇒ EXACT & allocated; else GROUPED & `NULL`.
 - **De-dup law** — `pipeline._event_is_uncovered`: an event counts only if its trade date is after
-  the latest snapshot of *all* related funds. Conservative: undercount beats double count.
+  the latest snapshot of *all* related funds **as known on the compute date** (`latest_snapshot_as_of`), so a
+  backfill `compute_intelligence(as_of=<past>)` reproduces what was known then. Conservative: undercount beats
+  double count.
 - **Baseline law** — the first snapshot of a fund produces no position changes.
 - **Supersede law** — `_store_raw`: `amends_source_id` marks the old disclosure and its events superseded.
+  KAP corrections carry it from the page (`relatedDisclosureIndex` on the `disclosureDetail` block beside
+  `disclosureBasic` — the page also carries a label dictionary under that name — else a `/tr/Bildirim/<index>`
+  link inside the correction field itself); a 13F-HR/A is linked to the latest earlier 13F of the same CIK and
+  period (EDGAR client, else the pipeline). A superseded filing's snapshot is dropped with it and the correction
+  writes its own — never a second snapshot for one (fund, period), even when the correction moves the report date.
+  Exception: a **NEW HOLDINGS** 13F-HR/A (cover-page `amendmentType`) only lists the positions the original left
+  out, so it supersedes nothing — its rows are merged into the original snapshot and the weights recomputed.
 - **Breadth law** — a fund is one party whether seen via snapshot or EXACT event; a GROUPED event is
   one party (the institution).
 

@@ -1,31 +1,95 @@
 name: desktop
-# Builds the Tauri app for every platform and attaches the installers to a GitHub Release.
-# Trigger: push a tag like v0.2.0, or run manually (Actions → desktop → Run workflow).
+# Builds the Tauri app for every platform (signed updater bundles) and ships the installers:
+#   • INSTILENS_RELEASE_UPLOAD_KEY secret present → uploaded into OUR release store (Admin → Sürüm yönetimi),
+#     same protocol as scripts/desktop-release.sh (POST ci/next → version, POST ci/upload per file).
+#   • secret absent → attached to a GitHub Release (fallback, previous behaviour).
+# Trigger: push a tag like v0.2.0, or run manually (Actions → desktop → Run workflow, optional version).
+#
+# Secrets (once, from the Mac — Settings → Secrets → Actions, or the gh CLI):
+#   gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/instilens.key           # updater signing key (private half)
+#   gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""                  # its password ("" when the key has none)
+#   ssh instilens "sed -n 's/^INSTILENS_RELEASE_UPLOAD_KEY=//p' /opt/instilens/backend/.env" | gh secret set INSTILENS_RELEASE_UPLOAD_KEY
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.2.3). Empty = the tag, else the store's open draft / next number."
+        required: false
+        default: ""
 
 permissions:
-  contents: write
+  contents: write   # only the GitHub Release fallback needs it
+
+env:
+  RELEASE_API: https://app.instilens.com/api/v1/public/desktop
 
 jobs:
+  version:
+    # One place decides the version so the four platform builds land in the same draft.
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      store: ${{ steps.pick.outputs.store }}
+    env:
+      INPUT_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        env:
+          RELEASE_KEY: ${{ secrets.INSTILENS_RELEASE_UPLOAD_KEY }}   # only this step sees the secret
+        run: |
+          V="$INPUT_VERSION"
+          if [ -n "$RELEASE_KEY" ]; then STORE=true; else STORE=false; fi
+          if [ -z "$V" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; fi
+          if [ -z "$V" ] && [ "$STORE" = true ]; then
+            # the key reaches curl through a 0600 header file (-H @file), never through argv
+            HDR="$(mktemp)"; chmod 600 "$HDR"; printf 'x-release-key: %s\n' "$RELEASE_KEY" > "$HDR"
+            V="$(curl -fsS --retry 3 -X POST "$RELEASE_API/ci/next" -H "@$HDR" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
+            rm -f "$HDR"
+          fi
+          [ -n "$V" ] || V="$(node -p "require('./frontend/src-tauri/tauri.conf.json').version")"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::bad version '$V'"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "store=$STORE" >> "$GITHUB_OUTPUT"
+          if [ "$STORE" = true ]; then echo "version $V → release store ($RELEASE_API)"; else echo "version $V → GitHub Release (no INSTILENS_RELEASE_UPLOAD_KEY secret)"; fi
+
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest      # Apple Silicon
             args: --target aarch64-apple-darwin
+            arch: aarch64
           - os: macos-13          # Intel Mac
             args: --target x86_64-apple-darwin
+            arch: x86_64
           - os: windows-latest    # .msi + .exe (NSIS)
             args: ""
+            arch: x86_64
           - os: ubuntu-22.04      # .AppImage + .deb + .rpm
             args: ""
+            arch: x86_64
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash             # same script on Windows (Git Bash)
+    # Secrets are NOT job-level env: each one is declared only on the step that needs it, so the third-party
+    # actions in between (setup-node, rust-toolchain, rust-cache, upload-artifact) never see them.
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      STORE: ${{ needs.version.outputs.store }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check the updater signing key is configured
+        # createUpdaterArtifacts=true → tauri refuses to build without the private key; fail early with a clear message.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::TAURI_SIGNING_PRIVATE_KEY secret missing — run: gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/instilens.key"; exit 1; }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
       - uses: dtolnay/rust-toolchain@stable
@@ -38,17 +102,74 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - name: Stamp version into tauri.conf.json + Cargo.toml
+        working-directory: frontend/src-tauri
+        run: |
+          node -e '
+            const fs = require("fs"), v = process.env.VERSION;
+            const c = JSON.parse(fs.readFileSync("tauri.conf.json", "utf8")); c.version = v;
+            fs.writeFileSync("tauri.conf.json", JSON.stringify(c, null, 2) + "\n");
+            fs.writeFileSync("Cargo.toml", fs.readFileSync("Cargo.toml", "utf8").replace(/^version = "[^"]+"/m, `version = "${v}"`));
+          '
       - run: npm ci
         working-directory: frontend
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_API_BASE: https://app.instilens.com
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: frontend
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
+          # Store mode: build only (empty tagName = no GitHub Release). Fallback: attach to a Release as before.
+          tagName: ${{ needs.version.outputs.store != 'true' && (github.ref_type == 'tag' && github.ref_name || 'desktop-latest') || '' }}
           releaseName: "InstiLens ${{ github.ref_type == 'tag' && github.ref_name || 'desktop (manual build)' }}"
           releaseBody: "Masaüstü uygulaması — app.instilens.com'a bağlanır. macOS: imzasız, ilk açılışta sağ tık → Aç. Windows: SmartScreen uyarısında 'Daha fazla bilgi → Yine de çalıştır'."
           releaseDraft: false
           prerelease: ${{ github.ref_type != 'tag' }}
           args: ${{ matrix.args }}
+      - name: Upload to the release store (app.instilens.com)
+        if: env.STORE == 'true'
+        working-directory: frontend/src-tauri/target
+        env:
+          ARCH: ${{ matrix.arch }}
+          RELEASE_KEY: ${{ secrets.INSTILENS_RELEASE_UPLOAD_KEY }}   # only this step sees the secret
+        run: |
+          # 0600 header file (-H @file) so the key is not in curl's argv, like scripts/desktop-release.sh
+          HDR="$(mktemp)"; chmod 600 "$HDR"; printf 'x-release-key: %s\n' "$RELEASE_KEY" > "$HDR"
+          trap 'rm -f "$HDR"' EXIT
+          FAIL=0
+          upload() {  # file [multipart filename] — the .sig next to the file (if any) rides along as the updater signature
+            local f="$1" name="${2:-$(basename "$1")}" sigargs=()
+            if [ -f "$f.sig" ]; then sigargs=(-F "signature=<$f.sig"); fi   # "<" = field value read from the file, not the argv
+            if curl -fsS --retry 3 --retry-delay 10 -X POST "$RELEASE_API/ci/upload" -H "@$HDR" \
+                 -F "version=$VERSION" -F "file=@$f;filename=$name" "${sigargs[@]}" >/dev/null; then
+              echo "  ↑ $name"
+            else
+              echo "::error::upload failed: $name"; FAIL=1
+            fi
+          }
+          shopt -s nullglob globstar
+          for f in **/release/bundle/dmg/*.dmg **/release/bundle/nsis/*-setup.exe **/release/bundle/msi/*.msi \
+                   **/release/bundle/appimage/*.AppImage **/release/bundle/deb/*.deb **/release/bundle/rpm/*.rpm; do upload "$f"; done
+          # the macOS updater bundle is named InstiLens.app.tar.gz — the store needs the arch in the name to classify it
+          for f in **/release/bundle/macos/*.app.tar.gz; do upload "$f" "InstiLens_${VERSION}_${ARCH}.app.tar.gz"; done
+          if [ "$FAIL" = 0 ]; then echo "done → Admin → Sürüm yönetimi → $VERSION → Yayımla"; fi
+          exit $FAIL
+      - name: Keep the installers as a workflow artifact (14 days) too
+        uses: actions/upload-artifact@v4
+        with:
+          name: instilens-${{ needs.version.outputs.version }}-${{ matrix.os }}
+          path: |
+            frontend/src-tauri/target/**/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/**/release/bundle/macos/*.app.tar.gz
+            frontend/src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
+            frontend/src-tauri/target/**/release/bundle/nsis/*-setup.exe
+            frontend/src-tauri/target/**/release/bundle/nsis/*-setup.exe.sig
+            frontend/src-tauri/target/**/release/bundle/msi/*.msi
+            frontend/src-tauri/target/**/release/bundle/appimage/*.AppImage
+            frontend/src-tauri/target/**/release/bundle/appimage/*.AppImage.sig
+            frontend/src-tauri/target/**/release/bundle/deb/*.deb
+            frontend/src-tauri/target/**/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
+          retention-days: 14

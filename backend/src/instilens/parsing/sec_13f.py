@@ -25,6 +25,8 @@ class Sec13FPayload(BaseModel):
     filer_name: str
     period: date
     amendment: bool = False
+    amendment_type: str | None = None  # cover page: RESTATEMENT replaces the original, NEW HOLDINGS only adds to it
+    amends_source_id: str | None = None  # accession of the 13F-HR this 13F-HR/A replaces (set by the adapter or the pipeline)
     holdings: list[Sec13FHolding]
 
 

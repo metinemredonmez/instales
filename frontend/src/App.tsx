@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom"
+import { Route, Routes, useLocation } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { NowSpeaking } from "@/components/domain/NowSpeaking"
 import { RadarPage } from "@/pages/RadarPage"
@@ -20,13 +20,37 @@ import { AdminNewsPage } from "@/pages/admin/AdminNewsPage"
 import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage"
 import { AdminReleasesPage } from "@/pages/admin/AdminReleasesPage"
 import { DesktopPage } from "@/pages/DesktopPage"
+import { SettingsPage } from "@/pages/SettingsPage"
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage"
+import { VerifyEmailPage } from "@/pages/VerifyEmailPage"
+import { NotFoundPage } from "@/pages/NotFoundPage"
+import { PublicFrame } from "@/components/layout/PublicFrame"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
+
+// Reachable without a session: e-mail links (reset / verify) and the download page, which reads a public endpoint.
+const PUBLIC = ["/reset", "/verify"]
 
 export default function App() {
   const { user } = useAuth()
   const { lang } = useI18n()
-  if (!user) return <LoginPage />
+  const { pathname } = useLocation()
+  if (PUBLIC.includes(pathname.replace(/\/+$/, "") || "/")) {
+    return (
+      <Routes key={lang}>
+        <Route path="/reset" element={<ResetPasswordPage />} />
+        <Route path="/verify" element={<VerifyEmailPage />} />
+      </Routes>
+    )
+  }
+  if (!user) {
+    return (
+      <Routes key={lang}>
+        <Route path="/desktop" element={<PublicFrame wide><DesktopPage /></PublicFrame>} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    )
+  }
   return (
     <AppShell>
       {/* key: remount pages when the language changes so memoised labels/formatters pick up the new locale */}
@@ -39,6 +63,7 @@ export default function App() {
         <Route path="/research" element={<ResearchPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/institutions" element={<InstitutionsPage />} />
         <Route path="/institutions/:code" element={<InstitutionPage />} />
         <Route path="/compare" element={<ComparePage />} />
@@ -51,6 +76,7 @@ export default function App() {
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="releases" element={<AdminReleasesPage />} />
         </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {/* Narration widget: global so a note keeps reading while the user moves between pages */}
       <NowSpeaking />

@@ -1,13 +1,17 @@
 import { Link } from "react-router-dom"
 import { ExternalLink } from "lucide-react"
-import type { TxEvent } from "@/lib/api"
+import type { Market, TxEvent } from "@/lib/api"
 import { fmtDateTime, fmtLots } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n"
+import { useMarket } from "@/lib/market"
 import { ConfidenceBadge, Flow } from "./badges"
 
-export function EventRow({ ev, compact, fresh }: { ev: TxEvent; compact?: boolean; fresh?: boolean }) {
+export function EventRow({ ev, market, compact, fresh }: { ev: TxEvent; market?: Market; compact?: boolean; fresh?: boolean }) {
   const { t } = useI18n()
+  const { market: activeMarket } = useMarket()
+  // Currency follows the event's market (SEC → $, KAP → ₺): the row's own field, the caller's, else the active market.
+  const mkt = ev.market ?? market ?? activeMarket
   const buy = ev.net_nominal > 0
   return (
     <div className={cn("flex items-start gap-3 border-b border-border/60 px-4 py-3 last:border-0", compact && "py-2.5", fresh && (buy ? "slide-in flash-pos" : "slide-in flash-neg"))}>
@@ -33,7 +37,7 @@ export function EventRow({ ev, compact, fresh }: { ev: TxEvent; compact?: boolea
         {!compact && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 text-xs">
             <span className={cn("num font-semibold", buy ? "text-positive" : "text-negative")}>{fmtLots(ev.net_nominal)} {t("common.lot")}</span>
-            <Flow value={ev.net_value} />
+            <Flow value={ev.net_value} market={mkt} />
             {ev.ownership_before_pct !== null && ev.ownership_after_pct !== null && (
               <span className="num text-muted-foreground">{ev.ownership_before_pct.toFixed(2)}% → {ev.ownership_after_pct.toFixed(2)}%</span>
             )}

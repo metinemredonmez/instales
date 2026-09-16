@@ -23,6 +23,7 @@ dependencies = [
   "pywebpush>=2.5.0",
   "python-multipart>=0.0.32",
   "num2words>=0.5.14",
+  "pyotp>=2.10.0",
 ]
 
 [project.optional-dependencies]

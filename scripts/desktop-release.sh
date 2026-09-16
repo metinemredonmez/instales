@@ -7,7 +7,9 @@
 #
 # Needs: ~/.tauri/instilens.key (updater signing key; NEVER in git), and the upload key —
 # either INSTILENS_RELEASE_UPLOAD_KEY in the environment or readable over SSH from the server
-# (INSTILENS_RELEASE_SSH=host, default: instilens). Nothing secret is printed.
+# (INSTILENS_RELEASE_SSH=host, default: instilens). Nothing secret is printed, and neither the key nor a
+# signature ever appears in a command line (local or remote `ps`): curl reads the key from a 0600 header
+# file, signatures from their .sig files, and the SSH fallback receives the key on stdin.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API="${INSTILENS_RELEASE_API:-https://app.instilens.com/api/v1/public/desktop}"
@@ -21,16 +23,18 @@ fi
 [ -n "$KEY" ] || { echo "❌ upload key: set INSTILENS_RELEASE_UPLOAD_KEY or make 'ssh $SSH_HOST' work"; exit 1; }
 [ -f "$HOME/.tauri/instilens.key" ] || { echo "❌ ~/.tauri/instilens.key missing (updater signing key)"; exit 1; }
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$HOME/.tauri/instilens.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+# curl -H @file: the key stays out of argv. Removed together with the version stamp on exit (see restore()).
+HDR="$(mktemp "${TMPDIR:-/tmp}/il-hdr.XXXXXX")"; chmod 600 "$HDR"; printf 'x-release-key: %s\n' "$KEY" > "$HDR"
 
 if [ -z "$VERSION" ]; then
-  VERSION="$(curl -fsS -X POST "$API/ci/next" -H "x-release-key: $KEY" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
+  VERSION="$(curl -fsS -X POST "$API/ci/next" -H "@$HDR" | sed -n 's/.*"version":"\([0-9.]*\)".*/\1/p')"
 fi
 [ -n "$VERSION" ] || { echo "❌ server gave no version"; exit 1; }
 echo "▶ version $VERSION"
 
 cd "$ROOT/frontend"
 # version is written into tauri.conf.json + Cargo.toml for the build, then restored (tracked files).
-restore() { git -C "$ROOT" checkout -- frontend/src-tauri/tauri.conf.json frontend/src-tauri/Cargo.toml frontend/src-tauri/Cargo.lock 2>/dev/null || true; }
+restore() { rm -f "$HDR"; git -C "$ROOT" checkout -- frontend/src-tauri/tauri.conf.json frontend/src-tauri/Cargo.toml frontend/src-tauri/Cargo.lock 2>/dev/null || true; }
 trap restore EXIT
 python3 - "$VERSION" <<'PY'
 import json,pathlib,re,sys
@@ -70,14 +74,26 @@ for T in aarch64-apple-darwin x86_64-apple-darwin; do
 done
 
 echo "▶ upload…"
-SSH_OK=0; ssh -o ConnectTimeout=8 -o BatchMode=yes "$SSH_HOST" true 2>/dev/null && SSH_OK=1
+SSH_OK=0; if ssh -o ConnectTimeout=8 -o BatchMode=yes "$SSH_HOST" true 2>/dev/null; then SSH_OK=1; fi
+# Remote side of the SSH fallback: the key header arrives on stdin (curl -H @-), the signature is a temp file
+# next to the artifact, so nothing secret is in any command line over there.
+# $1 = file name in /tmp, $2 = version, $3 = notes (may be empty).
+REMOTE_UPLOAD='f="/tmp/$1"; s="$f.sig"; extra=(); [ -f "$s" ] && extra=(-F "signature=<$s"); [ -n "${3:-}" ] && extra+=(-F "notes=$3")
+  curl -fsS -X POST http://127.0.0.1:8010/api/v1/public/desktop/ci/upload -H @- -F "version=$2" -F "file=@$f" "${extra[@]}" >/dev/null
+  rc=$?; rm -f "$f" "$s"; exit $rc'
+# base64 so the remote LOGIN shell only ever sees one plain token (printf %q would emit bash-only $'…' quoting),
+# and single-quoting that works in sh as well as bash for the arguments.
+REMOTE_UPLOAD_B64="$(printf '%s' "$REMOTE_UPLOAD" | base64 | tr -d '\n')"
+shq() { printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"; }
 upload() {  # file [sigfile] — HTTPS first; if nginx refuses (413 etc.) and SSH works, copy to the server and post locally there
-  local f="$1" sig="" name; name="$(basename "$f")"; [ -n "${2:-}" ] && [ -f "$2" ] && sig="$(cat "$2")"
-  if curl -fsS -X POST "$API/ci/upload" -H "x-release-key: $KEY" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=$sig"} ${NOTES:+-F "notes=$NOTES"} >/dev/null 2>&1; then
+  local f="$1" sig="" name; name="$(basename "$f")"; if [ -n "${2:-}" ] && [ -f "$2" ]; then sig="$2"; fi
+  # -F "signature=<file": curl reads the field value from the .sig file (never in argv)
+  if curl -fsS -X POST "$API/ci/upload" -H "@$HDR" -F "version=$VERSION" -F "file=@$f" ${sig:+-F "signature=<$sig"} ${NOTES:+-F "notes=$NOTES"} >/dev/null 2>&1; then
     echo "   ↑ $name"; return
   fi
   if [ "$SSH_OK" = "1" ]; then
-    if scp -q "$f" "$SSH_HOST:/tmp/$name" && ssh "$SSH_HOST" "curl -fsS -X POST http://127.0.0.1:8010/api/v1/public/desktop/ci/upload -H 'x-release-key: $KEY' -F 'version=$VERSION' -F 'file=@/tmp/$name' ${sig:+-F 'signature=$sig'} >/dev/null && rm -f '/tmp/$name'"; then
+    if scp -q "$f" "$SSH_HOST:/tmp/$name" && { [ -z "$sig" ] || scp -q "$sig" "$SSH_HOST:/tmp/$name.sig"; } \
+       && ssh "$SSH_HOST" "bash -c \"\$(printf %s $REMOTE_UPLOAD_B64 | base64 -d)\" _ $(shq "$name") $(shq "$VERSION") $(shq "$NOTES")" < "$HDR"; then
       echo "   ↑ $name (ssh)"; return
     fi
   fi
@@ -87,7 +103,7 @@ shopt -s nullglob
 for T in aarch64-apple-darwin x86_64-apple-darwin; do
   B="src-tauri/target/$T/release/bundle"; ARCH="${T%%-*}"
   for f in "$B"/dmg/*.dmg; do upload "$f"; done
-  f="$B/macos/InstiLens_${VERSION}_${ARCH}.app.tar.gz"; [ -f "$f" ] && upload "$f" "$f.sig"
+  f="$B/macos/InstiLens_${VERSION}_${ARCH}.app.tar.gz"; if [ -f "$f" ]; then upload "$f" "$f.sig"; fi
 done
 W="src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
 for f in "$W"/nsis/*-setup.exe; do upload "$f" "$f.sig"; done

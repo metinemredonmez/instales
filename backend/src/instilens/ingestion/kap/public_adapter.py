@@ -324,7 +324,8 @@ def parse_detail_page(page: str, fetch_attachment=None) -> RawDisclosure | None:
         avg_price = m.group(1).replace(".", "").replace(",", ".") if m.group(1).count(",") == 1 and "." in m.group(1) else m.group(1).replace(",", ".")
     for r in rows:
         r["price"] = avg_price
-    correction = bool(re.search(r"Düzeltme mi\?\|[^|]*\|Evet", text))
+    correction = is_correction_text(text)
+    amends = related_disclosure_index(full, basic) if correction else None
     published = datetime.strptime(basic["publishDate"], "%Y.%m.%d %H:%M:%S")
     return RawDisclosure(
         market=Market.TR, source=Source.KAP, source_id=str(basic["disclosureIndex"]), kind=DisclosureKind.KAP_SHARE_TRANSACTION,
@@ -334,9 +335,72 @@ def parse_detail_page(page: str, fetch_attachment=None) -> RawDisclosure | None:
             "subject_symbol": companies[0], "related_companies": companies, "related_fund_codes": funds,
             "rows": [{k: v for k, v in r.items() if k in ("transaction_date", "side", "nominal", "price")} for r in rows],
             "ownership_before_pct": rows[0]["before"], "ownership_after_pct": rows[-1]["after"],
-            "is_correction": correction, "attachment_count": basic.get("attachmentCount", 0), "numbers_from": source_note,
+            "is_correction": correction, "amends_source_id": amends,
+            "attachment_count": basic.get("attachmentCount", 0), "numbers_from": source_note,
         },
     )
+
+
+def is_correction_text(text: str) -> bool:
+    """'Yapılan Açıklama Düzeltme mi?' row of the ODA template. The tag-stripped text carries the TR and EN labels
+    and both language values with many empty cells between them, so the answer is looked for in the segment up
+    to the next template field (`oda_…` key or the next TR label), not in the adjacent cell."""
+    m = re.search(r"Düzeltme mi\?(.{0,600}?)(?:oda_[A-Za-z]|Konuya İlişkin|Bildirim İçeriği|$)", text, flags=re.S)
+    return bool(m and re.search(r"\bEvet\b", m.group(1)))
+
+
+RELATED_INDEX_KEYS = ("relatedDisclosureIndex", "duzeltilenBildirimIndex", "correctedDisclosureIndex", "ilgiliBildirimIndex")
+BILDIRIM_LINK = re.compile(r"/tr/Bildirim/(\d+)")
+# Labels of the ODA correction / previous-notification fields. The link fallback below only looks inside these
+# fields: a `/tr/Bildirim/<index>` taken from anywhere on the page would supersede an unrelated disclosure.
+CORRECTION_FIELD_LABELS = ("oda_DateOfThePreviousNotification", "Daha Önce Yapılan Açıklama", "Düzeltilen Bildirim", "İlgili Bildirim")
+CORRECTION_FIELD_WINDOW = 1500
+
+
+def detail_blocks(full: str) -> list[dict]:
+    """Every `disclosureDetail` object in the RSC payload, in page order. kap.org.tr emits two: a label dictionary
+    near the top (`{"auditType": {"title": "Denetim Türü", …}, "opinionType": {…}}`) and, next to `disclosureBasic`,
+    the filing's own detail — so the first block is never the one carrying `relatedDisclosureIndex`."""
+    out: list[dict] = []
+    for m in re.finditer(r'"disclosureDetail":', full):
+        start = m.end()
+        while start < len(full) and full[start] in " \t\r\n":
+            start += 1
+        if start >= len(full) or full[start] != "{":  # `"disclosureDetail":null` on filings without a detail block
+            continue
+        try:
+            out.append(_balanced_json(full, start))
+        except (ValueError, json.JSONDecodeError):
+            continue
+    return out
+
+
+def related_disclosure_index(full: str, basic: dict) -> str | None:
+    """Index of the disclosure a correction amends. kap.org.tr carries it as `relatedDisclosureIndex` in the RSC
+    `disclosureDetail` block that sits beside `disclosureBasic` (null on ordinary filings); fall back to the same
+    keys on `disclosureBasic` and, last, to a `/tr/Bildirim/<index>` link inside the correction field itself."""
+    own = str(basic.get("disclosureIndex") or "")
+    for source in (*detail_blocks(full), basic):
+        for key in RELATED_INDEX_KEYS:
+            value = source.get(key)
+            if value not in (None, "", 0) and str(value).isdigit() and str(value) != own:
+                return str(value)
+    return _linked_index_in_correction_field(full, own)
+
+
+def _linked_index_in_correction_field(full: str, own: str) -> str | None:
+    """A `/tr/Bildirim/<index>` link inside the correction / previous-notification field, and only there: whatever
+    this returns is marked superseded, so a link picked up from navigation or a "other disclosures" list would
+    silently drop an unrelated disclosure's events from scoring. The field ends at the next ODA template key
+    (`oda_…`), the same boundary `is_correction_text` uses."""
+    for label in CORRECTION_FIELD_LABELS:
+        for m in re.finditer(re.escape(label), full):
+            segment = full[m.end() : m.end() + CORRECTION_FIELD_WINDOW]
+            nxt = re.search(r"oda_[A-Za-z]", segment)
+            for idx in BILDIRIM_LINK.findall(segment[: nxt.start()] if nxt else segment):
+                if idx != own:
+                    return idx
+    return None
 
 
 def _table_rows(fragment: str) -> list[list[str]]:
