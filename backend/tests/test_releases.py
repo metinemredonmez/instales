@@ -80,8 +80,8 @@ def test_upload_replaces_older_artifact_of_same_platform_and_windows_setup_is_do
     h = {"x-release-key": settings.release_upload_key}
     v = c.post("/api/v1/public/desktop/ci/next", headers=h).json()["version"]
     up = lambda name, sig=None: c.post("/api/v1/public/desktop/ci/upload", headers=h, data={"version": v, **({"signature": sig} if sig else {})}, files={"file": (name, b"x")})  # noqa: E731
-    assert up("InstiLens_0.2.0_amd64.deb").status_code == 200
-    assert up(f"InstiLens_{v}_amd64.deb").status_code == 200  # replaces the 0.2.0 leftover
+    assert up("InstiLens_0.1.9_amd64.deb").status_code == 200  # a leftover from an earlier build in the same draft
+    assert up(f"InstiLens_{v}_amd64.deb").status_code == 200  # replaces the 0.1.9 leftover
     assert up(f"InstiLens_{v}_x64-setup.exe", "SIG").status_code == 200
     from instilens.domain.models import Release
     from instilens.services import releases
@@ -89,7 +89,7 @@ def test_upload_replaces_older_artifact_of_same_platform_and_windows_setup_is_do
     rel = session.scalar(__import__("sqlalchemy").select(Release).where(Release.version == v))
     names = sorted(f.filename for f in rel.files)
     assert names == [f"InstiLens_{v}_amd64.deb", f"InstiLens_{v}_x64-setup.exe"]
-    assert not (tmp_path / v / "InstiLens_0.2.0_amd64.deb").exists()
+    assert not (tmp_path / v / "InstiLens_0.1.9_amd64.deb").exists()
     j = releases.release_json(rel, "http://x")
     win = next(f for f in j["files"] if f["platform"] == "windows-x86_64")
     assert win["downloadable"] is True and win["kind"] == "UPDATE"
