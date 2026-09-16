@@ -8,6 +8,7 @@ export function AdminUsersPage() {
   const { t } = useI18n()
   const qc = useQueryClient()
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: api.adminUsers })
+  const waitlist = useQuery({ queryKey: ["admin", "waitlist"], queryFn: api.adminWaitlist })
   const patch = useMutation({ mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.adminPatchUser>[1] }) => api.adminPatchUser(id, body), onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }) })
   const th = "px-2 py-2 text-left font-medium"
   return (
@@ -35,6 +36,20 @@ export function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+      </Section>
+      <Section title={t("admin.waitlist.title")} hint={`${waitlist.data?.length ?? 0} · ${t("admin.waitlist.hint")}`}>
+        <ul className="divide-y divide-border/60 text-sm">
+          {waitlist.data?.map((w) => (
+            <li key={w.id} className="flex flex-wrap items-center gap-3 px-4 py-2">
+              <span className="font-medium">{w.email}</span>
+              {w.name && <span className="text-muted-foreground">{w.name}</span>}
+              <span className="rounded-sm bg-muted px-1 py-px font-mono text-[10px] uppercase text-muted-foreground">{w.lang}</span>
+              {w.source && <span className="truncate text-xs text-muted-foreground">{w.source}</span>}
+              <span className="num ml-auto text-xs text-muted-foreground">{fmtDateTime(w.created_at)}</span>
+            </li>
+          ))}
+          {waitlist.data?.length === 0 && <li className="px-4 py-6 text-muted-foreground">{t("common.none")}</li>}
+        </ul>
       </Section>
     </>
   )

@@ -335,6 +335,8 @@ export const en: Record<Key, string> = {
   "admin.users.title": "Users",
   "admin.users.sub": "Plan, role and access. While registration is closed, create users on the server with `instilens users create`.",
   "admin.users.lastLogin": "Last login",
+  "admin.waitlist.title": "Waitlist",
+  "admin.waitlist.hint": "early-access form on instilens.com",
   "admin.review.title": "Review",
   "admin.review.sub": "Records auto-created from unknown codes and not yet verified. Fix the name and verify.",
   "admin.review.stocks": "Unverified stocks",

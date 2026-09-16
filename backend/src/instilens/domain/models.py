@@ -391,6 +391,19 @@ class NewsRule(Base):
 # --------------------------------------------------------------------------- AI notes (cached model output)
 
 
+class WaitlistEntry(Base):
+    """Early-access signup from the public landing page (instilens.com)."""
+
+    __tablename__ = "waitlist"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(128))
+    lang: Mapped[str] = mapped_column(String(2), default="tr")
+    source: Mapped[str | None] = mapped_column(String(64))  # utm / referrer, free text
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class AiNote(Base):
     """Cached AI-written text: per-stock assessment, daily brief. Always descriptive, always with the
     data it was written from (`data`) so the UI can show provenance. One per (kind, market, subject, day)."""

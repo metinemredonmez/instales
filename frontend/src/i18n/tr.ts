@@ -352,6 +352,8 @@ export const tr = {
   "admin.users.title": "Kullanıcılar",
   "admin.users.sub": "Plan, rol ve erişim. Kayıt kapalıyken yeni kullanıcıyı sunucuda `instilens users create` ile aç.",
   "admin.users.lastLogin": "Son giriş",
+  "admin.waitlist.title": "Bekleme listesi",
+  "admin.waitlist.hint": "instilens.com erken erişim formu",
   "admin.review.title": "İnceleme",
   "admin.review.sub": "Bilinmeyen koddan otomatik oluşturulmuş, doğrulanmamış kayıtlar. Adı düzeltip doğrula.",
   "admin.review.stocks": "Doğrulanmamış hisseler",

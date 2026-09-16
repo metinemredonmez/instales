@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstiLens — See where smart money moves.</title>
+<meta name="description" content="Track which stocks funds and institutions accumulate, reduce, enter and abandon — on one screen. KAP and SEC 13F data, explainable scores, an AI morning brief. Not investment advice.">
+<link rel="canonical" href="https://instilens.com/en/">
+<link rel="alternate" hreflang="tr" href="https://instilens.com/">
+<link rel="alternate" hreflang="en" href="https://instilens.com/en/">
+<link rel="alternate" hreflang="x-default" href="https://instilens.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="InstiLens">
+<meta property="og:title" content="InstiLens — See where smart money moves.">
+<meta property="og:description" content="Track which stocks funds and institutions accumulate, reduce, enter and abandon — on one screen. KAP and SEC 13F data, explainable scores, an AI morning brief. Not investment advice.">
+<meta property="og:url" content="https://instilens.com/en/">
+<meta property="og:image" content="https://instilens.com/assets/og.png">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0f1118">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../assets/favicon-16.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="stylesheet" href="../site.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "InstiLens", "applicationCategory": "FinanceApplication", "operatingSystem": "Web", "url": "https://instilens.com", "description": "Track which stocks funds and institutions accumulate, reduce, enter and abandon — on one screen. KAP and SEC 13F data, explainable scores, an AI morning brief. Not investment advice.", "inLanguage": "en", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "TRY", "availability": "https://schema.org/PreOrder"}, "publisher": {"@type": "Organization", "name": "InstiLens", "url": "https://instilens.com", "logo": "https://instilens.com/assets/icon-512.png"}}</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="../" aria-label="InstiLens"><img class="mark" src="../assets/mark-gradient-light.png" alt=""><img class="wm" src="../assets/wordmark-gradient-light.png" alt="InstiLens"></a>
+  <nav class="links">
+    <a class="hide-sm" href="#product">Product</a><a class="hide-sm" href="#how">How it works</a><a class="hide-sm" href="#trust">Trust</a>
+    <span class="lang"><a href="../" class="">TR</a><a href="./" class="on">EN</a></span>
+    <a class="btn" href="https://app.instilens.com">Sign in</a>
+  </nav>
+</div></header>
+
+<section class="hero"><div class="glow"></div><div class="wrap">
+  <img class="wordmark" src="../assets/wordmark-gradient-light.png" alt="InstiLens">
+  <div class="tag">See where smart money moves.</div>
+  <h1>See <em>where</em> smart money moves.</h1>
+  <p class="lead">Track which stocks funds accumulate, reduce, enter and abandon — on one screen. Every number is traceable to its KAP or SEC source.</p>
+  <form class="wait" id="wait" novalidate>
+    <input type="email" name="email" placeholder="your e-mail" autocomplete="email" required>
+    <button class="btn primary" type="submit">Join the list</button>
+    <div class="msg">Invite-only for now. No spam — we only write when your seat opens.</div>
+  </form>
+  <div class="cta"><a class="btn" href="https://app.instilens.com">Open the app →</a></div>
+  <figure class="shot"><img src="../assets/radar.webp" width="1400" height="780" alt="InstiLens Radar" loading="eager"><figcaption>Radar — BIST, real KAP data. Scores are deterministic and explainable; the answer to "Why 87?" sits under every score.</figcaption></figure>
+</div></section>
+
+<section id="product"><div class="wrap">
+  <h2>What you see</h2><p class="sub">Not a price chart — money flow. Who bought, when, how much.</p>
+  <div class="grid"><div class="card"><div class="ic">KAP</div><h3>Live KAP Radar</h3><p>Fund share-transaction disclosures are normalised the moment they land: stock, institution, fund, lots, confidence.</p></div><div class="card"><div class="ic">PDF</div><h3>Portfolio reports</h3><p>Weekly/monthly fund portfolio reports are parsed; the diff between two reports becomes NEW / ADD / REDUCE / EXIT.</p></div><div class="card"><div class="ic">87</div><h3>Smart Money & Consensus score</h3><p>Breadth, net flow, persistence, new positions, conviction. Weights are open; click a score to see why.</p></div><div class="card"><div class="ic">↗</div><h3>Signals</h3><p>Accumulation, distribution, positive/negative divergence (funds buying while price falls), new-position clusters.</p></div><div class="card"><div class="ic">13F</div><h3>Global: SEC 13F</h3><p>Quarterly position changes of Berkshire, Bridgewater, Renaissance and others — same engine.</p></div><div class="card"><div class="ic">AI</div><h3>Morning brief + narration</h3><p>Claude writes a summary every morning; it never invents numbers, only uses what's in the tables. TR/EN, female/male voice.</p></div></div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>How it works</h2><p class="sub">From public disclosures, through a reproducible chain.</p>
+  <div class="steps"><div class="card"><h3>Collect</h3><p>KAP and SEC EDGAR filings, fund portfolio PDFs, closing prices. The source id is kept on every row.</p></div><div class="card"><h3>Normalise</h3><p>Every transaction gets a confidence level: <span class='pill exact'>Exact</span> single fund, explicit amount; <span class='pill grouped'>Grouped</span> allocation unknown; <span class='pill inferred'>Inferred</span> derived from a report diff.</p></div><div class="card"><h3>Compute</h3><p>Position diffs, scores and signals are deterministic — same data, same result. Corrections supersede the original filing.</p></div><div class="card"><h3>Explain</h3><p>The AI layer only summarises computed data and shows its tool calls. Telegram, e-mail and phone notifications.</p></div></div>
+</div></section>
+
+<section id="trust"><div class="wrap">
+  <h2>Trust and limits</h2>
+  <div class="trust"><ul><li>InstiLens is a <b>data presentation</b>; it gives no investment advice, no buy/sell calls, no price forecasts.</li><li>Sources: KAP (Turkey's Public Disclosure Platform) public filings and SEC EDGAR 13F files. It does not measure fund performance.</li><li>Delay is stated: portfolio reports and 13F files lag by nature; "data freshness" is visible on every screen.</li><li>Grouped filings are never split across funds; unknown stays unknown.</li></ul></div>
+</div></section>
+
+<footer><div class="wrap">
+  <span>© InstiLens · Istanbul · 2027</span><span>Data is derived from public regulatory disclosures (KAP, SEC); not investment advice.</span>
+  <span class="right"><a href="https://app.instilens.com">Sign in</a><a href="../">TR</a></span>
+</div></footer>
+<script src="../site.js" defer></script>
+</body>
+</html>

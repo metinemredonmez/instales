@@ -9,6 +9,7 @@ from instilens.api.hardening import (
 )
 from instilens.api.routes.admin import router as admin_router
 from instilens.api.routes.auth import router as auth_router
+from instilens.api.routes.public import router as public_router
 from instilens.api.routes.userdata import router as userdata_router
 from instilens.api.routes.v1 import router
 from instilens.config import settings
@@ -31,6 +32,7 @@ app.include_router(auth_router)
 app.include_router(router)
 app.include_router(userdata_router)
 app.include_router(admin_router)
+app.include_router(public_router)
 
 
 @app.get("/health")

@@ -14,7 +14,7 @@ from starlette.responses import JSONResponse, Response
 
 from instilens.config import settings
 
-RATE_LIMITED_PATHS = ("/api/v1/auth/login", "/api/v1/auth/register")
+RATE_LIMITED_PATHS = ("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/public/waitlist")
 _HITS: dict[str, deque[float]] = defaultdict(deque)
 
 

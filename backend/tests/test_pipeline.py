@@ -1,6 +1,7 @@
 """End-to-end: fixtures → raw → parsed → positions → signals/scores → API."""
 
 from datetime import date
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -60,7 +61,7 @@ def test_dedup_rule_ignores_events_covered_by_snapshot(session, pipeline_run):
     assert act["funds_increasing"] == 5 and act["funds_reducing"] == 1  # 5 funds ADD + 1 grouped sell
     anele = analytics.stock_detail(session, "TR", "ANELE")["scores"]["SMART_MONEY"]["why"]["activity"]
     assert anele["funds_increasing"] == 1  # one GROUPED buy = one increasing party, never 2 funds
-    assert anele["flow_by_confidence"] == {"GROUPED": "581585437.5000"}
+    assert {k: Decimal(v) for k, v in anele["flow_by_confidence"].items()} == {"GROUPED": Decimal("581585437.5")}  # Decimal, not str: trailing zeros vary by result processor
 
 
 def test_radar_and_api(session, pipeline_run):

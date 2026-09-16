@@ -181,6 +181,8 @@ export interface FundDetail {
   events: TxEvent[]
 }
 
+export interface WaitlistRow { id: number; email: string; name: string | null; lang: string; source: string | null; created_at: string }
+
 export interface AdminConfig {
   environment: string; public_url: string; allow_registration: boolean; database: string
   kap_adapter: string; kap_api_base_url: string | null; sec_adapter: string; sec_ciks: string[]
@@ -322,6 +324,7 @@ export const api = {
   adminNewsReapply: () => send<{ TR: number; US: number }>("POST", "/admin/news/reapply"),
   adminNewsEnrich: (market: Market) => send<{ tagged: number }>("POST", `/admin/news/enrich?market=${market}`),
   adminConfig: () => get<AdminConfig>("/admin/config"),
+  adminWaitlist: () => get<WaitlistRow[]>("/admin/waitlist"),
   adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
   adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
