@@ -107,4 +107,14 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
             )
         )
 
-    return [get_radar, get_stock, get_fund, list_events, screen_stocks]
+    def get_news(symbol: str | None = None, limit: int = 15) -> str:
+        """Recent headlines (title, source, time, link) with rule tags and AI tags (symbols, sentiment,
+        relevance, Turkish summary). Pass a symbol to get only headlines about that stock.
+
+        Args:
+            symbol: Optional ticker, e.g. ASELS.
+            limit: Max headlines (default 15).
+        """
+        return _dump(analytics.news(session, market, symbol, limit))
+
+    return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news]

@@ -10,6 +10,7 @@ import { ActivityBadge, ConfidenceBadge, Flow, ScorePill, SignalBadge } from "@/
 import { EventRow } from "@/components/domain/EventRow"
 import { StockChart } from "@/components/domain/StockChart"
 import { Timeline } from "@/components/domain/Timeline"
+import { AiNoteCard } from "@/components/domain/AiNoteCard"
 import { WatchButton } from "@/components/domain/WatchButton"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -76,6 +77,8 @@ export function StockPage() {
           )}
         </div>
       </div>
+
+      <AiNoteCard market={market} symbol={d.symbol} title={`${d.symbol} · AI değerlendirmesi`} />
 
       <StockChart symbol={d.symbol} market={market} />
 

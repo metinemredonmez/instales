@@ -380,3 +380,24 @@ class NewsRule(Base):
     ai_summary: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+# --------------------------------------------------------------------------- AI notes (cached model output)
+
+
+class AiNote(Base):
+    """Cached AI-written text: per-stock assessment, daily brief. Always descriptive, always with the
+    data it was written from (`data`) so the UI can show provenance. One per (kind, market, subject, day)."""
+
+    __tablename__ = "ai_notes"
+    __table_args__ = (UniqueConstraint("kind", "market_code", "subject", "as_of"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)  # STOCK_ASSESSMENT / DAILY_BRIEF
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"))
+    subject: Mapped[str] = mapped_column(String(32))  # symbol, or "market" for the brief
+    as_of: Mapped[date] = mapped_column(Date, index=True)
+    content: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    model: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

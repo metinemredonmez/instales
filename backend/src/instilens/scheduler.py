@@ -71,6 +71,20 @@ def news_pull() -> None:
                     log.warning("news enrich failed: %s", exc)
 
 
+def briefs() -> None:
+    from instilens.ai.assess import daily_brief
+    from instilens.config import settings
+
+    if not settings.anthropic_api_key:
+        return
+    with session_scope() as s:
+        for market in ("TR", "US"):
+            try:
+                log.info("%s brief %s", market, "ok" if daily_brief(s, market, force=True) else "skipped")
+            except Exception as exc:
+                log.warning("brief %s failed: %s", market, exc)
+
+
 def prices(market: str) -> None:
     with session_scope() as s:
         log.info("%s prices %s", market, load_prices(s, market, days=30))
@@ -87,6 +101,7 @@ def main() -> None:
     sched.add_job(prices, CronTrigger(hour=0, minute=30, timezone=TZ), args=["US"], id="prices_us")
     sched.add_job(compute, CronTrigger(hour=2, minute=0, timezone=TZ), id="nightly_compute")
     sched.add_job(news_pull, CronTrigger(minute="*/10", timezone=TZ), id="news")
+    sched.add_job(briefs, CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 

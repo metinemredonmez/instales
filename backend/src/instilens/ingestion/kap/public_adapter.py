@@ -296,9 +296,21 @@ def parse_detail_page(page: str, fetch_attachment=None) -> RawDisclosure | None:
                     except Exception:
                         prose_rows = []
         if not prose_rows:
-            return None  # genuinely no numbers we can trust
-        rows = [{**r, "before": pb, "after": pa} for r in prose_rows]
-        source_note = "prose"
+            try:  # last resort: Claude reads the prose/PDF text; every figure is validated against the text
+                from instilens.ai.filing_extract import extract_transactions
+
+                ai_rows, ai_funds, _ = extract_transactions(text.replace("|", "\n"))
+            except Exception:
+                ai_rows, ai_funds = [], []
+            if ai_rows:
+                rows = ai_rows
+                funds = funds or ai_funds
+                source_note = "ai"
+            else:
+                return None  # genuinely no numbers we can trust
+        else:
+            rows = [{**r, "before": pb, "after": pa} for r in prose_rows]
+            source_note = "prose"
 
     avg_price = None
     m = re.search(r"ortalama fiyat[ıi]?\s*[:=]?\s*(\d+(?:[.,]\d+)?)", text, flags=re.I)

@@ -10,7 +10,7 @@ from instilens.services import analytics
 
 def test_tools_have_schemas_and_return_json(session, pipeline_run):
     tools = {fn.__name__: beta_tool(fn) for fn in build_tools(session)}
-    assert set(tools) == {"get_radar", "get_stock", "get_fund", "list_events", "screen_stocks"}
+    assert set(tools) == {"get_radar", "get_stock", "get_fund", "list_events", "screen_stocks", "get_news"}
     schema = tools["screen_stocks"].to_dict()
     assert "max_price_change_30d_pct" in schema["input_schema"]["properties"]
     assert json.loads(tools["get_radar"].call({"limit": 3}))["accumulated"][0]["symbol"] == "THYAO"

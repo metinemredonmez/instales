@@ -9,6 +9,7 @@ import { Flow, ScorePill, SignalBadge, ConfidenceBadge } from "@/components/doma
 import { EventRow } from "@/components/domain/EventRow"
 import { FreshnessBar } from "@/components/domain/Freshness"
 import { PipelineButton } from "@/components/domain/PipelineButton"
+import { AiNoteCard } from "@/components/domain/AiNoteCard"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +55,8 @@ export function RadarPage() {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2"><FreshnessBar market={market} /><PipelineButton /></div>
+
+      <AiNoteCard market={market} title="Sabah brifingi" />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Net kurumsal giriş" value={<Flow value={totalIn} market={market} className="text-2xl" />} sub={`${r.accumulated.length} hisse toplanıyor`} />
