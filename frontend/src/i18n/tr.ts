@@ -64,6 +64,7 @@ export const tr = {
   "settings.k.live_tv_channels": "Canlı yayın kanalları",
   "settings.d.live_tv_channels": "Ad|YouTubeKanalID — virgülle ayır. Kanal 7/24 canlı yayında olmalı.",
   "nav.liveTv": "Canlı yayın",
+  "tv.resize": "Köşeden sürükleyerek boyutlandır",
   "tv.title": "Canlı yayın",
   "tv.hint": "sürükle · kanal seç · küçült",
   "tv.unavailable": "Bu kanal şu an yayında değil ya da gömmeye kapalı.",

@@ -65,6 +65,7 @@ export const en: Record<Key, string> = {
   "settings.k.live_tv_channels": "Live TV channels",
   "settings.d.live_tv_channels": "Name|YouTubeChannelID — comma-separated. Channel must be live 24/7.",
   "nav.liveTv": "Live TV",
+  "tv.resize": "Drag the corner to resize",
   "tv.title": "Live TV",
   "tv.hint": "drag · pick a channel · minimise",
   "tv.unavailable": "This channel is not live right now or blocks embedding.",

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
-import { Minus, Tv, X } from "lucide-react"
+import { Maximize2, Minus, Tv, X } from "lucide-react"
 import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -31,7 +31,7 @@ export function LiveTvWidget({ open, onClose }: { open: boolean; onClose: () => 
   useEffect(() => {
     const move = (e: PointerEvent) => {
       if (drag.current) setPos({ x: Math.max(0, Math.min(window.innerWidth - 120, e.clientX - drag.current.dx)), y: Math.max(0, Math.min(window.innerHeight - 40, e.clientY - drag.current.dy)) })
-      if (size.current) setW(Math.max(280, Math.min(960, size.current.w + (e.clientX - size.current.x))))
+      if (size.current) setW(Math.max(280, Math.min(window.innerWidth - 32, size.current.w + (e.clientX - size.current.x))))
     }
     const up = () => { drag.current = null; size.current = null }
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up)
@@ -52,17 +52,32 @@ export function LiveTvWidget({ open, onClose }: { open: boolean; onClose: () => 
         )}
         {min && cur && <span className="truncate text-muted-foreground">{cur.name}</span>}
         <span className="ml-auto" />
+        {!min && (
+          <span className="mr-1 hidden overflow-hidden rounded border border-border text-[10px] sm:inline-flex" onPointerDown={(e) => e.stopPropagation()}>
+            {([["S", 360], ["M", 560], ["L", 800]] as const).map(([k, px]) => (
+              <button key={k} onClick={() => setW(px)} className={cn("px-1.5 py-0.5", Math.abs(w - px) < 20 ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{k}</button>
+            ))}
+          </span>
+        )}
+        {!min && <button onClick={() => { const el = document.getElementById("il-tv-frame"); el?.requestFullscreen?.() }} onPointerDown={(e) => e.stopPropagation()} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Tam ekran" aria-label="Tam ekran"><Maximize2 className="size-3.5" /></button>}
         <button onClick={() => setMin(!min)} onPointerDown={(e) => e.stopPropagation()} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("tv.hint")}><Minus className="size-3.5" /></button>
         <button onClick={onClose} onPointerDown={(e) => e.stopPropagation()} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("common.close")}><X className="size-3.5" /></button>
       </div>
       {!min && (
         <div className="relative bg-black" style={{ height: h }}>
           {cur ? (
-            <iframe key={cur.channel_id} src={cur.embed} title={cur.name} className="absolute inset-0 size-full" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+            <iframe id="il-tv-frame" key={cur.channel_id} src={cur.embed} title={cur.name} className="absolute inset-0 size-full" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
           ) : (
             <div className="grid size-full place-items-center px-6 text-center text-xs text-muted-foreground">{q.isLoading ? "…" : t("tv.unavailable")}</div>
           )}
-          <div className="absolute bottom-0 right-0 size-4 cursor-nwse-resize" onPointerDown={(e) => { e.stopPropagation(); size.current = { x: e.clientX, w } }} title="↔" />
+          {/* visible resize grip: drag the corner to grow/shrink (video keeps 16:9) */}
+          <div
+            className="absolute bottom-0 right-0 flex size-7 cursor-nwse-resize items-end justify-end rounded-tl-md bg-gradient-to-tl from-card/90 to-transparent p-1 text-muted-foreground hover:text-foreground"
+            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); size.current = { x: e.clientX, w } }}
+            title={t("tv.resize")}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M11 1v10H1" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M11 5v6H5M11 9v2H9" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+          </div>
         </div>
       )}
     </div>
