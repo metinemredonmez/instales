@@ -38,7 +38,7 @@ cd backend
 uv sync
 uv run instilens run                         # migrate → KAP + SEC ingest → parse → Yahoo prices → positions → signals → scores → alerts → outcomes
 uv run instilens api                         # http://127.0.0.1:8000/docs
-uv run pytest -q                             # 76 tests, SQLite in-memory, no network
+uv run pytest -q                             # 93 tests, SQLite in-memory, no network
 cd ../frontend && npm install && npm run dev  # http://localhost:5173 (proxies /api to :8000) → register on the login screen — Node ≥ 22
 npm run desktop:dev                          # Tauri window (needs Rust toolchain)
 ```

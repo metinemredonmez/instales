@@ -53,6 +53,7 @@ from instilens.engine.signals import (
     detect_divergence,
 )
 from instilens.ingestion.base import SourceAdapter
+from instilens.ingestion.sec.edgar_client import is_additive_amendment
 from instilens.parsing import parse_portfolio_report, parse_share_transaction
 from instilens.parsing.sec_13f import parse_13f
 from instilens.services.entities import EntityResolver
@@ -110,7 +111,7 @@ def _store_raw(session: Session, raw: RawDisclosure) -> Disclosure | None:
     session.flush()
 
     amends = raw.payload.get("amends_source_id")
-    if _is_additive_amendment(raw.payload):
+    if is_additive_amendment(raw.payload):
         amends = None  # a NEW HOLDINGS 13F-HR/A completes the original filing; it never replaces it
     elif not amends and raw.kind is DisclosureKind.SEC_13F and raw.payload.get("amendment"):
         amends = _sec_original_accession(session, raw)
@@ -125,15 +126,6 @@ def _store_raw(session: Session, raw: RawDisclosure) -> Disclosure | None:
                 ev.is_superseded = True
             _drop_snapshots_of(session, old)
     return row
-
-
-def _is_additive_amendment(payload: dict) -> bool:
-    """13F-HR/A cover pages carry an `amendmentType`: RESTATEMENT replaces the original holdings table, NEW HOLDINGS
-    lists only the positions the original left out. An unknown type is read as the historical default, a
-    restatement. Additive amendments are merged into the original snapshot by `_write_snapshot`."""
-    from instilens.ingestion.sec.edgar_client import is_additive_amendment
-
-    return is_additive_amendment(payload)
 
 
 def _drop_snapshots_of(session: Session, disc: Disclosure) -> None:
@@ -244,7 +236,7 @@ def _write_snapshot(session: Session, resolver: EntityResolver, disc: Disclosure
     existing = session.scalar(
         select(PortfolioSnapshot).where(PortfolioSnapshot.fund_id == fund.id, PortfolioSnapshot.as_of == snap.as_of)
     )
-    if existing is not None and _is_additive_amendment(disc.payload):
+    if existing is not None and is_additive_amendment(disc.payload):
         _merge_into_snapshot(session, resolver, existing, snap)
         return
     if existing is not None:
