@@ -94,3 +94,14 @@ cd frontend && npm run desktop:build     # → src-tauri/target/release/bundle/d
 ```
 The desktop bundle talks to https://app.instilens.com (VITE_API_BASE). Unsigned: first launch needs
 right-click → Open (or `xattr -d com.apple.quarantine`). Sign + notarize with an Apple Developer ID before wider distribution.
+
+### Windows / Linux / Intel Mac installers
+
+Cross-compiling is not supported, so `.github/workflows/desktop.yml` builds on four GitHub runners and attaches
+the installers (dmg ×2, msi + exe, AppImage + deb + rpm) to a GitHub Release. Start it by tagging:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+(or Actions → desktop → Run workflow). Private repos: macOS runner minutes count 10×, Windows 2× against the
+free monthly quota — a full matrix run costs roughly 150–200 minutes of quota.

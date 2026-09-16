@@ -1,0 +1,54 @@
+name: desktop
+# Builds the Tauri app for every platform and attaches the installers to a GitHub Release.
+# Trigger: push a tag like v0.2.0, or run manually (Actions → desktop → Run workflow).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon
+            args: --target aarch64-apple-darwin
+          - os: macos-13          # Intel Mac
+            args: --target x86_64-apple-darwin
+          - os: windows-latest    # .msi + .exe (NSIS)
+            args: ""
+          - os: ubuntu-22.04      # .AppImage + .deb + .rpm
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: frontend/src-tauri }
+      - name: Linux deps (webkit2gtk, appindicator, rsvg)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - run: npm ci
+        working-directory: frontend
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_API_BASE: https://app.instilens.com
+        with:
+          projectPath: frontend
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
+          releaseName: "InstiLens ${{ github.ref_type == 'tag' && github.ref_name || 'desktop (manual build)' }}"
+          releaseBody: "Masaüstü uygulaması — app.instilens.com'a bağlanır. macOS: imzasız, ilk açılışta sağ tık → Aç. Windows: SmartScreen uyarısında 'Daha fazla bilgi → Yine de çalıştır'."
+          releaseDraft: false
+          prerelease: ${{ github.ref_type != 'tag' }}
+          args: ${{ matrix.args }}

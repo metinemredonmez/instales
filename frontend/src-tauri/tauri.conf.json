@@ -27,10 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "dmg",
-      "app"
-    ],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,6 +43,23 @@
     },
     "category": "Finance",
     "shortDescription": "See where smart money moves.",
-    "longDescription": "Fund and institutional flow radar for BIST (KAP) and US (SEC 13F). Data presentation, not investment advice."
+    "longDescription": "Fund and institutional flow radar for BIST (KAP) and US (SEC 13F). Data presentation, not investment advice.",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "Turkish",
+          "English"
+        ],
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }
