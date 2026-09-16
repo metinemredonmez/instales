@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Mark className="size-8" />
           </NavLink>
 
-          <div className="flex rounded-md border border-border bg-card p-0.5 text-xs" role="tablist" aria-label={t("market.label")}>
+          <div className="flex shrink-0 rounded-md border border-border bg-card p-0.5 text-xs" role="tablist" aria-label={t("market.label")}>
             {([["TR", "BIST", "KAP · " + t("market.funds")], ["US", "Global", "SEC · 13F"]] as const).map(([m, label, hint]) => (
               <button
                 key={m}
@@ -70,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ))}
           </div>
 
-          <nav className="hidden items-center gap-0.5 md:flex">
+          <nav className="hidden shrink-0 items-center gap-0.5 md:flex">
             {NAV.map(({ to, key, icon: Icon, end }) => (
               <NavLink
                 key={to}
@@ -85,12 +85,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <SearchBox className="ml-auto w-full max-w-xs" />
+          <SearchBox className="ml-auto w-full min-w-[140px] max-w-[200px] xl:max-w-xs" />
 
           {user?.role === "ADMIN" && <NavLink to="/admin" aria-label={t("nav.admin")} title={t("nav.admin")} className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Shield className="size-4" /></NavLink>}
           <NavLink to="/watchlist" aria-label={t("nav.watchlist")} title={t("nav.watchlist")} className={({ isActive }) => cn("grid size-9 place-items-center rounded-md hover:bg-accent", isActive && "bg-accent")}><Star className="size-4" /></NavLink>
           <BellMenu />
-          <div className="flex overflow-hidden rounded-md border border-border text-[11px] font-semibold" role="radiogroup" aria-label={t("lang.label")}>
+          <div className="flex shrink-0 overflow-hidden rounded-md border border-border text-[11px] font-semibold" role="radiogroup" aria-label={t("lang.label")}>
             {(["tr", "en"] as const).map((l) => (
               <button key={l} role="radio" aria-checked={lang === l} onClick={() => pickLang(l)} className={cn("px-2 py-1 uppercase", lang === l ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
             ))}
