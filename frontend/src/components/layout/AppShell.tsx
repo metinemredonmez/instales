@@ -16,6 +16,7 @@ import type { Key } from "@/i18n/tr"
 import { NewsTicker } from "@/components/domain/NewsTicker"
 import { BellMenu } from "@/components/domain/BellMenu"
 import { UpdateBanner } from "@/components/domain/UpdateBanner"
+import { PushPrompt } from "@/components/domain/PushPrompt"
 import { LiveTvWidget } from "@/components/domain/LiveTvWidget"
 import { registerSw } from "@/lib/push"
 import { loadOneSignal, oneSignalExternalId, withOneSignal } from "@/lib/onesignal"
@@ -106,6 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <CommandPalette />
       <UpdateBanner />
+      <PushPrompt />
       <LiveTvWidget open={tv} onClose={() => setTv(false)} />
       <NewsTicker market={market} />
 

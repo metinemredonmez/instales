@@ -179,9 +179,16 @@ def push_unsubscribe(endpoint: str, user: User = Depends(current_user), session:
 
 @router.post("/push/test")
 def push_test(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    from datetime import UTC, datetime
+
     from instilens.config import settings as _s
+    from instilens.domain.models import Notification
     from instilens.services.notify import LAST_ONESIGNAL_ERROR, send_onesignal, send_push
 
-    sent = send_push(session, str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)
-    ok = send_onesignal(str(user.id), "InstiLens", "Push bildirimleri bu cihaza gelecek ✅", _s.public_url)
-    return {"sent": sent, "onesignal": ok, "onesignal_error": None if ok else LAST_ONESIGNAL_ERROR.get(str(user.id))}
+    body = "Push notifications will reach this device ✅" if user.lang == "en" else "Push bildirimleri bu cihaza gelecek ✅"
+    sent = send_push(session, _owner(user), "InstiLens", body, _s.public_url)
+    ok = send_onesignal(_owner(user), "InstiLens", body, _s.public_url)
+    # Also land it in the in-app bell, so the test is visible even when the OS swallows the toast.
+    session.add(Notification(owner_id=_owner(user), dedup_key=f"push-test:{datetime.now(UTC):%Y%m%dT%H%M%S}", title="InstiLens", body=body, link="/settings"))
+    session.flush()
+    return {"sent": sent, "onesignal": ok, "onesignal_error": None if ok else LAST_ONESIGNAL_ERROR.get(_owner(user))}

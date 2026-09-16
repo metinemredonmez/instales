@@ -4,7 +4,7 @@ import { api, type Market } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
-import { disablePush, enablePush, pushState, pushSupported } from "@/lib/push"
+import { disablePush, enablePush, pushResultKey, pushState, pushSupported } from "@/lib/push"
 import { useI18n } from "@/lib/i18n"
 
 const MARKETS: Market[] = ["TR", "US"]
@@ -32,7 +32,7 @@ export function NotifySettingsCard() {
     if (push === "on") { await disablePush().catch(() => {}); setPush("off"); setPushMsg(""); return }
     const r = await enablePush(user?.id).catch(() => "disabled" as const)
     setPush(r === "ok" ? "on" : "off")
-    setPushMsg(r === "ok" ? t("notify.push.on") : r === "denied" ? t("notify.push.denied") : r === "unsupported" ? t("notify.push.unsupported") : r === "sdk" ? t("notify.push.sdk") : r === "nouser" ? t("notify.push.noUser") : t("notify.push.noKey"))
+    setPushMsg(t(pushResultKey(r)))
   }
   const pushTest = useMutation({ mutationFn: api.pushTest })
   return (

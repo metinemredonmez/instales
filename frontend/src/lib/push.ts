@@ -1,4 +1,5 @@
 import { api } from "./api"
+import type { Key } from "@/i18n/tr"
 import { evictForeignWorker, loadOneSignal, oneSignalCall, oneSignalExternalId, waitFor } from "./onesignal"
 
 function b64ToUint8(b64: string) {
@@ -80,4 +81,45 @@ export async function pushState(): Promise<"on" | "off"> {
   if (mode !== "vapid") return "off"
   const reg = await navigator.serviceWorker.getRegistration()
   return (await reg?.pushManager.getSubscription()) ? "on" : "off"
+}
+
+/** i18n key for an enablePush outcome — shared by the settings card and the login-time prompt. */
+export const pushResultKey = (r: PushEnableResult): Key =>
+  r === "ok" ? "notify.push.on" : r === "denied" ? "notify.push.denied" : r === "unsupported" ? "notify.push.unsupported" : r === "sdk" ? "notify.push.sdk" : r === "nouser" ? "notify.push.noUser" : "notify.push.noKey"
+
+// ---------------------------------------------------------------- login-time prompt
+// Push is per device, so the "asked already" record lives in this browser; a dismissal snoozes for a week, and
+// after three dismissals the prompt stays quiet (Settings still has the switch).
+export const PUSH_PROMPT_KEY = "il.pushPrompt"
+export const PUSH_PROMPT_SNOOZE_MS = 7 * 86_400_000
+export const PUSH_PROMPT_MAX_DISMISSALS = 3
+export type PushPromptRecord = { dismissedAt: number; count: number }
+
+export function shouldPromptPush(i: { supported: boolean; mode: PushMode; state: "on" | "off"; permission: NotificationPermission; record: PushPromptRecord | null; now: number }): boolean {
+  if (!i.supported || i.mode === "none" || i.state === "on" || i.permission === "denied") return false
+  if (!i.record) return true
+  if (i.record.count >= PUSH_PROMPT_MAX_DISMISSALS) return false
+  return i.now - i.record.dismissedAt >= PUSH_PROMPT_SNOOZE_MS
+}
+
+export function readPushPromptRecord(): PushPromptRecord | null {
+  try {
+    const raw = localStorage.getItem(PUSH_PROMPT_KEY)
+    const r = raw ? (JSON.parse(raw) as Partial<PushPromptRecord>) : null
+    return r && typeof r.dismissedAt === "number" ? { dismissedAt: r.dismissedAt, count: r.count ?? 1 } : null
+  } catch { return null }
+}
+
+export function dismissPushPrompt(now = Date.now()) {
+  const r = readPushPromptRecord()
+  try { localStorage.setItem(PUSH_PROMPT_KEY, JSON.stringify({ dismissedAt: now, count: (r?.count ?? 0) + 1 })) } catch { /* private mode */ }
+}
+
+/** True when the signed-in user should be offered push on this device right now. */
+export async function pushPromptDue(): Promise<boolean> {
+  if (!pushSupported()) return false
+  const { mode } = await pushMode().catch(() => ({ mode: "none" as PushMode }))
+  if (mode === "none") return false
+  const state = await pushState().catch(() => "off" as const)
+  return shouldPromptPush({ supported: true, mode, state, permission: Notification.permission, record: readPushPromptRecord(), now: Date.now() })
 }

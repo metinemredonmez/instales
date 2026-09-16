@@ -512,3 +512,17 @@ def test_onesignal_targets_prefixed_external_id(monkeypatch):
     assert notify.send_onesignal("1", "t", "b", "/") is True
     assert seen["include_aliases"] == {"external_id": ["instilens-1"]}
     assert notify.onesignal_external_id("1") not in {"1", "0", "null", "undefined"}
+
+
+def test_push_test_lands_in_the_bell(client, session, monkeypatch):
+    from instilens.domain.models import Notification
+    from instilens.services import notify
+
+    monkeypatch.setattr(notify, "send_onesignal", lambda *a, **k: False)
+    tok = _register(client, "bell@example.com")
+    h = {"authorization": f"Bearer {tok}"}
+    r = client.post("/api/v1/push/test", headers=h)
+    assert r.status_code == 200 and r.json()["onesignal"] is False
+    rows = session.query(Notification).filter(Notification.dedup_key.like("push-test:%")).all()
+    assert len(rows) == 1 and rows[0].link == "/settings"
+    assert any(n["title"] == "InstiLens" and n["link"] == "/settings" for n in client.get("/api/v1/alerts/notifications", headers=h).json())
