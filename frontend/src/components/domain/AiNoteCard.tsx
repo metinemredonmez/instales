@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils"
 import { SpeakButton } from "./SpeakButton"
 import { RichNote } from "./RichNote"
 
+/** What narration reads: the note body followed by its watch items — the same text for the card button and the ⌘K "listen" command. */
+export const noteSpeechText = (note: AiNote, t: (k: "ai.watch") => string) => `${note.content} ${note.watch.map((w) => `${t("ai.watch")}: ${w}.`).join(" ")}`
+
 /** Descriptive AI note (flows × headlines). Never advice; shows model + time + what it was written from. */
 export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?: string; title: string }) {
   const { user } = useAuth()
@@ -35,7 +38,7 @@ export function AiNoteCard({ market, symbol, title }: { market: Market; symbol?:
         <span>· {fmtDateTime(note.created_at)}</span><span className="hidden sm:inline">· {note.model}</span>
         {!open && <span className="hidden min-w-0 flex-1 truncate md:inline">— {note.headline || note.content}</span>}
         <span className="ml-auto" />
-        {open && <SpeakButton noteId={note.id} title={note.headline || title} text={`${note.content} ${note.watch.map((w) => `${t("ai.watch")}: ${w}.`).join(" ")}`} lang={note.lang} />}
+        {open && <SpeakButton noteId={note.id} title={note.headline || title} text={noteSpeechText(note, t)} lang={note.lang} />}
         {open && user?.role === "ADMIN" && <button onClick={refresh} disabled={busy} className="inline-flex items-center gap-1 hover:text-foreground"><RefreshCw className={cn("size-3", busy && "animate-spin")} /> {t("common.refresh")}</button>}
         <button onClick={toggleOpen} aria-expanded={open} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground hover:bg-accent">
           {open ? <><X className="size-3.5" /> {t("common.close")}</> : <><ChevronDown className="size-3.5" /> {t("common.show")}</>}

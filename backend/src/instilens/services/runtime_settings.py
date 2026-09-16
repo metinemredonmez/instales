@@ -9,7 +9,7 @@ one job cycle without a restart. Everything else (keys, hosts, database) stays i
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -47,6 +47,7 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "kap_public_max_reports": {"type": "int", "group": "data", "min": 0, "max": 500},
     "kap_public_fund_codes": {"type": "list", "group": "data"},
     "sec_ciks": {"type": "list", "group": "data"},
+    "market_holidays_tr": {"type": "list", "group": "data", "item": "date"},  # ISO dates BIST is closed
 }
 _DEFAULTS: dict[str, Any] = {}
 
@@ -105,6 +106,11 @@ def coerce(key: str, value: Any) -> Any:
         out = [str(x).strip().upper() for x in items if str(x).strip()]
         if len(out) > 200 or any(len(x) > 32 for x in out):
             raise SettingError(f"{key}: too many or too long entries")
+        if meta.get("item") == "date":
+            try:
+                out = sorted({date.fromisoformat(x).isoformat() for x in out})
+            except ValueError as exc:
+                raise SettingError(f"{key}: entries must be ISO dates (YYYY-MM-DD)") from exc
         return out
     if t.startswith("choice:"):
         allowed = t.split(":", 1)[1].split("|")
@@ -131,7 +137,7 @@ def snapshot(session: Session) -> list[dict]:
     defaults()
     rows = {r.key: r for r in session.scalars(select(AppSetting))}
     return [
-        {"key": k, "group": m["group"], "type": m["type"], "min": m.get("min"), "max": m.get("max"),
+        {"key": k, "group": m["group"], "type": m["type"], "item": m.get("item"), "min": m.get("min"), "max": m.get("max"),
          "value": rows[k].value.get("v") if k in rows else _DEFAULTS[k], "default": _DEFAULTS[k],
          "overridden": k in rows, "updated_at": rows[k].updated_at.isoformat() if k in rows else None, "updated_by": rows[k].updated_by if k in rows else None}
         for k, m in EDITABLE.items()

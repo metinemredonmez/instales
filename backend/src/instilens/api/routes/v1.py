@@ -197,6 +197,16 @@ def live_tv():
     return out
 
 
+@router.get("/quotes")
+def get_quotes():
+    """Header quotes (USD/TRY, EUR/TRY, BIST 100, S&P 500) from Yahoo Finance, cached 60 s server-side,
+    plus the open/closed state of BIST and NYSE. A quote Yahoo cannot answer is omitted, or carried
+    over from the last good fetch with `stale: true`."""
+    from instilens.services import quotes
+
+    return quotes.snapshot()
+
+
 @router.get("/tts/status")
 def tts_status():
     from instilens.ai.tts import provider

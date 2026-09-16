@@ -252,6 +252,12 @@ export interface StockSeries {
   holdings: { date: string; quantity: number; funds: number }[]
 }
 
+/** Header quote (Yahoo Finance via the backend, 60 s cache). Absent from the list when the source failed; `stale` marks a cached value. */
+export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; stale?: boolean }
+export type MarketState = "open" | "closed" | "pre" | "post"
+export interface MarketStatus { state: MarketState; label_key: string; next_change_at: string; tz: string }
+export interface QuotesResponse { as_of: string; quotes: Quote[]; markets: Partial<Record<Market, MarketStatus>> }
+
 export interface WatchItem {
   id: number
   kind: "stock" | "fund"
@@ -370,6 +376,7 @@ export const api = {
   fund: (code: string) => get<FundDetail>(`/funds/${code}`),
   events: (market: Market, limit = 50) => get<TxEvent[]>("/events", { market, limit }),
   search: (market: Market, q: string) => get<SearchHit[]>("/search", { market, q }),
+  quotes: () => get<QuotesResponse>("/quotes"),
   screener: (market: Market, f: ScreenerFilters) => get<ScreenerRow[]>("/screener", { market, ...f }),
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),

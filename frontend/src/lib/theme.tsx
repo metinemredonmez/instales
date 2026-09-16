@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 
 type Theme = "dark" | "light"
+/** What the user picked: an explicit theme, or "system" to follow the OS. */
+export type ThemeMode = Theme | "system"
 const KEY = "instilens.theme"
-const Ctx = createContext<{ theme: Theme; toggle: () => void }>({ theme: "dark", toggle: () => {} })
+const Ctx = createContext<{ theme: Theme; mode: ThemeMode; setMode: (m: ThemeMode) => void; toggle: () => void }>({ theme: "dark", mode: "system", setMode: () => {}, toggle: () => {} })
 
 const stored = (): Theme | null => {
   try {
@@ -30,14 +32,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", theme === "dark")
   }, [theme])
   useEffect(() => {
-    if (!chosen) return
     try {
-      localStorage.setItem(KEY, chosen)
+      if (chosen) localStorage.setItem(KEY, chosen)
+      else localStorage.removeItem(KEY)
     } catch {
       /* private mode */
     }
   }, [chosen])
-  return <Ctx.Provider value={{ theme, toggle: () => setChosen(theme === "dark" ? "light" : "dark") }}>{children}</Ctx.Provider>
+  const setMode = (m: ThemeMode) => setChosen(m === "system" ? null : m)
+  return <Ctx.Provider value={{ theme, mode: chosen ?? "system", setMode, toggle: () => setChosen(theme === "dark" ? "light" : "dark") }}>{children}</Ctx.Provider>
 }
 
 export const useTheme = () => useContext(Ctx)

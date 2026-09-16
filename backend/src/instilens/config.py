@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     kap_public_fund_codes: list[str] = []  # empty = all equity-focused funds seen in the window
 
     default_market: str = "TR"
+    # Header quotes / market-hours badge: BIST closes on these ISO dates (exchange holidays are not modelled otherwise).
+    market_holidays_tr: list[str] = []
 
     # SEC EDGAR (Global). Free; SEC requires an identifying User-Agent "AppName contact@email".
     sec_adapter: str = "edgar"  # live EDGAR (free); "fixture" only for tests

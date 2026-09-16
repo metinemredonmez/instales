@@ -1,14 +1,17 @@
 import { NavLink } from "react-router-dom"
-import { Activity, Bell, Building2, GitCompare, LogOut, MailWarning, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star, Sun, Tv } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen, Shield, Tv } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Mark } from "@/components/layout/Brand"
 import { SearchBox } from "@/components/layout/SearchBox"
-import { useTheme } from "@/lib/theme"
+import { QuoteStrip } from "@/components/layout/QuoteStrip"
+import { MarketStatusPill } from "@/components/layout/MarketStatusPill"
+import { ProfileMenu } from "@/components/layout/ProfileMenu"
+import { CommandPalette } from "@/components/layout/CommandPalette"
+import { ADMIN, MINE, NAV, type NavItem } from "@/components/layout/nav"
 import { useMarket } from "@/lib/market"
 import { useAuth } from "@/lib/auth"
-import { useI18n, type Lang } from "@/lib/i18n"
+import { useI18n } from "@/lib/i18n"
 import type { Key } from "@/i18n/tr"
 import { NewsTicker } from "@/components/domain/NewsTicker"
 import { BellMenu } from "@/components/domain/BellMenu"
@@ -18,26 +21,12 @@ import { registerSw } from "@/lib/push"
 import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
 
-type NavItem = { to: string; key: Key; icon: React.ComponentType<{ className?: string }>; end?: boolean; mobile?: boolean }
-const NAV: NavItem[] = [
-  { to: "/", key: "nav.radar", icon: Radar, end: true, mobile: true },
-  { to: "/live", key: "nav.live", icon: Activity, mobile: true },
-  { to: "/screener", key: "nav.screener", icon: SlidersHorizontal, mobile: true },
-  { to: "/institutions", key: "nav.institutions", icon: Building2 },
-  { to: "/compare", key: "nav.compare", icon: GitCompare },
-  { to: "/research", key: "nav.research", icon: Sparkles, mobile: true },
-]
-const MINE: NavItem[] = [
-  { to: "/watchlist", key: "nav.watchlist", icon: Star, mobile: true },
-  { to: "/alerts", key: "alerts.title", icon: Bell },
-  { to: "/settings", key: "nav.settings", icon: Settings },
-  { to: "/desktop", key: "nav.desktop", icon: Monitor },
-]
+// ⌘ on Apple keyboards, Ctrl elsewhere — only the hint; the palette listens for both.
+const PALETTE_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl K"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { theme, toggle } = useTheme()
   const { market, setMarket } = useMarket()
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const { lang, setLang, t } = useI18n()
   // One push path per deployment: OneSignal (its own worker + identity) when configured, else our /sw.js for VAPID.
   useEffect(() => {
@@ -48,9 +37,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       } else registerSw().catch(() => {})
     }).catch(() => {})
   }, [user])
-  // The account's language wins on login; switching in the header saves it back.
+  // The account's language wins on login; switching in the account menu saves it back.
   useEffect(() => { if (user?.lang && user.lang !== lang) setLang(user.lang) }, [user?.lang]) // eslint-disable-line react-hooks/exhaustive-deps
-  const pickLang = (l: Lang) => { setLang(l); api.saveSettings({ lang: l }).catch(() => {}) }
   // Sidebar: labels or icons only — the user's choice, remembered.
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("instilens.sidebar") !== "icons" } catch { return true } })
   const toggleWide = () => setWide((w) => { try { localStorage.setItem("instilens.sidebar", w ? "icons" : "wide") } catch { /* ignore */ } return !w })
@@ -83,13 +71,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-4">
           <NavLink to="/" className="flex shrink-0 items-center" aria-label={t("nav.home")} title="InstiLens">
             <Mark className="size-8" />
           </NavLink>
 
           <div className="flex shrink-0 rounded-md border border-border bg-card p-0.5 text-xs" role="tablist" aria-label={t("market.label")}>
-            {([["TR", "BIST", "KAP · " + t("market.funds")], ["US", "Global", "SEC · 13F"]] as const).map(([m, label, hint]) => (
+            {([["TR", t("market.name.TR"), "KAP · " + t("market.funds")], ["US", t("market.name.US"), "SEC · 13F"]] as const).map(([m, label, hint]) => (
               <button
                 key={m}
                 role="tab"
@@ -107,31 +95,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ))}
           </div>
 
-          <SearchBox className="ml-auto w-full min-w-[140px] max-w-sm" />
+          <MarketStatusPill market={market} className="hidden md:inline-flex" />
+          <QuoteStrip className="hidden lg:flex" />
+
+          <SearchBox className="ml-auto w-full min-w-[120px] max-w-sm" shortcutHint={PALETTE_KEY} />
 
           <BellMenu />
-          <div className="flex shrink-0 overflow-hidden rounded-md border border-border text-[11px] font-semibold" role="radiogroup" aria-label={t("lang.label")}>
-            {(["tr", "en"] as const).map((l) => (
-              <button key={l} role="radio" aria-checked={lang === l} onClick={() => pickLang(l)} className={cn("px-2 py-1 uppercase", lang === l ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>{l}</button>
-            ))}
-          </div>
-          <Button variant="ghost" size="icon" aria-label={t("nav.theme")} title={t("nav.theme")} onClick={toggle}>
-            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </Button>
-          <div className="hidden shrink-0 items-center gap-2 border-l border-border pl-3 sm:flex">
-            <div className="leading-tight">
-              <div className="text-xs font-medium">{user?.name}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{user?.role === "ADMIN" ? t("plan.admin") : t(({ FREE: "plan.free", PRO: "plan.pro", PRO_PLUS: "plan.proPlus" } as const)[user?.plan ?? "FREE"])}</div>
-              {user?.email_verified === false && (
-                <NavLink to="/settings" className="mt-0.5 flex items-center gap-1 text-[10px] text-warning hover:underline" title={t("account.unverified")}>
-                  <MailWarning className="size-3" /> {t("account.unverified")}
-                </NavLink>
-              )}
-            </div>
-            <Button variant="ghost" size="icon" aria-label={t("nav.logout")} title={t("nav.logout")} onClick={() => { withOneSignal((os) => os.logout()); logout() }}><LogOut className="size-4" /></Button>
-          </div>
+          <ProfileMenu />
         </div>
       </header>
+      <CommandPalette />
       <UpdateBanner />
       <LiveTvWidget open={tv} onClose={() => setTv(false)} />
       <NewsTicker market={market} />
@@ -149,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {user?.role === "ADMIN" && (
             <>
               {group("nav.group.system")}
-              {item({ to: "/admin", key: "nav.admin", icon: Shield })}
+              {item(ADMIN)}
             </>
           )}
           <button onClick={toggleWide} title={wide ? t("nav.collapse") : t("nav.expand")} aria-label={wide ? t("nav.collapse") : t("nav.expand")} className="mt-auto hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground lg:flex">
