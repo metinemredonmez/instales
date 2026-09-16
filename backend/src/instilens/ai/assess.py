@@ -28,7 +28,9 @@ Rules: (1) use ONLY numbers present in the JSON; (2) never give advice — no "b
 it matters (GROUPED = allocation across the funds is unknown, INFERRED = derived from a snapshot diff);
 (4) refer to headlines by [n:ID] and disclosures by [kap:ID] so the UI can link them; (5) if the data is
 thin, say so in one sentence rather than padding; (6) write in the language requested by the user prompt —
-Turkish or English — including the `watch` items and `confidence_note`."""
+Turkish or English — including `headline`, `highlights`, `watch` and `confidence_note`; (7) `headline` is one
+line with the single most important number; `highlights` are 3 short, number-bearing items; `text` is the full
+narrative — write it as 3-5 short paragraphs separated by blank lines, not one block."""
 
 LANGS = ("tr", "en")
 
@@ -38,6 +40,8 @@ def norm_lang(lang: str | None) -> str:
 
 
 class Note(BaseModel):
+    headline: str = Field("", max_length=90, description="one punchy line: the single most important flow of the period, with its number")
+    highlights: list[str] = Field(default_factory=list, max_length=3, description="up to 3 short items (≤ 80 chars), each with a number from the data")
     text: str = Field(max_length=1800)
     watch: list[str] = Field(default_factory=list, max_length=4, description="what to watch next, short items")
     headline_ids: list[int] = Field(default_factory=list)
@@ -64,7 +68,8 @@ def _write(session: Session, kind: str, market: str, subject: str, day: date, pr
     if r.stop_reason == "refusal" or r.parsed_output is None:
         return None
     note = _cached(session, kind, market, subject, day, lang)
-    payload = {"watch": r.parsed_output.watch, "headline_ids": r.parsed_output.headline_ids, "confidence_note": r.parsed_output.confidence_note, "inputs": data}
+    payload = {"headline": r.parsed_output.headline, "highlights": r.parsed_output.highlights, "watch": r.parsed_output.watch,
+               "headline_ids": r.parsed_output.headline_ids, "confidence_note": r.parsed_output.confidence_note, "inputs": data}
     if note is None:
         note = AiNote(kind=kind, market_code=market, subject=subject, as_of=day, lang=lang, content=r.parsed_output.text, data=payload, model=r.model)
         session.add(note)
@@ -99,7 +104,7 @@ def stock_assessment(session: Session, market: str, symbol: str, day: date | Non
         "symbol": detail["symbol"], "as_of": detail["as_of"], "scores": {k: {"score": v["score"], "activity": v["why"].get("activity")} for k, v in detail["scores"].items()},
         "top_buyers": detail["top_buyers"][:5], "top_sellers": detail["top_sellers"][:5], "signals": detail["signals"][:5],
         "recent_disclosures": [{"kap_id": e["source"]["id"], "date": e["effective_date"], "institution": e["institution"], "funds": e["funds"], "net_nominal": e["net_nominal"], "confidence": e["confidence"]} for e in detail["events"][:6]],
-        "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "published_at": n["published_at"], "ai": n.get("ai")} for n in news],
+        "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "url": n.get("url"), "published_at": n["published_at"], "ai": n.get("ai")} for n in news],
     }
     prompt = (f"Write a short institutional-flow assessment for {symbol.upper()} (3-5 sentences)." if lang == "en"
               else f"{symbol.upper()} için kısa kurumsal akış değerlendirmesi yaz (3-5 cümle).")
@@ -120,7 +125,7 @@ def daily_brief(session: Session, market: str, day: date | None = None, force: b
         "last7d": {"accumulated": flows7["accumulated"][:6], "distributed": flows7["distributed"][:6]},
         "signals": radar["signals"][:8],
         "latest_disclosures": [{"kap_id": e["source"]["id"], "date": e["effective_date"], "symbol": e["symbol"], "institution": e["institution"], "net_nominal": e["net_nominal"], "confidence": e["confidence"]} for e in events],
-        "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "tags": n.get("tags"), "ai": n.get("ai")} for n in news],
+        "headlines": [{"id": n["id"], "source": n["source"], "title": n["title"], "url": n.get("url"), "tags": n.get("tags"), "ai": n.get("ai")} for n in news],
     }
     if lang == "en":
         label = "Turkey (BIST / KAP)" if market == "TR" else "US (SEC 13F)"
@@ -131,7 +136,35 @@ def daily_brief(session: Session, market: str, day: date | None = None, force: b
     return _write(session, "DAILY_BRIEF", market, "market", day, prompt, data, lang)
 
 
+def _symbols_in(data: dict) -> list[str]:
+    """Every ticker mentioned in the inputs, so the UI can link them in the prose."""
+    out: set[str] = set()
+
+    def walk(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k == "symbol" and isinstance(v, str):
+                    out.add(v)
+                else:
+                    walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    walk(data)
+    return sorted(out)
+
+
+def _headlines_in(data: dict) -> list[dict]:
+    return [{"id": h["id"], "title": h.get("title", ""), "source": h.get("source", ""), "url": h.get("url")} for h in data.get("headlines", []) if "id" in h]
+
+
 def note_json(n: AiNote | None) -> dict | None:
     if n is None:
         return None
-    return {"id": n.id, "kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "lang": n.lang, "content": n.content, "watch": n.data.get("watch", []), "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""), "model": n.model, "created_at": n.created_at.isoformat()}
+    inputs = n.data.get("inputs", {}) or {}
+    return {"id": n.id, "kind": n.kind, "subject": n.subject, "as_of": n.as_of.isoformat(), "lang": n.lang, "content": n.content,
+            "headline": n.data.get("headline", ""), "highlights": n.data.get("highlights", []), "watch": n.data.get("watch", []),
+            "headline_ids": n.data.get("headline_ids", []), "confidence_note": n.data.get("confidence_note", ""),
+            "symbols": _symbols_in(inputs), "headlines": _headlines_in(inputs), "kap_base": "https://www.kap.org.tr/tr/Bildirim/",
+            "model": n.model, "created_at": n.created_at.isoformat()}

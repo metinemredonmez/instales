@@ -74,7 +74,12 @@ export interface NewsRule {
   language: string; max_age_days: number; symbols: string[]; newsapi_query: string; ai_summary: boolean; is_active: boolean
 }
 
-export interface AiNote { id: number; kind: string; subject: string; as_of: string; lang: "tr" | "en"; content: string; watch: string[]; headline_ids: number[]; confidence_note: string; model: string; created_at: string }
+export interface AiNote {
+  id: number; kind: string; subject: string; as_of: string; lang: "tr" | "en"; content: string
+  headline: string; highlights: string[]; watch: string[]; headline_ids: number[]; confidence_note: string
+  symbols: string[]; headlines: { id: number; title: string; source: string; url: string | null }[]; kap_base: string
+  model: string; created_at: string
+}
 
 export interface NotifySettings { email: string; notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; lang: "tr" | "en"; channels: { telegram: boolean; email: boolean } }
 
