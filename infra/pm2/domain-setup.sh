@@ -2,7 +2,7 @@
 # Put InstiLens on a domain with HTTPS (Let's Encrypt) and enable Web Push.
 # Usage (server, as root, after DNS A record points to this box):  bash infra/pm2/domain-setup.sh app.example.com you@example.com
 set -euo pipefail
-DOMAIN="${1:?domain}"; EMAIL="${2:?email for Let's Encrypt}"
+DOMAIN="${1:?domain}"; EMAIL="${2:?email for Lets Encrypt}"
 ROOT=/opt/instilens; ENV="$ROOT/backend/.env"
 command -v certbot >/dev/null || apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
 
