@@ -75,6 +75,27 @@ def send_push(session: Session, owner_id: str, title: str, body: str, link: str)
     return sent
 
 
+def send_onesignal(owner_id: str, title: str, body: str, link: str) -> bool:
+    """OneSignal push to the user (identified by external_id = our user id, set by OneSignal.login on the web)."""
+    if not (settings.onesignal_app_id and settings.onesignal_rest_api_key):
+        return False
+    payload = {"app_id": settings.onesignal_app_id, "include_aliases": {"external_id": [owner_id]}, "target_channel": "push",
+               "headings": {"en": title, "tr": title}, "contents": {"en": body, "tr": body}, "url": link}
+    for scheme in ("Key", "Basic"):  # new-style keys use "Key", legacy REST keys use "Basic"
+        try:
+            r = httpx.post("https://api.onesignal.com/notifications", json=payload, headers={"Authorization": f"{scheme} {settings.onesignal_rest_api_key}", "accept": "application/json"}, timeout=15)
+        except httpx.HTTPError as exc:
+            log.warning("onesignal failed: %s", exc)
+            return False
+        if r.status_code in (200, 201):
+            data = r.json()
+            return not data.get("errors")
+        if r.status_code not in (401, 403):
+            log.warning("onesignal %s: %s", r.status_code, r.text[:200])
+            return False
+    return False
+
+
 def deliver_pending(session: Session) -> int:
     """Send every undelivered notification to its owner's configured channels."""
     sent = 0
@@ -87,6 +108,7 @@ def deliver_pending(session: Session) -> int:
         link = f"{settings.public_url}{n.link}" if n.link else settings.public_url
         ok = False
         ok |= send_push(session, n.owner_id, n.title, n.body, link) > 0
+        ok |= send_onesignal(n.owner_id, n.title, n.body, link)
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{n.title}</b>\n{n.body}\n{link}")
         if u.notify_email:
@@ -106,6 +128,7 @@ def deliver_brief(session: Session, note: AiNote) -> int:
     for u in session.scalars(select(User).where(User.notify_brief.is_(True))):
         ok = False
         ok |= send_push(session, str(u.id), title, note.content[:180] + "…", settings.public_url) > 0
+        ok |= send_onesignal(str(u.id), title, note.content[:180] + "…", settings.public_url)
         if u.notify_telegram_chat_id:
             ok |= send_telegram(u.notify_telegram_chat_id, f"<b>{title}</b>\n{body}")
         if u.notify_email:

@@ -9,6 +9,8 @@ import { useAuth } from "@/lib/auth"
 import { NewsTicker } from "@/components/domain/NewsTicker"
 import { BellMenu } from "@/components/domain/BellMenu"
 import { registerSw } from "@/lib/push"
+import { loadOneSignal, withOneSignal } from "@/lib/onesignal"
+import { api } from "@/lib/api"
 import { useEffect } from "react"
 
 const NAV = [
@@ -25,6 +27,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { market, setMarket } = useMarket()
   const { user, logout } = useAuth()
   useEffect(() => { registerSw().catch(() => {}) }, [])
+  useEffect(() => {
+    api.pushPublicKey().then((k) => {
+      if (!k.onesignal_app_id || !user) return
+      loadOneSignal(k.onesignal_app_id)
+      withOneSignal((os) => os.login(String(user.id)))
+    }).catch(() => {})
+  }, [user])
   const navigate = useNavigate()
   const [q, setQ] = useState("")
 
@@ -94,7 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="text-xs font-medium">{user?.name}</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{user?.plan}</div>
             </div>
-            <Button variant="ghost" size="icon" aria-label="Çıkış" onClick={logout}><LogOut className="size-4" /></Button>
+            <Button variant="ghost" size="icon" aria-label="Çıkış" onClick={() => { withOneSignal((os) => os.logout()); logout() }}><LogOut className="size-4" /></Button>
           </div>
         </div>
       </header>

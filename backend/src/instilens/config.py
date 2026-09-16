@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
     public_url: str = "http://localhost:5173"  # used in notification links
+    # OneSignal (optional, alongside VAPID). App ID is public (frontend), REST key stays here.
+    onesignal_app_id: str | None = None
+    onesignal_rest_api_key: str | None = None
     # Web Push (VAPID). Generate once: `instilens vapid-keys`. Push needs HTTPS on the site.
     vapid_public_key: str | None = None
     vapid_private_key: str | None = None

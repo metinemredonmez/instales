@@ -4,6 +4,7 @@ import { api } from "@/lib/api"
 import { Section } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
 import { disablePush, enablePush, pushState, pushSupported } from "@/lib/push"
+import { withOneSignal } from "@/lib/onesignal"
 
 /** Where alerts and the morning brief get delivered. Telegram is free and instant; e-mail needs SMTP on the server. */
 export function NotifySettingsCard() {
@@ -21,6 +22,7 @@ export function NotifySettingsCard() {
   useEffect(() => { pushState().then(setPush) }, [])
   const togglePush = async () => {
     if (push === "on") { await disablePush(); setPush("off"); return }
+    withOneSignal((os) => os.Slidedown.promptPush())  // OneSignal prompt when configured; harmless otherwise
     const r = await enablePush()
     setPush(r === "ok" ? "on" : "off")
     setPushMsg(r === "ok" ? "Bu cihaza bildirim açıldı" : r === "denied" ? "Tarayıcı izni reddedildi" : r === "unsupported" ? "Bu cihaz/tarayıcı desteklemiyor (HTTPS gerekir)" : "Sunucuda push anahtarı tanımlı değil")
@@ -38,7 +40,7 @@ export function NotifySettingsCard() {
             <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? "Kapat" : "Aç"}</Button>
           </div>
           {pushMsg && <div className="mt-2 text-xs text-muted-foreground">{pushMsg}</div>}
-          {push === "on" && <Button size="sm" variant="ghost" className="mt-1" onClick={() => pushTest.mutate()}>Cihaza test gönder{pushTest.data ? ` (${pushTest.data.sent})` : ""}</Button>}
+          <Button size="sm" variant="ghost" className="mt-1" onClick={() => pushTest.mutate()}>Cihaza test gönder{pushTest.data ? ` (vapid ${pushTest.data.sent} · onesignal ${pushTest.data.onesignal ? "ok" : "—"})` : ""}</Button>
         </div>
         <label className="block">
           <div className="mb-1 text-xs text-muted-foreground">Telegram chat id {ch && !ch.telegram && <span className="text-warning">(sunucuda bot token tanımlı değil)</span>}</div>

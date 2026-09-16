@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://api.instilens.app"
+      "csp": "default-src 'self'; script-src 'self' https://cdn.onesignal.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https://*.onesignal.com; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://api.instilens.app https://*.onesignal.com; worker-src 'self' https://cdn.onesignal.com"
     }
   },
   "bundle": {
