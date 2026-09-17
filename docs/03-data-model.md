@@ -59,7 +59,7 @@ instruments of the market seen in a position change or transaction within 400 da
 (never fetched, then oldest `fetched_at`), at most `fundamentals_max_instruments` (300, admin-editable) per market and
 run so a weekly job walks the whole universe over a few weeks; CUSIP placeholders are never sent to a provider.
 
-## Insiders and issuer filings (Faz 4, US only)
+## Insiders and issuer filings (Faz 4: SEC Form 4 on US issuers; KAP insider filings on BIST below)
 
 SEC Form 4 is the report an insider (director, officer, ≥10 % owner) files within two business days of a transaction
 in the issuer's stock. `services/insiders.refresh` (daily 08:30, `form4_daily`, gated by `sec_form4_enabled`; also
@@ -86,9 +86,46 @@ days or on a watchlist, stalest first, at most `sec_form4_max_issuers` (200, adm
 instruments that carry a CIK, so a ticker the SEC map does not know (ADR variants, preferreds, delisted names) is
 reported as skipped and never holds a slot; `sec_form4_days_back` (120) days of listing per issuer (the window is cut
 before any cap; EDGAR's `recent` block holds at least a year, a longer window logs a warning). CUSIP placeholders have no
-ticker to map and are left out. Each issuer's writes run in a savepoint and are committed as soon as it is done. TR
-instruments answer `supported: false` — KAP insider filings come later. Test fixtures are real EDGAR documents
-(`backend/fixtures/sec/form4/`, sources in `fixtures/sec/README.md`).
+ticker to map and are left out. Each issuer's writes run in a savepoint and are committed as soon as it is done. Test
+fixtures are real EDGAR documents (`backend/fixtures/sec/form4/`, sources in `fixtures/sec/README.md`).
+
+### KAP insider filings (TR)
+
+On BIST the counterpart of Form 4 is the "Pay Alım Satım Bildirimi" a director, executive or ≥ 5 % holder files under
+SPK II-15.1 (art. 11–12) — the same subject the PYŞ ingest reads, filed by anyone but a portfolio management company.
+Two shapes exist on kap.org.tr and both are read: the issuer's own ODA page about its people (the acting party and
+their role in the prose — "Şirketimizin Yönetim Kurulu Başkanı Sayın … tarafından", "Şirketimizin ana ortağı … tarafından"
+— and the numbers in the standard table) and the page MKK publishes under "KAMUYU AYDINLATMA PLATFORMU" on the person's
+behalf, whose page names only the sender and whose SPK form ("SÜREKLİ BİLGİLERE İLİŞKİN ÖZEL DURUM AÇIKLAMASI": Ad Soyad /
+Ticaret Ünvanı, Görevi, the table) is the PDF attachment. `services/insiders.refresh_kap` (every 30 min at :15 / :45,
+09:15–22:45 Istanbul on weekdays — offset from the PYŞ ingest so one KAP client at a time talks to the site —
+`kap_insiders`, gated by `kap_insiders_enabled`, at most `kap_insiders_max_details` detail fetches per run — both
+admin-editable; also `instilens kap-insiders`; public adapter only) lists the window once through
+`KapPublicAdapter.list_insider_disclosures` — the rows `list_disclosures` leaves out, so a disclosure is never on both
+paths and the PYŞ path is untouched: insider rows never enter `transaction_events` or the scores — and stores:
+
+| Table | Grain | Notes |
+|---|---|---|
+| `disclosures` (kind `KAP_INSIDER_TRANSACTION`) | one filing | `source_id` = the disclosure index, `raw_uri` = the disclosure page, `payload` = the parsed page / form (`KapInsiderPayload`: party name and kind, role text, signatory of a legal entity, rows with the stated price or range, stake after, correction flag, the prose); PARSED on arrival. A page the parser cannot read (no party, no rows, a two-party table) is kept FAILED with the reason — visible in the disclosures table, never fetched again. A "Düzeltme" supersedes, through `supersedes_id`, the filing whose index the page names (`relatedDisclosureIndex`); naming none, the party's latest live filing on the same stock within 60 days; an original stored after its correction is flagged on arrival. The superseded filing stays, flagged |
+| `insider_transactions` | one row per day and side | `disclosure_id` + `confidence` (EXACT — the party's own report), `instrument_id` = the subject stock (created unverified when unknown), `insider_cik` = a stable key derived from the party's name ("k" + 9 hex of the folded name: KAP identifies nobody by number, and the form's "MEHMET SÖNMEZ" and the page's "Mehmet Sönmez" must be one insider), `insider_name` as the page printed it, `roles` mapped from the Turkish title (`parsing/kap_insider.ROLE_TITLES`: Yönetim Kurulu Başkanı / Üyesi → director, Genel Müdür / CEO / Direktör / Müdür → officer, ortağı / pay sahibi or a stated stake ≥ 5 % → shareholder, else other; a legal entity's "Görevi" is the signatory's job and never a role), `title` = the role text as filed (persons only), `code` P for ALIŞ / S for SATIŞ (KAP has no grant or exercise codes), `acquired`, `shares` = the nominal (one lira = one share on BIST), `price` = the single price or the stated average (NULL for a range: the range stays in the payload and is reported as `price_range`, never a midpoint), `post_shares` NULL, `ownership` D, `derivative` false, `kap_disclosure_index`, `party_kind` (person / company / fund / other, from the name and the form's signatory), `post_pct_stake` (the end-of-day capital ratio the filing states, `Numeric(9,4)`), `row_hash` (index, party key, ordinal, fields). A company trading its own shares (a buyback or a treasury-share sale — the party is the issuer) is stored with `party_kind = company` and `roles = "issuer"` |
+
+The read models are market-agnostic and answer the same shape on both markets: `/stocks/{symbol}/insiders` on a BIST
+symbol says `supported: true`, `source: "kap"`, every row with `accession` = the disclosure index, `url` = the KAP
+page, `party_kind`, `post_pct_stake`, `price_range` and `buyback` (the company's own-share rows: listed with that label,
+never a buyer or seller, never in the cluster); `fetched_at` is when the KAP feed last stored a filing (market-wide,
+null before the first run; `edgar_url` is null). The summary, the 30-day INSIDER_BUY_CLUSTER (≥ 3 distinct parties
+with an ALIŞ; a range-only purchase adds breadth, not value) and the alert on a watched stock work on both markets
+(`alerts.WATCHLIST_STOCK_RULES`; the notification cites "KAP" and ₺, and says "pay aldı" — a KAP filing states no venue).
+`coverage_since` (BIST only) is the publication day of the feed's oldest stored filing: the job reads
+`kap_public_days_back` (7) days per run, so the day after its first run a 90-day window is mostly unread, and the UI says
+"no insider transactions reported since {coverage_since}" rather than "in the last 90 days" for a window that starts
+earlier. **Before enabling the job on a fresh database, backfill once** — `instilens kap-insiders --days-back 365`
+(capped by `kap_insiders_max_details` per run; repeat until `disclosures` is 0, or raise the cap for the backfill) — so the
+year's filings are in place and `coverage_since` reaches back a year. `more_url` is the issuer's own KAP page
+(`/tr/sirket-bilgileri/ozet/{oid}`), known from a filing the issuer published itself (an MKK-relayed page carries KAP's
+oid, not the issuer's); null until one is stored. The EDGAR filings index (`/stocks/{symbol}/filings`) stays US-only. Test fixtures are real kap.org.tr pages and form PDFs (`backend/fixtures/kap_public/`, indexes and URLs
+in its README); no BIST issuer filed a buyback under this subject in the windows read (they use "Payların Geri
+Alınmasına İlişkin Bildirim"), so the buyback rule is exercised on the real page's payload with the party swapped.
 
 ## Ownership and fund overlap (Faz 5)
 

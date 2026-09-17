@@ -183,7 +183,6 @@ function PortfolioBody({ d, onAddPosition, onAddTransaction, onRemovePosition, o
 function PositionsTable({ rows, portfolio: p, onRemove }: { rows: PortfolioPosition[]; portfolio: Portfolio; onRemove: (positionId: number) => void }) {
   const { t } = useI18n()
   const fm = flowMarket(p)
-  const us = p.market === "US"
   const th = "px-2 py-2 text-right font-medium"
   const pnlTone = (v: number | null) => (v === null || v === 0 ? "text-muted-foreground" : v > 0 ? "text-positive" : "text-negative")
   return (
@@ -201,7 +200,7 @@ function PositionsTable({ rows, portfolio: p, onRemove }: { rows: PortfolioPosit
           <th className={cn(th, "hidden xl:table-cell")}>{t("common.consensus")}</th>
           <th className={cn(th, "hidden xl:table-cell")}>{t("scores.crowding")}</th>
           <th className={cn(th, "hidden lg:table-cell")}>{t("pf.funds30")}</th>
-          {us && <th className={cn(th, "hidden lg:table-cell")}>{t("pf.insiders90")}</th>}
+          <th className={cn(th, "hidden lg:table-cell")}>{t("pf.insiders90")}</th>
           <th className="w-10" />
         </tr>
       </thead>
@@ -228,7 +227,8 @@ function PositionsTable({ rows, portfolio: p, onRemove }: { rows: PortfolioPosit
             <td className="hidden px-2 py-2 text-right align-top xl:table-cell"><ScorePill value={r.consensus_score} size="sm" /></td>
             <td className="hidden px-2 py-2 text-right align-top xl:table-cell">{r.crowding_score === null ? <span className="text-muted-foreground">—</span> : <CrowdingPill score={r.crowding_score} size="sm" />}</td>
             <td className="num hidden px-2 py-2 text-right align-top lg:table-cell"><span className="text-positive">{r.funds_increasing_30d ?? "—"}</span> / <span className="text-negative">{r.funds_reducing_30d ?? "—"}</span></td>
-            {us && <td className="hidden px-2 py-2 text-right align-top lg:table-cell"><Flow value={r.insiders_net_90d} market="US" /></td>}
+            {/* Both markets (Form 4 on US, KAP on BIST), in the listing currency; "—" until the market's insider source has been read. */}
+            <td className="hidden px-2 py-2 text-right align-top lg:table-cell"><Flow value={r.insiders_net_90d} market={p.market} /></td>
             {/* A derived row is rewritten from its transactions: it goes when they go, not by hand. */}
             <td className="px-2 py-2 text-right align-top">{!r.derived && <button type="button" onClick={() => onRemove(r.id)} className="text-muted-foreground hover:text-negative" aria-label={`${t("pf.removePosition")}: ${r.symbol}`}><Trash2 className="size-4" /></button>}</td>
           </tr>

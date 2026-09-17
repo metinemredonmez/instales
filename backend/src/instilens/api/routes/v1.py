@@ -189,11 +189,15 @@ def get_stock_fundamentals(symbol: str, market: str = MarketParam, period: str =
 
 @router.get("/stocks/{symbol}/insiders")
 def get_stock_insiders(symbol: str, market: str = MarketParam, days: int = Query(90, ge=30, le=730), session: Session = Depends(get_session)):
-    """Insider transactions of a US issuer from SEC Form 4 over the last `days`: a summary (distinct insiders with
-    open-market purchases / sales, their values, the 30-day purchase cluster if any) and every reported row, newest
-    first, each with its transaction code as filed (P purchase, S sale, A grant, M exercise / RSU settlement, F tax
-    withholding, G gift …), price when stated (null otherwise, never looked up), accession and filing URL. TR symbols
-    answer `supported: false` — KAP insider filings come later. Reported facts, not recommendations."""
+    """Insider transactions of the stock over the last `days` — SEC Form 4 for a US issuer, KAP "Pay Alım Satım
+    Bildirimi" of directors, executives and shareholders for a BIST company (`source` sec-edgar / kap): a summary
+    (distinct insiders with open-market purchases / sales, their values, the 30-day purchase cluster if any) and every
+    reported row, newest first, each with its transaction code as filed (P purchase, S sale, A grant, M exercise /
+    RSU settlement, F tax withholding, G gift …; KAP rows are P / S only), price when stated (null otherwise, never
+    looked up; a KAP range stays a `price_range`), `party_kind` and `post_pct_stake` on KAP rows, `buyback` for a
+    company's own-share rows (listed, not counted), the accession / KAP index and the filing URL; `coverage_since`
+    (BIST) is the earliest day the KAP feed has read and `more_url` the issuer's list at the source. Reported facts,
+    not recommendations."""
     from instilens.services import insiders
 
     data = insiders.stock_insiders(session, market, symbol, days)

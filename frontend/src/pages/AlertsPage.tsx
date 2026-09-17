@@ -91,11 +91,11 @@ export function AlertsPage() {
   }
   const active = rules.data?.rules.filter((r) => r.is_active) ?? []
   const unread = notes.data?.filter((n) => !n.read_at).length ?? 0
-  // Form 4 data exists for US issuers only, so the insider rule is never offered on BIST (the API refuses it there too).
-  // The price rules are for stocks only: while the typed subject is a fund code they stay listed but cannot be picked
-  // (disabled, not removed — a BIST symbol passes through three letters on its way to five, and the field must not jump),
-  // and a choice made before the code was typed is refused at submit with the same reason.
-  const ruleTypes = (rules.data?.rule_types ?? Object.keys(RULE_LABEL)).filter((k) => market === "US" || k !== "INSIDER_BUY_CLUSTER")
+  // Every rule type the API lists is offered on both markets (the insider cluster reads Form 4 on US issuers, KAP
+  // filings on BIST). The price rules are for stocks only: while the typed subject is a fund code they stay listed but
+  // cannot be picked (disabled, not removed — a BIST symbol passes through three letters on its way to five, and the
+  // field must not jump), and a choice made before the code was typed is refused at submit with the same reason.
+  const ruleTypes = rules.data?.rule_types ?? Object.keys(RULE_LABEL)
   const fund = isFundCode(market, ref.trim())
 
   return (

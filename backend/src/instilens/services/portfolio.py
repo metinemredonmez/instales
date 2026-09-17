@@ -9,8 +9,9 @@ down to zero disappears; its transactions stay.
 
 The read model (`detail`) prices every position at the latest stored close (`market_prices`, so the value is as of
 that close, never intraday), adds the stored scores (SMART_MONEY / CONSENSUS / CROWDING, newest per symbol), the
-funds' 30-day moves on the held symbols (the same aggregation as /moves, cut to the holdings) and, for US symbols
-the Form 4 job has read, the 90-day insider net value. Numbers the user typed are the only inputs; nothing derived
+funds' 30-day moves on the held symbols (the same aggregation as /moves, cut to the holdings) and, once the market's
+insider source has been read (the issuer's Form 4s, the KAP feed), the 90-day insider net value in the listing
+currency. Numbers the user typed are the only inputs; nothing derived
 is stored. Money and quantities are Decimal until the JSON boundary.
 """
 
@@ -341,7 +342,7 @@ def detail(session: Session, p: Portfolio) -> dict:
             "crowding_score": float(cr.adjusted_score) if cr else None,
             "funds_increasing_30d": flow["funds_increasing"] if flow else 0,
             "funds_reducing_30d": flow["funds_reducing"] if flow else 0,
-            "insiders_net_90d": insider["net_value"] if insider else None,  # US symbols the Form 4 job has read; null elsewhere
+            "insiders_net_90d": insider["net_value"] if insider else None,  # null until the market's insider source has been read (the issuer's Form 4s, the KAP feed)
             "_market_value": market_value,
         })
     for r in rows:

@@ -1,10 +1,13 @@
-"""Insider cluster detection (US, SEC Form 4). Pure: rows in, a verdict out — no session, no clock.
+"""Insider cluster detection (SEC Form 4 on US issuers, KAP person / shareholder filings on BIST). Pure: rows in, a
+verdict out — no session, no clock.
 
 INSIDER_BUY_CLUSTER fires when at least CLUSTER_MIN_INSIDERS distinct insiders of one issuer made open-market
-purchases (transaction code P, non-derivative table) inside the CLUSTER_WINDOW_DAYS ending on `as_of`. Grants (A),
-option exercises and RSU settlements (M), tax withholding (F), gifts (G) and every derivative-table row never count:
-they are not a decision to pay market price for the stock. Thresholds are module constants — part of the published
-methodology (docs/04-confidence-and-scoring.md), never per request.
+purchases (transaction code P, non-derivative table; a KAP ALIŞ is stored as P) inside the CLUSTER_WINDOW_DAYS
+ending on `as_of`. Grants (A), option exercises and RSU settlements (M), tax withholding (F), gifts (G) and every
+derivative-table row never count: they are not a decision to pay market price for the stock; nor does a company's
+purchase of its own shares (services/insiders keeps those rows out of `trades`). Thresholds are module constants —
+part of the published methodology (docs/04-confidence-and-scoring.md), never per request. The value saturation is
+a plain figure in the market's currency ($1M / ₺1M): breadth, not money, is the main factor.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from instilens.engine.signals import DetectedSignal, _clamp
 CLUSTER_WINDOW_DAYS = 30
 CLUSTER_MIN_INSIDERS = 3
 CLUSTER_INSIDERS_SATURATION = 5  # five distinct buyers → the breadth factor is 1
-CLUSTER_VALUE_SATURATION = Decimal(1_000_000)  # $1M of purchases → the value factor is 1
+CLUSTER_VALUE_SATURATION = Decimal(1_000_000)  # 1M (USD on US, TRY on TR) of purchases → the value factor is 1
 OPEN_MARKET_PURCHASE = "P"
 CONFIDENCE_RANK = {Confidence.EXACT: 0, Confidence.GROUPED: 1, Confidence.INFERRED: 2}  # the signal takes the weakest row
 
@@ -34,7 +37,7 @@ class InsiderTrade:
     derivative: bool
     shares: Decimal
     price: Decimal | None
-    accession: str
+    accession: str  # the EDGAR accession, or the KAP disclosure index
     # Every reporting owner of the filing (a director and their trust, a fund and its general partner) — the row is
     # attributed to one of them, the cluster counts a person once however the owners were listed. Empty: the
     # attributed owner alone.

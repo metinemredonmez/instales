@@ -15,6 +15,8 @@ db_app = typer.Typer(help="Database utilities")
 app.add_typer(db_app, name="db")
 users_app = typer.Typer(help="User management")
 app.add_typer(users_app, name="users")
+warehouse_app = typer.Typer(help="DuckDB warehouse: the data layer as one analytical file (services/warehouse)")
+app.add_typer(warehouse_app, name="warehouse")
 
 
 @users_app.command("create")
@@ -100,6 +102,18 @@ def insiders(symbols: str = typer.Option("", help="comma-separated US symbols; d
         typer.echo(f"US insiders: {out['issuers']} issuers · {out['filings']} filings · {out['form4']} Form 4 · {out['transactions']} transactions · {out['skipped']} skipped")
 
 
+@app.command("kap-insiders")
+def kap_insiders(days_back: int | None = typer.Option(None, help="days of listings to read (default kap_public_days_back)")) -> None:
+    """Pull KAP 'Pay Alım Satım Bildirimi' filings of directors, executives and shareholders (not the PYŞ ones) from kap.org.tr."""
+    from instilens.services.insiders import refresh_kap
+
+    if settings.kap_adapter != "public":
+        raise typer.BadParameter("KAP insider filings are read through the public adapter only (INSTILENS_KAP_ADAPTER=public)")
+    with session_scope() as s:
+        out = refresh_kap(s, days_back=days_back)
+        typer.echo(f"TR insiders: {out['listed']} listed · {out['disclosures']} disclosures · {out['transactions']} transactions · {out['skipped']} skipped")
+
+
 @app.command("sec-ciks")
 def sec_ciks(all_: bool = typer.Option(False, "--all", help="re-map instruments that already carry a CIK")) -> None:
     """Map US instruments to their EDGAR CIK from the SEC's company_tickers.json (official, free)."""
@@ -144,7 +158,7 @@ def compute(as_of: str | None = typer.Option(None, help="YYYY-MM-DD, default tod
 
 @app.command()
 def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> None:
-    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (active provider) → positions → Form 4 insiders → intelligence → alerts → outcomes."""
+    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (active provider) → positions → insiders (Form 4, KAP) → intelligence → alerts → outcomes."""
     from instilens.ingestion.prices import load_prices
     from instilens.services.alerts import evaluate
     from instilens.services.notify import deliver_pending
@@ -174,6 +188,11 @@ def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> No
 
             s.commit()  # the run so far is durable before the issuer walk (which commits issuer by issuer)
             typer.echo(f"[US] insiders {refresh_insiders(s)}")
+        if settings.kap_insiders_enabled and settings.kap_adapter == "public":
+            from instilens.services.insiders import refresh_kap
+
+            s.commit()  # same: the KAP walk commits filing by filing
+            typer.echo(f"[TR] insiders {refresh_kap(s)}")
         typer.echo(f"instruments scored {pipeline.compute_intelligence(s, day)}")
         typer.echo(f"notifications {evaluate(s, day)}")
         typer.echo(f"delivered {deliver_pending(s)}")
@@ -301,6 +320,38 @@ def vapid_keys() -> None:
     b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()  # noqa: E731
     typer.echo(f"INSTILENS_VAPID_PUBLIC_KEY={b64(pub)}")
     typer.echo(f"INSTILENS_VAPID_PRIVATE_KEY={b64(priv)}")
+
+
+@warehouse_app.command("build")
+def warehouse_build() -> None:
+    """Write releases_dir/warehouse/instilens-<YYYYMMDD>.duckdb (every fact table, the gold views, _meta), refresh
+    latest.duckdb and keep the newest four. Refuses to overlap a build the admin card or the weekly job started."""
+    from instilens.services import warehouse
+
+    out = warehouse.build_locked("cli")
+    if out is None:
+        st = warehouse.status()
+        typer.echo(f"a build is already running (started by {st['started_by']} at {st['started_at']})", err=True)
+        raise typer.Exit(1)
+    if out["error"]:
+        typer.echo(out["error"], err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{out['name']}: {out['rows']} rows in {len(warehouse.TABLES)} tables, {out['seconds']}s → {warehouse.warehouse_dir()}")
+
+
+@warehouse_app.command("list")
+def warehouse_list() -> None:
+    """The dated builds on disk, newest first, with the file latest.duckdb mirrors."""
+    from instilens.services import warehouse
+
+    builds = warehouse.list_builds()
+    if not builds:
+        typer.echo(f"no builds under {warehouse.warehouse_dir()}")
+        return
+    for b in builds:
+        typer.echo(f"{b['name']}  {b['built_at'] or '?'}  {b['size']} bytes  {b['rows'] if b['rows'] is not None else '?'} rows  {(b['git_rev'] or '')[:12]}{'  ' + b['error'] if b['error'] else ''}")
+    latest = warehouse.latest_json()
+    typer.echo(f"latest.duckdb → {latest['built_at']}" if latest else "latest.duckdb missing")
 
 
 @app.command("releases-prune")

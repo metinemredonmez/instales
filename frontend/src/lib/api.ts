@@ -12,7 +12,7 @@ export type SignalType =
   | "NEGATIVE_DIVERGENCE"
   | "NEW_POSITION_CLUSTER"
   | "EXIT_CLUSTER"
-  /** US only: ≥ 3 distinct insiders bought on the open market (Form 4 code P) within 30 days. */
+  /** ≥ 3 distinct insiders bought within 30 days — SEC Form 4 code P on US issuers, KAP pay alım satım bildirimi (ALIS) on BIST. */
   | "INSIDER_BUY_CLUSTER"
 
 export interface RadarRow {
@@ -267,29 +267,41 @@ export interface StockDetail {
   events: TxEvent[]
   /** Valuation summary for the header chips; null until the fundamentals job has run for this symbol. */
   fundamentals: FundamentalsSummary | null
-  /** Form 4 head-count for the header chip (US instruments only; null on BIST and until Form 4s have been ingested). */
+  /** Insider head-count for the header chip (Form 4 on US issuers, KAP filings on BIST); null until the issuer's filings have been read. */
   insiders: InsidersSummary | null
 }
 
 /**
- * /stocks/{symbol}/insiders — SEC Form 4 transactions of the issuer's officers, directors and 10 % owners over the
- * last `days` days (30..730, default 90), newest first, at most 200. Every row carries the filing's accession and
- * EDGAR URL. `code` is the Form 4 transaction code as filed; the UI labels the ten common ones and prints the letter
- * for anything else. `value` is shares × price and null when the filing reports no price (grants, gifts).
- * `fetched_at` is when the daily job last read the issuer's filings and null until it has — an empty window then means
- * "not read yet", not "no activity". `truncated` says the window holds more rows than the 200 returned; `edgar_url` is
- * the issuer's Form 4 list on EDGAR, where they all are. BIST symbols answer `supported: false` with nothing else
- * populated — KAP insider filings are not ingested yet.
+ * /stocks/{symbol}/insiders — the issuer's insider transactions over the last `days` days (30..730, default 90),
+ * newest first, at most 200. On US issuers these are SEC Form 4 rows of officers, directors and 10 % owners; on BIST
+ * they are KAP "Pay Alım Satım Bildirimi" filings published under the issuer whose acting party is a natural person
+ * or a controlling shareholder (`source` says which). Every row carries its filing: `accession` + `url` are the
+ * EDGAR accession and index page on US, the KAP disclosure index and disclosure page on TR. `code` is the Form 4
+ * transaction code as filed — KAP rows carry only P (ALIS) and S (SATIS); the UI labels the ten common ones and
+ * prints the letter for anything else. `value` is shares × price and null when the filing reports no price (grants,
+ * gifts) or only a price range (most KAP filings — `price_range` then carries [low, high], never a midpoint). A KAP
+ * row where the acting party is the issuer itself is a buyback (`buyback` true, `role` "issuer"): listed with its
+ * label, never a buyer, seller or cluster member in `summary`. `fetched_at` is when the source was last read (the
+ * issuer's filings on EDGAR; the KAP feed, market-wide) and null until it has — an empty window then means "not read
+ * yet", not "no activity". `coverage_since` (BIST only, null on US) is the earliest day the KAP feed has read: the
+ * job lists a week per run, so an empty window that starts earlier is "nothing since that day", never "nothing in
+ * 90 days". `truncated` says the window holds more rows than the 200 returned; `more_url` is where they all are — the
+ * US issuer's Form 4 list on EDGAR (also `edgar_url`, the older name), the BIST issuer's page on KAP when a filing of
+ * its own has told the server its oid, null otherwise. `supported: false` comes back for a symbol whose market has no
+ * insider source, with nothing else populated.
  */
 export type InsiderWindow = 90 | 180 | 365
 export type InsiderCode = "P" | "S" | "A" | "M" | "F" | "G" | "D" | "C" | "X" | "J" | "W"
+export type InsiderSource = "sec-edgar" | "kap"
+/** KAP rows only: who the acting party is. A `company` is any legal entity — a controlling holding as much as the issuer itself; `buyback` says which. */
+export type InsiderPartyKind = "person" | "company" | "fund" | "other"
 export interface InsiderTx {
   id: number
   transaction_date: string
   filed_at: string
   insider: string
   insider_cik: string
-  /** Comma-joined: director | officer | ten_percent_owner | other. */
+  /** Comma-joined: director | officer | ten_percent_owner | other — KAP rows normalise "Görevi / Şirketle ilişkisi" to director | officer | shareholder | other (shareholder is what the filing states, not a stake size), and the issuer's own-share rows carry "issuer". */
   role: string
   /** Officer title as printed on the filing ("Chief Executive Officer"); null for a plain director or owner. */
   title: string | null
@@ -298,6 +310,8 @@ export interface InsiderTx {
   acquired: boolean
   shares: number
   price: number | null
+  /** KAP rows that state a range and no single price: [low, high] as filed; null otherwise (and always on Form 4 rows). */
+  price_range: [number, number] | null
   value: number | null
   post_shares: number | null
   /** D = direct, I = indirect (through a trust, spouse, fund…). */
@@ -307,6 +321,12 @@ export interface InsiderTx {
   confidence: string
   accession: string
   url: string
+  /** KAP rows: the acting party's kind; null on Form 4 rows, which are always a person's. */
+  party_kind: InsiderPartyKind | null
+  /** The issuer trading its own shares (a buyback when `acquired`, a treasury-share sale otherwise): listed as filed, left out of the summary and the cluster. Always false on Form 4 rows. */
+  buyback: boolean
+  /** KAP rows: the stake after the transaction as the filing states it (percent of capital); null when it does not. */
+  post_pct_stake: number | null
 }
 export interface InsiderCluster { since: string; insiders: number; value: number }
 export interface InsiderStats {
@@ -322,7 +342,7 @@ export interface InsiderStats {
 }
 export type Insiders =
   | { supported: false; symbol?: string; name?: string; market?: Market; days?: number }
-  | { supported: true; symbol: string; name: string; market: Market; days: number; as_of: string; source: "sec-edgar"; fetched_at: string | null; summary: InsiderStats; transactions: InsiderTx[]; truncated: boolean; edgar_url: string | null }
+  | { supported: true; symbol: string; name: string; market: Market; days: number; as_of: string; source: InsiderSource; fetched_at: string | null; coverage_since: string | null; summary: InsiderStats; transactions: InsiderTx[]; truncated: boolean; edgar_url: string | null; more_url: string | null }
 /** stock_detail.insiders — the 90-day head-count; `cluster` says whether the INSIDER_BUY_CLUSTER signal fired. */
 export interface InsidersSummary { days: number; buyers: number; sellers: number; net_value: number; cluster: boolean }
 
@@ -441,6 +461,31 @@ export interface FundDetail {
 }
 
 export interface RuntimeSetting { key: string; group: "access" | "ai" | "data"; type: string; min: number | null; max: number | null; value: unknown; default: unknown; overridden: boolean; updated_at: string | null; updated_by: string | null }
+
+/**
+ * /admin/warehouse — the DuckDB export of the public tables (docs/08-warehouse.md): whether the weekly Sunday build is
+ * on (runtime setting `warehouse_enabled`), whether a build is running right now (`running`, with who started it
+ * and when), the outcome of the last build (`last`, null before the first — `error` names a failed one), and every
+ * dated file under releases_dir/warehouse newest first, `latest` being the latest.duckdb mirror. A build's `rows` is
+ * the total from its _meta table and `row_counts` the per-table breakdown; a file whose _meta cannot be read (a
+ * foreign or damaged file in the folder) is listed with `error` and null metadata rather than hiding the healthy
+ * ones. `url` streams the file to an admin (bearer auth, so the UI fetches it and hands the blob to the browser
+ * rather than linking it). The server keeps the newest `keep` dated builds.
+ */
+export interface WarehouseBuild {
+  name: string
+  size: number
+  url: string
+  built_at: string | null
+  rows: number | null
+  row_counts: Record<string, number> | null
+  git_rev: string | null
+  schema_version: number | null
+  error: string | null
+}
+export interface WarehouseLast { started_by: string | null; started_at: string | null; finished_at: string; name: string | null; rows: number | null; seconds: number | null; error: string | null }
+export interface WarehouseStatus { running: boolean; started_by: string | null; started_at: string | null; last: WarehouseLast | null }
+export interface Warehouse extends WarehouseStatus { enabled: boolean; builds: WarehouseBuild[]; latest: WarehouseBuild | null; keep: number }
 
 export interface DesktopFile { id: number; platform: string; label: string; kind: "INSTALLER" | "UPDATE"; filename: string; size: number; sha256: string; signed: boolean; downloads: number; downloadable: boolean; url: string }
 export interface DesktopRelease { id: number; version: string; status: "DRAFT" | "PUBLISHED" | "WITHDRAWN"; notes: string; created_by: string | null; created_at: string; published_at: string | null; files: DesktopFile[] }
@@ -643,8 +688,9 @@ export interface Portfolio { id: number; name: string; market: Market; currency:
 /**
  * One held position with the institutional context the stock page shows: the latest stored close (null until the price
  * job has a bar), the P&L against the FIFO / entered average cost (null without a cost), the weight over the priced
- * positions, the three stored scores, the 30-day fund head-counts and — US symbols the Form 4 job has read — the
- * insiders' 90-day net value (null elsewhere). `derived` marks a row rewritten from transactions: it cannot be edited
+ * positions, the three stored scores, the 30-day fund head-counts and — once the market's insider source has been
+ * read (the issuer's Form 4s, the KAP feed) — the insiders' 90-day net value in the listing currency (null until
+ * then). `derived` marks a row rewritten from transactions: it cannot be edited
  * by hand, only through another transaction.
  */
 export interface PortfolioPosition {
@@ -861,6 +907,15 @@ export const api = {
   adminWaitlist: () => get<WaitlistRow[]>("/admin/waitlist"),
   adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
   adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),
+  adminWarehouse: () => get<Warehouse>("/admin/warehouse"),
+  /** Starts a build in a background thread; `started` false when one is already running (the pipeline's lock pattern), the lock status alongside either way. */
+  adminWarehouseBuild: () => send<WarehouseStatus & { started: boolean }>("POST", "/admin/warehouse/build"),
+  /** The file itself: a bearer-authenticated GET, so the caller saves the blob (an <a href> could not carry the header). */
+  adminWarehouseDownload: async (b: WarehouseBuild): Promise<Blob> => {
+    const res = await fetch(b.url, { headers: authHeaders() })
+    if (!res.ok) await handle<never>(res)
+    return res.blob()
+  },
   stock: (market: Market, symbol: string) => get<StockDetail>(`/stocks/${symbol}`, { market }),
   fund: (code: string) => get<FundDetail>(`/funds/${code}`),
   events: (market: Market, limit = 50) => get<TxEvent[]>("/events", { market, limit }),

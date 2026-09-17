@@ -65,37 +65,54 @@ methodology change and must be reflected here.
 Each signal stores price at detection; `signal_outcomes` gets +7/30/90D returns, max return and
 max drawdown. This is how we answer "do InstiLens signals work?" with data.
 
-## Insider purchase cluster (INSIDER_BUY_CLUSTER, US only)
+## Insider purchase cluster (INSIDER_BUY_CLUSTER, US and TR)
 
-Source: SEC Form 4 rows (`insider_transactions`, see `03-data-model.md`). The signal fires for an issuer when at least
-`CLUSTER_MIN_INSIDERS = 3` **distinct insiders** made **open-market purchases** — transaction code P in the
-non-derivative table — inside the `CLUSTER_WINDOW_DAYS = 30` days ending on the compute day. Grants and awards (A),
-option exercises and RSU settlements (M), shares withheld for tax (F), gifts (G), sales (S) and every derivative-table
-row never count: only a P row is a decision to pay market price for the stock. Rows of a superseded filing (replaced by
-a 4/A) are ignored; the amendment's rows count instead. An insider is a person, not a filing: a joint filing names every
-reporting owner (a director and their trust, a fund and its general partner), and two filings whose owner sets overlap
-count as one insider, whichever owner led each.
+Source: the `insider_transactions` rows (see `03-data-model.md`) — SEC Form 4 on US issuers, the KAP "Pay Alım Satım
+Bildirimi" of directors, executives and shareholders on BIST. The signal fires for an issuer when at least
+`CLUSTER_MIN_INSIDERS = 3` **distinct insiders** made **purchases at market** — Form 4 transaction code P in the
+non-derivative table; on KAP an ALIŞ row, stored as P — inside the `CLUSTER_WINDOW_DAYS = 30` days ending on the compute
+day. Grants and awards (A), option exercises and RSU settlements (M), shares withheld for tax (F), gifts (G), sales (S) and
+every derivative-table row never count: only a P row is a decision to pay market price for the stock. Nor does the
+company's purchase of its own shares (KAP rows with `roles = "issuer"` — a buyback is not an insider's decision; the
+read model keeps those rows out of the detector's input). Rows of a superseded filing (replaced by a 4/A, or by a KAP
+"Düzeltme") are ignored; the amendment's rows count instead. An insider is a person, not a filing: a joint Form 4 names
+every reporting owner (a director and their trust, a fund and its general partner), and two filings whose owner sets
+overlap count as one insider, whichever owner led each.
+
+**KAP identity.** KAP publishes no identifier for a person or a company — only the name as filed — so on BIST a
+"distinct insider" is a distinct `party_key`: "k" + 9 hex of the folded name (`parsing/kap_insider.party_key`; case,
+spacing and diacritics removed, so the form's "MEHMET SÖNMEZ" and the page's "Mehmet Sönmez" are one party). The limits
+follow from that and are part of the methodology: two different persons with the same name merge into one insider, and
+one person whose name is spelled two ways ("Ahmet Yılmaz" / "A. Yılmaz") splits into two. The adapter reads the name
+without its title or honorific so the same person's issuer-filed and MKK-relayed filings key alike, but it cannot repair a
+filer's own spelling.
 
 ```
-value    = Σ shares × price over the window's P rows that state a price   (unpriced rows count in breadth, not in value)
-strength = round( 100 × min(1, insiders / 5) × ( 0.5 + 0.5 × min(1, value / $1,000,000) ) )
+value    = Σ shares × price over the window's P rows that state a price   (unpriced rows count in breadth, not in value —
+                                                                            most KAP filings state only a price range)
+strength = round( 100 × min(1, insiders / 5) × ( 0.5 + 0.5 × min(1, value / 1,000,000) ) )
 ```
 | insiders | value | strength |
 |---|---|---|
-| 3 | $0 known | 30 |
-| 3 | ≥ $1M | 60 |
-| 4 | $500k | 60 |
-| 5+ | ≥ $1M | 100 |
+| 3 | 0 known | 30 |
+| 3 | ≥ 1M | 60 |
+| 4 | 500k | 60 |
+| 5+ | ≥ 1M | 100 |
 
-Breadth is the main factor (five buyers saturate it); the value term lifts a cluster the more the insiders paid but never
-zeroes one whose filings state no prices. Confidence is the weakest of the purchases' rows — EXACT for every Form 4 row
-today: each purchase is the insider's own report, with its accession. `window_start` is the first purchase in the window;
-the row is episodic like every other signal (an open episode is extended day by day, a second compute of the same day
-updates the row in place — its id never changes) and `evidence` lists `insiders`, `names`, `value`, `unpriced`,
-`purchases`, `since`, `accessions` and `window_days`. Constants live in `engine/insiders.py`. The signal feeds the
-generic SIGNAL alert rule and the dedicated INSIDER_BUY_CLUSTER rule (implicit for watched US stocks, refused on a BIST
-symbol or a fund; text: "3 insiders bought on the open market in the last 30 days" — descriptive, never advice), keyed by
-the episode row so an ongoing cluster notifies once.
+`CLUSTER_VALUE_SATURATION = 1,000,000` is a plain figure **in the market's currency** — $1M on US, ₺1M on TR — and is
+not converted: three buyers whose stated purchases total ₺1M score 60 on BIST exactly as three totalling $1M do on
+NASDAQ, although ₺1M is a far smaller sum. This is deliberate for now: breadth is the main factor (five buyers saturate
+it) and the value term only lifts a cluster the more the insiders paid; it never zeroes one whose filings state no
+prices. A per-market saturation would be a scoring change and would be recorded here. Confidence is the weakest of the
+purchases' rows — EXACT for every Form 4 and KAP row today: each purchase is the insider's own report, with its accession
+or disclosure index. `window_start` is the first purchase in the window; the row is episodic like every other signal (an
+open episode is extended day by day, a second compute of the same day updates the row in place — its id never changes)
+and `evidence` lists `insiders`, `names`, `value`, `unpriced`, `purchases`, `since`, `accessions` (KAP: the disclosure
+indexes) and `window_days`. Constants live in `engine/insiders.py`. The signal feeds the generic SIGNAL alert rule and
+the dedicated INSIDER_BUY_CLUSTER rule (implicit for every watched stock on both markets, refused on a fund; text:
+"3 insiders bought on the open market in the last 30 days" on US, "3 insiders bought shares in the last 30 days (KAP)"
+on BIST, where the filing states no venue — descriptive, never advice), keyed by the episode row so an ongoing cluster
+notifies once.
 
 ## Crowding Score (CROWDING, instrument, 0–100)
 

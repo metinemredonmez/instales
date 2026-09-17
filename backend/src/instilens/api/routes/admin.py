@@ -293,6 +293,55 @@ def pipeline_status():
     return pipeline_run_status()
 
 
+# ---------------------------------------------------------------- DuckDB warehouse (services/warehouse)
+@router.get("/warehouse")
+def warehouse_status(session: Session = Depends(get_session)):
+    """The card: `enabled` (the weekly job's runtime setting, re-applied first — the PUT may have landed on the other
+    worker), `running` / `last` from the build lock, the dated builds newest first and `latest` (latest.duckdb)."""
+    from instilens.config import settings
+    from instilens.services import runtime_settings, warehouse
+
+    runtime_settings.apply(session)
+    return {"enabled": settings.warehouse_enabled, **warehouse.status(), "builds": warehouse.list_builds(), "latest": warehouse.latest_json(),
+            "keep": warehouse.KEEP_BUILDS}
+
+
+@router.get("/warehouse/download/{name}")
+def warehouse_download(name: str):
+    """Stream one build file. Only `instilens-<YYYYMMDD>.duckdb` and `latest.duckdb` names resolve, and only inside
+    releases_dir/warehouse — anything else is a 404, never a path."""
+    from fastapi.responses import FileResponse
+
+    from instilens.services import warehouse
+
+    path = warehouse.download_path(name)
+    if path is None:
+        raise HTTPException(404, "not found")
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+
+def _build_warehouse_bg(started_by: str) -> None:
+    """Runs under the warehouse lock row (services/warehouse.acquire_lock) so two admins or workers never build at once."""
+    from instilens.services import warehouse
+
+    warehouse.run_build(started_by)
+
+
+@router.post("/warehouse/build")
+def warehouse_build(request: Request, actor: User = Depends(require_admin), session: Session = Depends(get_session)):
+    """Build the DuckDB file now, in the background (same as `instilens warehouse build`). Admin only. A second admin
+    (or the weekly job) gets started=false while one build is running."""
+    import threading
+
+    from instilens.services import warehouse
+
+    if not warehouse.acquire_lock(actor.email):
+        return {"started": False, **warehouse.status()}
+    audit(session, "admin.warehouse_build", actor=actor.email, ip=client_ip(request))
+    threading.Thread(target=_build_warehouse_bg, args=(actor.email,), name="instilens-warehouse", daemon=True).start()
+    return {"started": True, **warehouse.status()}
+
+
 # ---------------------------------------------------------------------- news rules (Newsomatic-style)
 
 

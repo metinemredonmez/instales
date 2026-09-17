@@ -404,6 +404,6 @@ def test_migration_creates_searchable_texts_on_scratch_sqlite(tmp_path, monkeypa
     assert {"kind", "ref_id"} in [set(u["column_names"]) for u in insp.get_unique_constraints("searchable_texts")]
     assert "ix_searchable_texts_market_date" in {i["name"] for i in insp.get_indexes("searchable_texts")}
     with create_engine(url).begin() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "a3b4c5d6e7f8"  # the current head (plans / portfolios / billing builds on this revision)
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "b4c5d6e7f8a9"  # the current head (KAP insiders: three columns on insider_transactions)
     command.downgrade(cfg, "e1f2a3b4c5d6")
     assert "searchable_texts" not in inspect(create_engine(url)).get_table_names()

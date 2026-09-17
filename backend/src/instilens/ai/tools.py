@@ -283,25 +283,37 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
         return _dump({k: data[k] for k in ("symbol", "name", "currency", "source", "fetched_at", "snapshot", "derived")})
 
     def get_insider_trades(symbol: str, days: int = 90, limit: int = 30) -> str:
-        """Insider transactions of a US company as reported to the SEC on Form 4 over the last `days`: a summary
-        (buyers / sellers = distinct insiders with open-market purchases / sales, their values, the 30-day purchase
-        cluster if any) and the reported rows, newest first. Each row carries the transaction code AS FILED and you
-        must state its meaning instead of calling every acquisition a "buy": P = open-market or private purchase
-        (the insider paid market price), S = open-market or private sale, A = grant or award, M = option exercise or
-        RSU settlement (shares received under a plan, not bought), F = shares withheld to cover tax on a vesting or
-        exercise (not a sale in the market), G = gift, D = disposition to the issuer, C = conversion, X = exercise
-        of an in-the-money derivative, J = other (see the filing's footnotes); `derivative: true` rows come from the
-        derivative table (options, RSUs). `price` is the price the filing states (null when it states none — never
-        estimate it), `value` = shares × price, `role` the insider's relationship (director, officer,
-        ten_percent_owner, other) and `title` the officer title as filed. Every row names its EDGAR accession and
-        filing URL — cite them. `fetched_at` is when EDGAR was last read for this issuer; null together with an
-        empty `transactions` means the issuer has not been read yet — say so, never "no insider activity".
-        `truncated: true` means the window holds more rows than returned (`edgar_url` lists them all); `supported:
-        false` means the symbol is not a US issuer (no Form 4 data). These are reported facts with EDGAR accession
-        links, not recommendations; never turn a purchase or a cluster into a verdict.
+        """Insider transactions of a company over the last `days`: SEC Form 4 on US issuers, KAP "Pay Alım Satım
+        Bildirimi" of directors, executives and shareholders on BIST (`source` says which: "sec-edgar" or "kap").
+        A summary (buyers / sellers = distinct insiders with open-market purchases / sales, their values, the
+        30-day purchase cluster if any) and the reported rows, newest first. Each row carries the transaction code
+        AS FILED and you must state its meaning instead of calling every acquisition a "buy". Form 4 codes:
+        P = open-market or private purchase (the insider paid market price), S = open-market or private sale,
+        A = grant or award, M = option exercise or RSU settlement (shares received under a plan, not bought),
+        F = shares withheld to cover tax on a vesting or exercise (not a sale in the market), G = gift,
+        D = disposition to the issuer, C = conversion, X = exercise of an in-the-money derivative, J = other (see
+        the filing's footnotes); `derivative: true` rows come from the derivative table (options, RSUs). KAP rows
+        carry only P (ALIŞ) and S (SATIŞ) — a KAP filing states no venue, so say "bought shares", never "on the
+        open market". `price` is the price the filing states (null when it states none — never estimate it),
+        `value` = shares × price; on KAP rows `price_range` = [low, high] when the filing states a range and no
+        single price — report the range, never a midpoint, and `value` is then null. `role` is the insider's
+        relationship (director, officer, ten_percent_owner on US; director, officer, shareholder on KAP —
+        "shareholder" is what the filing states, not a stake size; "issuer" is the company itself), `title` the
+        title as filed. KAP-only fields: `party_kind` (person / company / fund), `post_pct_stake` = the stake after
+        the trade as filed, and `buyback: true` = the company trading its own shares (a buyback or a treasury-share
+        sale — read `acquired` for which): listed, but never a buyer, a seller or a cluster member. Every row names
+        its filing — on US `accession` is the EDGAR accession and `url` the filing index; on KAP `accession` is the
+        KAP disclosure index and `url` the disclosure page — cite them. `fetched_at` is when the source was last
+        read (the issuer on EDGAR; the KAP feed, market-wide); null together with an empty `transactions` means
+        the source has not been read yet — say so, never "no insider activity". On BIST `coverage_since` is the
+        earliest date the feed has read: an empty window that starts before it says nothing about the days before
+        it. `truncated: true` means the window holds more rows than returned (`more_url` lists them all: the
+        issuer's Form 4 list on EDGAR, its page on KAP); `supported: false` means the symbol's market has no
+        insider source. These are reported facts with their filing links, not recommendations; never turn a
+        purchase or a cluster into a verdict.
 
         Args:
-            symbol: US ticker, e.g. AAPL.
+            symbol: US ticker or BIST symbol, e.g. AAPL or ASELS.
             days: Lookback in days (30-730, default 90).
             limit: Max transaction rows, newest first (default 30, at most 200).
         """

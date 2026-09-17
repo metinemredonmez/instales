@@ -7,7 +7,7 @@ Rule types (params in AlertRule.params):
   SCORE_ABOVE        Smart Money Score crossed {threshold}                    (instrument)
   SIGNAL             one of {types} fired                                     (instrument)
   FUND_ACTIVITY      the fund had NEW/EXIT moves in the latest period         (fund)
-  INSIDER_BUY_CLUSTER  ≥3 insiders made open-market purchases in 30 days (US) (instrument)
+  INSIDER_BUY_CLUSTER  ≥3 insiders made open-market purchases in 30 days      (instrument; Form 4 on US, KAP on TR)
   PRICE_ABOVE / PRICE_BELOW  the daily close crossed {price}                (instrument, explicit rules only)
   PORTFOLIO_MOVE     funds moved on a symbol held in one of the owner's portfolios (implicit only, see below)
 Language is descriptive on purpose — never "buy"/"sell".
@@ -60,9 +60,9 @@ CURRENCY_SIGN = {"TRY": "₺", "USD": "$"}
 PRICE_LOOKBACK = 10  # closes a price rule walks per evaluate (two trading weeks): a crossing survives that many missed runs
 
 
-WATCHLIST_STOCK_RULES = ("NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SIGNAL")
-WATCHLIST_US_STOCK_RULES = WATCHLIST_STOCK_RULES + ("INSIDER_BUY_CLUSTER",)  # Form 4 data exists for US issuers only
+WATCHLIST_STOCK_RULES = ("NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SIGNAL", "INSIDER_BUY_CLUSTER")  # both markets: Form 4 / KAP insider rows
 WATCHLIST_FUND_RULES = ("FUND_ACTIVITY", "KAP_TRANSACTION")
+INSIDER_SOURCE_LABEL = {"US": "Form 4", "TR": "KAP"}  # what the cluster notification cites as the reported source
 
 
 def evaluate(session: Session, as_of: date) -> int:
@@ -85,12 +85,8 @@ def _watchlist_rules(session: Session) -> list[AlertRule]:
     from instilens.domain.models import Watchlist, WatchlistItem
 
     out: list[AlertRule] = []
-    for item, owner, market in session.execute(
-        select(WatchlistItem, Watchlist.owner_id, Instrument.market_code)
-        .join(Watchlist, Watchlist.id == WatchlistItem.watchlist_id)
-        .outerjoin(Instrument, Instrument.id == WatchlistItem.instrument_id)
-    ):
-        kinds = (WATCHLIST_US_STOCK_RULES if market == "US" else WATCHLIST_STOCK_RULES) if item.instrument_id else WATCHLIST_FUND_RULES if item.fund_id else ()
+    for item, owner in session.execute(select(WatchlistItem, Watchlist.owner_id).join(Watchlist, Watchlist.id == WatchlistItem.watchlist_id)):
+        kinds = WATCHLIST_STOCK_RULES if item.instrument_id else WATCHLIST_FUND_RULES if item.fund_id else ()
         for k in kinds:
             r = AlertRule(owner_id=owner, instrument_id=item.instrument_id, fund_id=item.fund_id, rule_type=k, params={}, is_active=True)
             r.id = -item.id  # transient; dedup keys become "wl:<item>:<kind>:…"
@@ -181,7 +177,7 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
             if types and sig.signal_type not in types:
                 continue
             if (rule.id or 0) < 0 and sig.signal_type == SignalType.INSIDER_BUY_CLUSTER:
-                continue  # a watched US stock gets the dedicated INSIDER_BUY_CLUSTER rule below — one notification, not two
+                continue  # a watched stock gets the dedicated INSIDER_BUY_CLUSTER rule below — one notification, not two
             # keyed by the signal episode (row id), not by the day, so an ongoing signal notifies once
             yield (f"{sig.signal_type}:{sig.id}", f"{inst.symbol}: {sig.signal_type.replace('_', ' ').title()} ({sig.strength})", f"{sig.window_start} → {sig.window_end} · {sig.confidence}", f"/stocks/{inst.symbol}")
 
@@ -191,12 +187,18 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
             ev = sig.evidence or {}
             n, value, since = ev.get("insiders", 0), float(ev.get("value") or 0), ev.get("since", sig.window_start.isoformat())
             names = ", ".join(ev.get("names") or [])
+            currency = session.get(MarketRow, inst.market_code).currency
+            amount = f"{CURRENCY_SIGN.get(currency, currency)}{value:,.0f}"  # the priced purchases' total, in the market's currency
+            source = INSIDER_SOURCE_LABEL.get(inst.market_code, inst.market_code)
+            # A Form 4 code P is an open-market purchase; a KAP filing states no venue, so on BIST the title says
+            # "bought shares (KAP)" — the same wording as the stock page's cluster chip.
+            kap = inst.market_code == "TR"
             if lang == "en":
-                title = f"{inst.symbol}: {n} insiders bought on the open market in the last 30 days"
-                body = f"{names} · ${value:,.0f} reported (Form 4) · since {since}"
+                title = f"{inst.symbol}: {n} insiders bought shares in the last 30 days ({source})" if kap else f"{inst.symbol}: {n} insiders bought on the open market in the last 30 days"
+                body = f"{names} · {amount} reported ({source}) · since {since}"
             else:
-                title = f"{inst.symbol}: {n} şirket içi kişi son 30 günde açık piyasadan hisse aldı"
-                body = f"{names} · bildirilen tutar ${value:,.0f} (Form 4) · {since} tarihinden beri"
+                title = f"{inst.symbol}: {n} şirket içi kişi son 30 günde pay aldı ({source})" if kap else f"{inst.symbol}: {n} şirket içi kişi son 30 günde açık piyasadan hisse aldı"
+                body = f"{names} · bildirilen tutar {amount} ({source}) · {since} tarihinden beri"
             # keyed by the signal episode (row id — compute_intelligence keeps the row across same-day recomputes and
             # extends it day by day): an ongoing cluster notifies once, however many days it lasts
             yield (f"cluster:{sig.id}", title, body, f"/stocks/{inst.symbol}")

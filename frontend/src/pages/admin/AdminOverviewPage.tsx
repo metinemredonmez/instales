@@ -8,8 +8,9 @@ import { Section, Stat } from "@/components/layout/Section"
 import { Button } from "@/components/ui/button"
 import { PipelineButton } from "@/components/domain/PipelineButton"
 import { FreshnessBar } from "@/components/domain/Freshness"
+import { WarehouseCard } from "@/components/domain/WarehouseCard"
 
-/** Data & pipeline: freshness per source, run the full pull, recompute signal outcomes, quick counts. */
+/** Data & pipeline: freshness per source, run the full pull, recompute signal outcomes, the DuckDB warehouse builds, quick counts. */
 export function AdminOverviewPage() {
   const { t } = useI18n()
   const { market } = useMarket()
@@ -47,6 +48,7 @@ export function AdminOverviewPage() {
           <p className="text-xs text-muted-foreground">{t("admin.pipeline.schedule")}</p>
         </div>
       </Section>
+      <WarehouseCard />
       <Section title={t("admin.audit.title")} hint={t("admin.audit.hint")}>
         <ul className="divide-y divide-border/60 text-xs">
           {audit.data?.map((e) => (

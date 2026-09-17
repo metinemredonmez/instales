@@ -49,6 +49,8 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "kap_public_max_details": {"type": "int", "group": "data", "min": 1, "max": 500},
     "kap_public_max_reports": {"type": "int", "group": "data", "min": 0, "max": 500},
     "kap_public_fund_codes": {"type": "list", "group": "data"},
+    "kap_insiders_enabled": {"type": "bool", "group": "data"},  # gates the 30-minute KAP insider filings job (services/insiders.refresh_kap)
+    "kap_insiders_max_details": {"type": "int", "group": "data", "min": 1, "max": 500},  # detail pages per run (politeness cap)
     "sec_ciks": {"type": "list", "group": "data"},
     "market_holidays_tr": {"type": "list", "group": "data", "item": "date"},  # ISO dates BIST is closed
     "price_provider": {"type": "choice:yahoo|matriks", "group": "data"},  # an unconfigured choice falls back to yahoo
@@ -57,11 +59,13 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "fundamentals_max_instruments": {"type": "int", "group": "data", "min": 10, "max": 5000},  # per market and run, stalest first
     "sec_form4_enabled": {"type": "bool", "group": "data"},  # gates the daily Form 4 / issuer filings job (services/insiders)
     "sec_form4_max_issuers": {"type": "int", "group": "data", "min": 10, "max": 2000},  # issuers per run, stalest first
+    "warehouse_enabled": {"type": "bool", "group": "data"},  # gates the weekly DuckDB warehouse build (services/warehouse)
 }
 _DEFAULTS: dict[str, Any] = {}
 
 # Rows under these keys are process state, not settings: never listed, never editable, never applied onto
-# `settings`. `_feed_status` is the quote feed's heartbeat (services/feed).
+# `settings`. `_feed_status` is the quote feed's heartbeat (services/feed); `_warehouse_lock` / `_warehouse_status`
+# the DuckDB build's lock row and last outcome (services/warehouse).
 RESERVED_PREFIX = "_"
 
 

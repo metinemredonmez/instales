@@ -79,7 +79,7 @@ describe("AlertsPage price rules", () => {
     const labels = within(select).getAllByRole("option").map((o) => o.textContent)
     expect(labels).toContain("Fiyat eşiğin üstüne çıkınca")
     expect(labels).toContain("Fiyat eşiğin altına inince")
-    expect(labels).not.toContain("İçeriden alım kümesi (Form 4)")   // BIST: no Form 4 rule
+    expect(labels).toContain("İçeriden alım kümesi (Form 4 / KAP)")   // on BIST too: KAP insider filings feed the cluster
     expect(form().queryByText("Fiyat eşiği (TRY)")).toBeNull()
     await user.selectOptions(select, "PRICE_ABOVE")
     expect(form().getByText("Fiyat eşiği (TRY)")).toBeInTheDocument()

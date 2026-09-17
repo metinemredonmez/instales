@@ -115,8 +115,8 @@ def create_rule(session: Session, owner: str, market: str, rule_type: str, symbo
     if rule_type not in RULE_TYPES:
         raise UserDataError(f"unknown rule_type {rule_type}")
     inst, fund = resolve_subject(session, market, symbol, fund_code)
-    if rule_type == "INSIDER_BUY_CLUSTER" and (inst is None or inst.market_code != "US"):
-        raise UserDataError("INSIDER_BUY_CLUSTER needs a US symbol (SEC Form 4 data exists for US issuers only)")
+    if rule_type == "INSIDER_BUY_CLUSTER" and inst is None:
+        raise UserDataError("INSIDER_BUY_CLUSTER needs a symbol (insider filings — Form 4, KAP — describe stocks, not funds)")
     if rule_type in PRICE_RULES:
         if inst is None:
             raise UserDataError(f"{rule_type} needs a symbol (daily closes exist for stocks only)")

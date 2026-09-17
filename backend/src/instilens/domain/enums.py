@@ -22,6 +22,7 @@ class Source(StrEnum):
 class DisclosureKind(StrEnum):
     KAP_SHARE_TRANSACTION = "KAP_SHARE_TRANSACTION"  # Pay Alım Satım Bildirimi
     KAP_PORTFOLIO_REPORT = "KAP_PORTFOLIO_REPORT"  # Fon Portföy Dağılım Raporu
+    KAP_INSIDER_TRANSACTION = "KAP_INSIDER_TRANSACTION"  # Pay Alım Satım Bildirimi of a person / shareholder (not a PYŞ)
     SEC_13F = "SEC_13F"  # global, phase 2
     SEC_FORM4 = "SEC_FORM4"  # global, phase 2
 
@@ -72,7 +73,7 @@ class SignalType(StrEnum):
     NEGATIVE_DIVERGENCE = "NEGATIVE_DIVERGENCE"  # price up, funds selling
     NEW_POSITION_CLUSTER = "NEW_POSITION_CLUSTER"
     EXIT_CLUSTER = "EXIT_CLUSTER"
-    INSIDER_BUY_CLUSTER = "INSIDER_BUY_CLUSTER"  # US only: ≥3 insiders with open-market purchases (Form 4 code P) in 30 days
+    INSIDER_BUY_CLUSTER = "INSIDER_BUY_CLUSTER"  # ≥3 insiders with open-market purchases (Form 4 code P, KAP ALIŞ) in 30 days
 
 
 class ScoreType(StrEnum):

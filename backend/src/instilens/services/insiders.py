@@ -1,16 +1,27 @@
-"""Insider transactions (SEC Form 4) and issuer filings (8-K / 10-K / 10-Q) per US instrument (Faz 4).
+"""Insider transactions per instrument — SEC Form 4 for US issuers (Faz 4), KAP "Pay Alım Satım Bildirimi" of persons
+and shareholders for BIST — and the US issuer filings index (8-K / 10-K / 10-Q).
 
-`refresh` walks the issuer universe through `EdgarClient`: the submissions listing feeds `sec_filings`, every new
+`refresh` walks the US issuer universe through `EdgarClient`: the submissions listing feeds `sec_filings`, every new
 Form 4 / 4/A is fetched, parsed (`ingestion/sec/form4`) and stored as a Disclosure (kind SEC_FORM4, payload = the
 parsed document) plus one `insider_transactions` row per transaction-table row — every stored number carries its
 accession and filing URL. A 4/A supersedes its original the way a 13F-HR/A does (`Disclosure.supersedes_id`; the
 old rows stay, flagged). The issuer (its CIK) is the unit of storage: share classes (GOOG / GOOGL, LEN / LEN-B) share
-one listing and one set of Form 4s, stored once and read through the CIK by every class. `summary`, `transactions`
-and `filings` are the read models behind /stocks/{symbol}/insiders, /stocks/{symbol}/filings and stock_detail;
-`trades` feeds the cluster detector (`engine/insiders`). Descriptive throughout: a row's transaction code is reported
-as filed (P open-market purchase, S sale, A grant, M exercise / RSU settlement, F tax withholding …), never flattened
-into "buy" / "sell", and only P and S rows count as buyers / sellers. TR instruments answer `supported: false` — KAP
-insider filings come later.
+one listing and one set of Form 4s, stored once and read through the CIK by every class.
+
+`refresh_kap` reads the KAP side through the public adapter's insider path (`ingestion/kap/public_adapter
+.iter_fetch_insiders`, the same politeness caps as the PYŞ ingest and never the same disclosures): each filing is
+one Disclosure (kind KAP_INSIDER_TRANSACTION, payload = the parsed page / SPK form) plus one row per day and side,
+code P for ALIŞ and S for SATIŞ, keyed by the disclosure index. The PYŞ path is untouched: insider rows never enter
+transaction_events or the scores. A "Düzeltme" supersedes the filing it names, or failing that the party's latest
+live filing on the same stock, the way a 4/A does. A page whose party or numbers cannot be read is stored FAILED
+with the reason, so it is visible and never fetched again.
+
+`summary`, `transactions` and `filings` are the read models behind /stocks/{symbol}/insiders, /stocks/{symbol}/filings
+and stock_detail, market-agnostic; `trades` feeds the cluster detector (`engine/insiders`). Descriptive throughout:
+a row's transaction code is reported as filed (P open-market purchase, S sale, A grant, M exercise / RSU settlement,
+F tax withholding …), never flattened into "buy" / "sell", and only P and S rows count as buyers / sellers. A company
+trading its own shares (`roles = "issuer"`, a buyback or a treasury-share sale) is listed with that label and left
+out of every count and of the cluster: it is not an insider purchase.
 """
 
 from __future__ import annotations
@@ -38,6 +49,7 @@ from instilens.domain.models import (
     SecFiling,
     WatchlistItem,
 )
+from instilens.domain.schemas import NormalizedInsiderFiling, RawDisclosure
 from instilens.engine.insiders import (
     CLUSTER_WINDOW_DAYS,
     InsiderTrade,
@@ -45,13 +57,19 @@ from instilens.engine.insiders import (
     detect_insider_buy_cluster,
 )
 from instilens.engine.signals import DetectedSignal
+from instilens.ingestion.kap.public_adapter import KapPublicAdapter
 from instilens.ingestion.sec import tickers
 from instilens.ingestion.sec.edgar_client import ARCHIVE, EdgarClient
 from instilens.ingestion.sec.form4 import officer_title, parse_form4, primary_owner, roles_of
+from instilens.parsing.kap_insider import ISSUER_ROLE, parse_insider_filing, party_key
+from instilens.services.entities import EntityResolver
 
 log = logging.getLogger("instilens.insiders")
 
-SOURCE = EdgarClient.name  # "sec-edgar": what the API reports as the origin of every row
+SOURCE = EdgarClient.name  # "sec-edgar": what the API reports as the origin of every US row
+KAP_SOURCE = "kap"  # … and of every TR row (the public KAP site, prototype adapter)
+SOURCE_OF = {Market.US: SOURCE, Market.TR: KAP_SOURCE}
+KAP_CORRECTION_DAYS = 60  # a "Düzeltme" that names no index replaces the party's latest live filing this recent
 UNIVERSE_DAYS = 400  # a 13F position change this recent keeps an issuer in the refresh universe
 DEFAULT_DAYS = 90  # the window /stocks/{symbol}/insiders and the stock_detail block describe
 MAX_TRANSACTIONS = 200  # per API payload, newest first; `truncated` says when older rows exist beyond it
@@ -59,6 +77,8 @@ FORM4_FORMS = ("4", "4/A")
 OPEN_MARKET = {"P": "buy", "S": "sell"}  # the only codes that count as buyers / sellers in the summary
 # The issuer's Form 4 list on EDGAR — where the rows beyond MAX_TRANSACTIONS live.
 EDGAR_ISSUER_FORM4 = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=4&dateb=&owner=include&count=100"
+# The issuer's own page on KAP (every disclosure it published, the insider filings among them), by its member oid.
+KAP_ISSUER_PAGE = "https://www.kap.org.tr/tr/sirket-bilgileri/ozet/{oid}"
 
 
 def build_client() -> EdgarClient:
@@ -358,6 +378,128 @@ def _mark_superseded(session: Session, old: Disclosure, new: Disclosure) -> None
     session.flush()
 
 
+# --------------------------------------------------------------------------- refresh (KAP, write path)
+
+
+def build_kap_client() -> KapPublicAdapter:
+    """The public-site adapter on its insider path: the PYŞ window, the insider job's own detail cap."""
+    return KapPublicAdapter(days_back=settings.kap_public_days_back, max_details=settings.kap_insiders_max_details, pys_only=False)
+
+
+def refresh_kap(session: Session, adapter: KapPublicAdapter | None = None, *, days_back: int | None = None) -> dict[str, int]:
+    """Store the window's KAP person / shareholder filings not stored yet (`adapter.known` is every KAP disclosure
+    index we hold, whichever path stored it). Each filing runs in a SAVEPOINT and is committed on its own, so an
+    interrupted run keeps what it wrote and one bad page undoes nothing else. A page the parser cannot read is kept
+    as a FAILED disclosure with the reason (no rows) and counted as skipped — it is visible in the disclosures table
+    and never fetched again; a page the site cannot serve is skipped by the adapter and retried next run. Returns
+    counts: listed (rows in the window), disclosures (new, stored PARSED), transactions (new rows), skipped."""
+    adapter = adapter or build_kap_client()
+    if days_back is not None:
+        adapter.days_back = days_back
+    adapter.known |= set(session.scalars(select(Disclosure.source_id).where(Disclosure.source == Source.KAP)))
+    out = {"listed": 0, "disclosures": 0, "transactions": 0, "skipped": 0}
+    for raw in adapter.iter_fetch_insiders(stats=out):
+        try:
+            with session.begin_nested():
+                n = _store_kap_filing(session, raw)
+            session.commit()
+        except Exception as exc:  # noqa: BLE001 — one filing never stops the run
+            log.warning("insiders: KAP %s skipped: %s: %s", raw.source_id, type(exc).__name__, str(exc)[:200])
+            out["skipped"] += 1
+            continue
+        if n is None:
+            out["skipped"] += 1
+        else:
+            out["disclosures"] += 1
+            out["transactions"] += n
+    return out
+
+
+def _store_kap_filing(session: Session, raw: RawDisclosure) -> int | None:
+    """One fetched page → its Disclosure and rows. Returns the rows written, or None when the page could not be
+    normalised (the Disclosure is still stored, FAILED, with the reason). A re-run of a stored index never gets
+    here (the adapter skips known indexes); a row's hash makes a replay of the same page a no-op anyway."""
+    now = datetime.now(UTC)
+    payload_json = json.dumps(raw.payload, sort_keys=True, default=str)
+    disc = Disclosure(
+        market_code=raw.market, source=raw.source, source_id=raw.source_id, kind=raw.kind, published_at=raw.published_at,
+        raw_uri=raw.raw_uri, raw_hash=hashlib.sha256(payload_json.encode()).hexdigest(), payload=raw.payload,
+        parse_status=ParseStatus.PENDING,
+    )
+    session.add(disc)
+    session.flush()
+    try:
+        filing = parse_insider_filing(raw)
+    except ValueError as exc:  # pydantic's ValidationError is one: the party, the numbers or the symbol are missing
+        disc.parse_status, disc.parse_error = ParseStatus.FAILED, f"{type(exc).__name__}: {str(exc)[:900]}"
+        log.warning("insiders: KAP %s (%s) kept without rows: %s", raw.source_id, raw.payload.get("summary"), str(exc).splitlines()[0][:160])
+        return None
+    inst = EntityResolver(session).instrument(Market.TR, filing.subject_symbol, filing.subject_name)
+    n = 0
+    for ordinal, r in enumerate(filing.rows):
+        row_hash = _kap_row_hash(filing.source_id, filing.party_key, ordinal, r)
+        if session.scalar(select(InsiderTransaction.id).where(InsiderTransaction.row_hash == row_hash)) is not None:
+            continue
+        session.add(InsiderTransaction(
+            disclosure_id=disc.id, instrument_id=inst.id, insider_cik=filing.party_key, insider_name=filing.party_name[:160],
+            roles=filing.roles, title=filing.title[:160] if filing.title else None, transaction_date=r.transaction_date, filed_at=disc.published_at,
+            code=r.code, acquired=r.code == "P", shares=Decimal(r.nominal), price=r.price, post_shares=None, ownership="D", derivative=False,
+            confidence=filing.confidence, row_hash=row_hash, kap_disclosure_index=int(filing.source_id), party_kind=filing.party_kind,
+            post_pct_stake=r.post_pct_stake,
+        ))
+        n += 1
+    disc.parse_status, disc.parsed_at = ParseStatus.PARSED, now
+    if filing.is_correction:
+        _supersede_kap(session, disc, filing, inst)
+    else:
+        _kap_superseded_on_arrival(session, disc, filing, inst)
+    session.flush()
+    return n
+
+
+def _kap_row_hash(index: str, key: str, ordinal: int, r) -> str:
+    """Identity of one KAP row: the disclosure index, the party, the row's position and its fields."""
+    return hashlib.sha256("|".join(str(x) for x in (index, key, ordinal, r.transaction_date, r.code, r.nominal, r.price)).encode()).hexdigest()
+
+
+def _kap_filings_of(session: Session, disc: Disclosure, filing: NormalizedInsiderFiling, inst: Instrument, lower: datetime, upper: datetime) -> list[Disclosure]:
+    """Live KAP insider disclosures of the same party on the same stock published in [lower, upper] (the party is
+    matched by key from the stored payload — KAP identifies it by name only)."""
+    stmt = (
+        select(Disclosure).where(
+            Disclosure.source == Source.KAP, Disclosure.kind == DisclosureKind.KAP_INSIDER_TRANSACTION, Disclosure.is_superseded.is_(False),
+            Disclosure.id != disc.id, Disclosure.published_at >= lower, Disclosure.published_at <= upper,
+            Disclosure.id.in_(select(InsiderTransaction.disclosure_id).where(InsiderTransaction.instrument_id == inst.id)),
+        )
+    )
+    return [d for d in session.scalars(stmt) if d.payload.get("party_name") and party_key(d.payload["party_name"]) == filing.party_key]
+
+
+def _supersede_kap(session: Session, disc: Disclosure, filing: NormalizedInsiderFiling, inst: Instrument) -> None:
+    """A "Düzeltme" replaces the disclosure it names (`amends_source_id`, from the page's related index); naming
+    none, the party's latest live filing on the same stock within KAP_CORRECTION_DAYS. The old rows stay, flagged."""
+    if filing.amends_source_id:
+        old = session.scalar(select(Disclosure).where(Disclosure.source == Source.KAP, Disclosure.source_id == filing.amends_source_id, Disclosure.id != disc.id))
+        if old is not None:
+            _mark_superseded(session, old, disc)
+        return
+    candidates = _kap_filings_of(session, disc, filing, inst, disc.published_at - timedelta(days=KAP_CORRECTION_DAYS), disc.published_at)
+    if candidates:
+        _mark_superseded(session, max(candidates, key=lambda d: (d.published_at, d.id)), disc)
+
+
+def _kap_superseded_on_arrival(session: Session, disc: Disclosure, filing: NormalizedInsiderFiling, inst: Instrument) -> None:
+    """An original stored after its correction (the page could not be read in the run that stored the correction)
+    is flagged at once by the earliest live correction of the same party and stock that names this index, or names
+    none and supersedes nothing yet."""
+    later = [
+        d for d in _kap_filings_of(session, disc, filing, inst, disc.published_at, disc.published_at + timedelta(days=KAP_CORRECTION_DAYS))
+        if d.payload.get("is_correction") and (d.payload.get("amends_source_id") == disc.source_id or (not d.payload.get("amends_source_id") and d.supersedes_id is None))
+    ]
+    if later:
+        _mark_superseded(session, disc, min(later, key=lambda d: (d.published_at, d.id)))
+
+
 # --------------------------------------------------------------------------- read models
 
 
@@ -369,24 +511,27 @@ def _issuer_ids(session: Session, instrument_id: int) -> list[int]:
     return session.scalars(select(Instrument.id).where(Instrument.market_code == Market.US, Instrument.sec_cik == cik)).all()
 
 
-def _rows(session: Session, instrument_id: int, start: date, as_of: date, *, limit: int | None = None) -> list[tuple[InsiderTransaction, Disclosure]]:
-    """Live (not superseded) rows of the issuer dated in (start, as_of], newest first, with their disclosure."""
+def _rows(session: Session, instrument_id: int, start: date, as_of: date, *, limit: int | None = None, insiders_only: bool = False) -> list[tuple[InsiderTransaction, Disclosure]]:
+    """Live (not superseded) rows of the issuer dated in (start, as_of], newest first, with their disclosure.
+    `insiders_only` leaves out the company's own-share rows (`roles = "issuer"`): what the counts and the cluster read."""
     stmt = (
         select(InsiderTransaction, Disclosure).join(Disclosure, Disclosure.id == InsiderTransaction.disclosure_id)
         .where(InsiderTransaction.instrument_id.in_(_issuer_ids(session, instrument_id)), InsiderTransaction.is_superseded.is_(False),
                InsiderTransaction.transaction_date > start, InsiderTransaction.transaction_date <= as_of)
         .order_by(InsiderTransaction.transaction_date.desc(), InsiderTransaction.filed_at.desc(), InsiderTransaction.id)  # same day: document order
     )
+    if insiders_only:
+        stmt = stmt.where(InsiderTransaction.roles != ISSUER_ROLE)
     if limit is not None:
         stmt = stmt.limit(limit)
     return [(row, disc) for row, disc in session.execute(stmt)]
 
 
 def trades(session: Session, instrument_id: int, start: date, as_of: date) -> list[InsiderTrade]:
-    """The detector's view of the window's rows, each with every reporting owner of its filing (the filing's owners
-    describe a row only when the row's insider is one of them)."""
+    """The detector's view of the window's rows (never the company's own-share rows), each with every reporting
+    owner of its filing (the filing's owners describe a row only when the row's insider is one of them)."""
     out = []
-    for r, d in _rows(session, instrument_id, start, as_of):
+    for r, d in _rows(session, instrument_id, start, as_of, insiders_only=True):
         owners = _owner_ciks(d.payload)
         out.append(InsiderTrade(
             insider_cik=r.insider_cik, insider_name=r.insider_name, transaction_date=r.transaction_date, code=r.code, derivative=r.derivative,
@@ -407,12 +552,13 @@ def _empty_summary() -> dict:
 def summary(session: Session, instrument_id: int, days: int = DEFAULT_DAYS, as_of: date | None = None) -> dict:
     """The contract's `summary` over the last `days`: buyers / sellers are distinct insiders with an open-market
     purchase (P) / sale (S) in the non-derivative table, the values sum shares × price of those rows (a row without
-    a stated price adds nothing), net = buy − sell, the counts are the number of such rows; `cluster` is the
-    30-day open-market purchase cluster (engine/insiders) or null. Grants, exercises, withholding and gifts are
-    listed in `transactions` but are not buys or sells here."""
+    a stated price adds nothing — a KAP filing that only states a range counts as unpriced), net = buy − sell, the
+    counts are the number of such rows; `cluster` is the 30-day open-market purchase cluster (engine/insiders) or
+    null. Grants, exercises, withholding and gifts, and the company's own-share rows on BIST, are listed in
+    `transactions` but are not buys or sells here."""
     as_of = as_of or date.today()
     start = as_of - timedelta(days=days)
-    rows = [r for r, _ in _rows(session, instrument_id, start, as_of) if not r.derivative and r.code in OPEN_MARKET]
+    rows = [r for r, _ in _rows(session, instrument_id, start, as_of, insiders_only=True) if not r.derivative and r.code in OPEN_MARKET]
     buys = [r for r in rows if r.code == "P"]
     sells = [r for r in rows if r.code == "S"]
     buy_value = sum((v for v in map(_value, buys) if v is not None), Decimal(0))
@@ -430,7 +576,21 @@ def summary(session: Session, instrument_id: int, days: int = DEFAULT_DAYS, as_o
     }
 
 
+def _price_range(row: InsiderTransaction, disc: Disclosure) -> list[float] | None:
+    """[low, high] when a KAP filing states a price range and no single price (never a midpoint); null otherwise."""
+    if row.kap_disclosure_index is None or row.price is not None:
+        return None
+    for r in disc.payload.get("rows") or []:
+        if r.get("transaction_date") == row.transaction_date.isoformat() and r.get("side") == ("ALIS" if row.code == "P" else "SATIS") and r.get("price_low") and r.get("price_high"):
+            return [float(r["price_low"]), float(r["price_high"])]
+    return None
+
+
 def _transaction_json(row: InsiderTransaction, disc: Disclosure) -> dict:
+    """One row as the API and the tools report it — the same keys on both markets. US: `accession` and `url` are
+    the EDGAR accession and filing index, `party_kind` / `post_pct_stake` / `price_range` null. TR: `accession` is
+    the KAP disclosure index, `url` the disclosure page, `code` P (ALIŞ) or S (SATIŞ), `shares` the nominal (one
+    lira = one share on BIST), `buyback` true for the company's own-share rows (labelled, never counted)."""
     value = _value(row)
     return {
         "id": row.id,
@@ -444,10 +604,14 @@ def _transaction_json(row: InsiderTransaction, disc: Disclosure) -> dict:
         "acquired": row.acquired,
         "shares": float(row.shares),
         "price": float(row.price) if row.price is not None else None,
+        "price_range": _price_range(row, disc),
         "value": float(value) if value is not None else None,
         "post_shares": float(row.post_shares) if row.post_shares is not None else None,
+        "post_pct_stake": float(row.post_pct_stake) if row.post_pct_stake is not None else None,
         "ownership": row.ownership,
         "derivative": row.derivative,
+        "party_kind": row.party_kind,
+        "buyback": row.roles == ISSUER_ROLE,
         "confidence": row.confidence,
         "accession": disc.source_id,
         "url": disc.raw_uri,
@@ -476,30 +640,72 @@ def filings(session: Session, instrument_id: int, form: str | None = None, limit
     return [_filing_json(f, inst.sec_cik if inst else None) for f in rows]
 
 
-def _fetched_at(inst: Instrument) -> str | None:
+def kap_fetched_at(session: Session) -> datetime | None:
+    """When the KAP insider feed last stored a filing (any stock: the feed is read market-wide, not per issuer);
+    None before the first run — the TR counterpart of `Instrument.sec_form4_fetched_at`."""
+    return session.scalar(select(func.max(Disclosure.ingested_at)).where(Disclosure.kind == DisclosureKind.KAP_INSIDER_TRANSACTION))
+
+
+def _fetched_at(session: Session, inst: Instrument) -> str | None:
+    if inst.market_code == Market.TR:
+        when = kap_fetched_at(session)
+        return when.isoformat() if when else None
     return inst.sec_form4_fetched_at.isoformat() if inst.sec_form4_fetched_at else None
 
 
+def kap_coverage_since(session: Session) -> date | None:
+    """The earliest day the KAP insider feed has read (market-wide): the publication day of its oldest stored filing.
+    The feed lists `kap_public_days_back` days per run, so the day after its first run a 90-day window is mostly
+    unread — an empty window that starts before this day says nothing about the days before it. None before the
+    first stored filing."""
+    when = session.scalar(select(func.min(Disclosure.published_at)).where(Disclosure.kind == DisclosureKind.KAP_INSIDER_TRANSACTION))
+    return when.date() if when else None
+
+
+def _kap_issuer_url(session: Session, inst: Instrument) -> str | None:
+    """The BIST issuer's page on KAP, known only from a filing it published itself (an issuer's ODA page carries its
+    member oid; a relayed one carries KAP's own): the newest such stored filing on the stock, else None."""
+    stmt = (
+        select(Disclosure.payload).where(
+            Disclosure.kind == DisclosureKind.KAP_INSIDER_TRANSACTION,
+            Disclosure.id.in_(select(InsiderTransaction.disclosure_id).where(InsiderTransaction.instrument_id == inst.id)),
+        ).order_by(Disclosure.published_at.desc(), Disclosure.id.desc()).limit(40)
+    )
+    for payload in session.scalars(stmt):
+        if payload and not payload.get("relayed") and payload.get("member_code") == inst.symbol and payload.get("member_oid"):
+            return KAP_ISSUER_PAGE.format(oid=payload["member_oid"])
+    return None
+
+
 def stock_insiders(session: Session, market: str, symbol: str, days: int = DEFAULT_DAYS, as_of: date | None = None) -> dict | None:
-    """The /stocks/{symbol}/insiders payload. None for an unknown symbol; a TR symbol answers `supported: false`
-    with an empty summary; a US symbol nothing has been fetched for yet answers the same empty shape with
-    `supported: true` and `fetched_at: null` — never a placeholder number. `truncated` says the window holds more
-    than the MAX_TRANSACTIONS rows returned; `edgar_url` is the issuer's Form 4 list on EDGAR, where they all are."""
+    """The /stocks/{symbol}/insiders payload, the same shape on both markets. None for an unknown symbol; a symbol
+    nothing has been fetched for yet answers the empty shape with `supported: true` and `fetched_at: null` — never a
+    placeholder number (US: the issuer has not been read; TR: the KAP feed has not run). `source` names the origin
+    ("sec-edgar" / "kap"), `truncated` says the window holds more than the MAX_TRANSACTIONS rows returned;
+    `more_url` is where they all are — the US issuer's Form 4 list on EDGAR (`edgar_url` too, the older name), the
+    BIST issuer's page on KAP when one of its own filings told us its oid (every KAP row links its own disclosure
+    page regardless). `coverage_since` (BIST only) is the earliest day the feed has read: an empty window is only
+    "no activity" from that day on."""
     inst = session.scalar(select(Instrument).where(Instrument.market_code == market, Instrument.symbol == symbol.upper()))
     if inst is None:
         return None
     as_of = as_of or date.today()
-    base = {"symbol": inst.symbol, "name": inst.name, "market": inst.market_code, "days": days, "as_of": as_of.isoformat(), "source": SOURCE}
-    if inst.market_code != Market.US:
-        return {**base, "supported": False, "fetched_at": None, "summary": _empty_summary(), "transactions": [], "truncated": False, "edgar_url": None}
+    base = {"symbol": inst.symbol, "name": inst.name, "market": inst.market_code, "days": days, "as_of": as_of.isoformat(), "source": SOURCE_OF.get(inst.market_code, SOURCE)}
+    if inst.market_code not in SOURCE_OF:
+        return {**base, "supported": False, "fetched_at": None, "coverage_since": None, "summary": _empty_summary(), "transactions": [], "truncated": False, "edgar_url": None, "more_url": None}
     rows = transactions(session, inst.id, days, limit=MAX_TRANSACTIONS + 1, as_of=as_of)
+    edgar_url = EDGAR_ISSUER_FORM4.format(cik=int(inst.sec_cik)) if inst.market_code == Market.US and inst.sec_cik else None
+    tr = inst.market_code == Market.TR
+    coverage = kap_coverage_since(session) if tr else None
     return {
         **base, "supported": True,
-        "fetched_at": _fetched_at(inst),
+        "fetched_at": _fetched_at(session, inst),
+        "coverage_since": coverage.isoformat() if coverage else None,
         "summary": summary(session, inst.id, days, as_of),
         "transactions": rows[:MAX_TRANSACTIONS],
         "truncated": len(rows) > MAX_TRANSACTIONS,
-        "edgar_url": EDGAR_ISSUER_FORM4.format(cik=int(inst.sec_cik)) if inst.sec_cik else None,
+        "edgar_url": edgar_url,
+        "more_url": _kap_issuer_url(session, inst) if tr else edgar_url,
     }
 
 
@@ -511,35 +717,35 @@ def stock_filings(session: Session, market: str, symbol: str, form: str | None =
         return None
     if inst.market_code != Market.US:
         return {"symbol": inst.symbol, "market": inst.market_code, "supported": False, "fetched_at": None, "filings": []}
-    return {"symbol": inst.symbol, "market": inst.market_code, "supported": True, "fetched_at": _fetched_at(inst), "filings": filings(session, inst.id, form, limit)}
+    return {"symbol": inst.symbol, "market": inst.market_code, "supported": True, "fetched_at": _fetched_at(session, inst), "filings": filings(session, inst.id, form, limit)}
 
 
 def detail(session: Session, instrument: Instrument, as_of: date | None = None) -> dict | None:
-    """The small `insiders` block of stock_detail: None off the US market and until the issuer has been fetched once
-    (zeros would read as "no insider activity" when nothing was asked yet)."""
-    if instrument.market_code != Market.US or instrument.sec_form4_fetched_at is None:
+    """The small `insiders` block of stock_detail: None until the source has been read once (the US issuer's Form 4
+    listing, the KAP feed for BIST) — zeros would read as "no insider activity" when nothing was asked yet."""
+    if instrument.market_code not in SOURCE_OF or _fetched_at(session, instrument) is None:
         return None
     s = summary(session, instrument.id, DEFAULT_DAYS, as_of)
     return {"days": DEFAULT_DAYS, "buyers": s["buyers"], "sellers": s["sellers"], "net_value": s["net_value"], "cluster": s["cluster"] is not None}
 
 
-def last_filed_at(session: Session) -> datetime | None:
-    """When the newest stored Form 4 row was filed (data freshness)."""
-    return session.scalar(select(func.max(InsiderTransaction.filed_at)))
+def last_filed_at(session: Session, market: str = Market.US) -> datetime | None:
+    """When the market's newest stored insider row was filed (data freshness): Form 4 for US, KAP for TR."""
+    return session.scalar(select(func.max(InsiderTransaction.filed_at)).join(Instrument, Instrument.id == InsiderTransaction.instrument_id).where(Instrument.market_code == market))
 
 
 # --------------------------------------------------------------------------- signals (read by the pipeline)
 
 
 def detected_signals(session: Session, as_of: date) -> list[tuple[Instrument, DetectedSignal]]:
-    """INSIDER_BUY_CLUSTER for every US instrument with an open-market purchase in the cluster window ending on
-    `as_of` — every share class of the issuer, the rows are the issuer's. The pipeline writes the rows (one per
-    episode, like every other signal)."""
+    """INSIDER_BUY_CLUSTER for every instrument, on either market, with an open-market purchase (Form 4 code P, KAP
+    ALIŞ) by someone other than the company itself in the cluster window ending on `as_of` — every share class of
+    a US issuer, the rows are the issuer's. The pipeline writes the rows (one per episode, like every other signal)."""
     start = as_of - timedelta(days=CLUSTER_WINDOW_DAYS)
     ids = session.scalars(
         select(InsiderTransaction.instrument_id).where(
             InsiderTransaction.code == "P", InsiderTransaction.derivative.is_(False), InsiderTransaction.is_superseded.is_(False),
-            InsiderTransaction.transaction_date > start, InsiderTransaction.transaction_date <= as_of,
+            InsiderTransaction.roles != ISSUER_ROLE, InsiderTransaction.transaction_date > start, InsiderTransaction.transaction_date <= as_of,
         ).distinct()
     ).all()
     out = []

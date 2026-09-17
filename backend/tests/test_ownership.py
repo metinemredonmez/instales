@@ -344,7 +344,7 @@ def test_price_alerts_fire_once_per_crossing(session, pipeline_run):
     """ASELS closes: 08-31 160, 09-14 140. A PRICE_BELOW 150 rule sees the crossing on 09-14; PRICE_ABOVE 130 does
     not fire (already above at the previous close); later closes re-cross and each crossing notifies once."""
     c = _client(session)
-    assert {"PRICE_ABOVE", "PRICE_BELOW"} <= alerts.RULE_TYPES and set(alerts.PRICE_RULES).isdisjoint(alerts.WATCHLIST_STOCK_RULES + alerts.WATCHLIST_US_STOCK_RULES)
+    assert {"PRICE_ABOVE", "PRICE_BELOW"} <= alerts.RULE_TYPES and set(alerts.PRICE_RULES).isdisjoint(alerts.WATCHLIST_STOCK_RULES)
     assert {"PRICE_ABOVE", "PRICE_BELOW"} <= set(c.get("/api/v1/alerts/rules").json()["rule_types"])
     below = c.post("/api/v1/alerts/rules", json={"symbol": "ASELS", "rule_type": "PRICE_BELOW", "params": {"price": 150}})
     assert below.status_code == 201

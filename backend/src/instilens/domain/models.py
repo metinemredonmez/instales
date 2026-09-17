@@ -307,7 +307,13 @@ class InsiderTransaction(Base):
     `is_superseded=True` for audit. `row_hash` (accession, owner, ordinal position, fields) makes a re-run a no-op.
     `confidence` is EXACT for every Form 4 row (the insider's own report of their own transaction); the column is
     the lineage every fact table carries. Share classes of one issuer (GOOG / GOOGL) share a CIK and one set of
-    Form 4s, stored once under whichever class was read first — the read models join the issuer's classes by CIK."""
+    Form 4s, stored once under whichever class was read first — the read models join the issuer's classes by CIK.
+    TR rows come from KAP "Pay Alım Satım Bildirimi" filings of persons and shareholders (kind KAP_INSIDER_TRANSACTION,
+    `services/insiders.refresh_kap`): `code` is P for ALIŞ and S for SATIŞ (KAP has no grant / exercise codes),
+    `insider_cik` a stable key derived from the party's name (KAP identifies nobody by number), `kap_disclosure_index`
+    the disclosure index, `party_kind` person / company / fund / other, `post_pct_stake` the capital share the filing
+    states after the transaction, and `roles` "issuer" when the company traded its own shares (a buyback or a
+    treasury-share sale — listed, never counted as an insider purchase). Both columns stay NULL on US rows."""
 
     __tablename__ = "insider_transactions"
     __table_args__ = (
@@ -334,6 +340,9 @@ class InsiderTransaction(Base):
     is_superseded: Mapped[bool] = mapped_column(Boolean, default=False)
     confidence: Mapped[str] = mapped_column(String(16), default="EXACT")
     row_hash: Mapped[str] = mapped_column(String(64))
+    kap_disclosure_index: Mapped[int | None] = mapped_column(Integer)  # TR: the KAP disclosure index the row came from
+    party_kind: Mapped[str | None] = mapped_column(String(12))  # TR: person | company | fund | other
+    post_pct_stake: Mapped[Decimal | None] = mapped_column(Pct)  # TR: capital share after the transaction, as filed
 
 
 class SecFiling(Base):

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     kap_public_max_details: int = 25
     kap_public_max_reports: int = 40  # fund portfolio PDFs per run (2-3 requests each)
     kap_public_fund_codes: list[str] = []  # empty = all equity-focused funds seen in the window
+    # KAP insider filings (services/insiders.refresh_kap): the "Pay Alım Satım Bildirimi" rows the PYŞ ingest leaves out
+    # — directors, executives and shareholders, filed by the issuer or relayed by MKK. The scheduler reads them every
+    # 30 min on BIST days (09:15–22:45 Istanbul, offset from the PYŞ ingest) through the public adapter, gated by kap_insiders_enabled and capped
+    # at kap_insiders_max_details detail fetches per run — both editable from the admin UI. Public adapter only.
+    kap_insiders_enabled: bool = True
+    kap_insiders_max_details: int = 60
 
     default_market: str = "TR"
     # Header quotes / market-hours badge: BIST closes on these ISO dates (exchange holidays are not modelled otherwise).
@@ -100,6 +106,11 @@ class Settings(BaseSettings):
     releases_dir: Path = BACKEND_ROOT / "media" / "releases"
     release_upload_key: str | None = None  # openssl rand -hex 32
     desktop_updater_pubkey: str | None = None  # from `tauri signer generate` (public half; safe to publish)
+    # DuckDB warehouse (services/warehouse): one analytical file of the data layer under releases_dir/warehouse
+    # (instilens-<YYYYMMDD>.duckdb + latest.duckdb, the newest four kept), built by `instilens warehouse build`, the
+    # admin card and — only while warehouse_enabled, admin-editable and off by default — the weekly job (Sunday
+    # 03:30 Istanbul, after the nightly compute). Never contains users, auth, portfolios or subscriptions.
+    warehouse_enabled: bool = False
 
     # Live TV widget: YouTube channel IDs that run 24/7 finance streams, "Name|CHANNEL_ID" comma-separated.
     # (Bloomberg HT blocks embedding — "izlemeyi engelledi" — so it is not in the default list.)

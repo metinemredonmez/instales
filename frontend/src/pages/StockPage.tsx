@@ -53,7 +53,7 @@ export function StockPage() {
         <div>
           <div className="text-xs text-muted-foreground">{d.market} · {t("stock.asOf")} {fmtDate(d.as_of)} · {t("stock.latestPeriod")} {fmtDate(d.latest_period_end)}</div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{d.symbol} <span className="text-lg font-normal text-muted-foreground">{d.name !== d.symbol ? d.name : ""}</span></h1>
-          {/* Header chips: valuation figures, the Form 4 head-count, then the stored crowding score; the row hides itself when none has anything to show. */}
+          {/* Header chips: valuation figures, the insider head-count (Form 4 / KAP), then the stored crowding score; the row hides itself when none has anything to show. */}
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] empty:hidden">
             {d.fundamentals && <FundamentalsChips f={d.fundamentals} />}
             {d.insiders && <InsidersChip s={d.insiders} />}
@@ -105,13 +105,11 @@ export function StockPage() {
       {/* Flows first (that is the product); the reported numbers sit below them as context, ahead of the signal evidence. */}
       <Fundamentals symbol={d.symbol} market={market} />
 
-      {/* Form 4 and the filing index exist for SEC filers only; on BIST the API answers supported:false, so the sections are not mounted. */}
-      {d.market === "US" && (
-        <>
-          <Insiders symbol={d.symbol} market={market} />
-          <Filings symbol={d.symbol} market={market} />
-        </>
-      )}
+      {/* Insiders exist on both markets (Form 4 on US issuers, KAP filings on BIST) and the section hides itself where the API answers supported:false. */}
+      <Insiders symbol={d.symbol} market={market} />
+
+      {/* The filing index exists for SEC filers only; on BIST the API answers supported:false, so the section is not mounted. */}
+      {d.market === "US" && <Filings symbol={d.symbol} market={market} />}
 
       {d.signals.length > 0 && (
         <Section title={t("common.signals")} hint={t("stock.withEvidence")}>

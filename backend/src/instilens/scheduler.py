@@ -7,7 +7,10 @@ Cadence (Europe/Istanbul):
   compute            after every ingest that stored something, and nightly 02:00 regardless
   fundamentals       weekly, Sunday 06:00 (TR then US; gated by the fundamentals_enabled setting)
   form4              daily 08:30 (after EDGAR's overnight window; gated by the sec_form4_enabled setting), then compute
+  kap insiders       every 30 min at :15 / :45, 09:15–22:45 on weekdays (gated by the kap_insiders_enabled setting), then compute —
+                     offset from the PYŞ ingest so one KAP client at a time talks to kap.org.tr and two computes never overlap
   search index       at the tail of compute, news_pull and briefs (services/search_index, incremental)
+  warehouse          weekly, Sunday 03:30 after the nightly compute (gated by the warehouse_enabled setting, off by default)
 """
 
 from __future__ import annotations
@@ -152,6 +155,35 @@ def form4_daily() -> None:
         compute()
 
 
+def kap_insiders() -> None:
+    """KAP "Pay Alım Satım Bildirimi" filings of directors, executives and shareholders — the rows the PYŞ ingest
+    leaves out (services/insiders.refresh_kap, public adapter only). New rows feed the insider signals, so a run
+    that stored any recomputes right away instead of waiting for the nightly compute."""
+    from instilens.config import settings
+    from instilens.services.insiders import refresh_kap
+
+    if not settings.kap_insiders_enabled or settings.kap_adapter != "public":
+        return
+    with session_scope() as s:
+        out = refresh_kap(s)
+    log.info("TR insiders %s", out)
+    if out["transactions"]:
+        compute()
+
+
+def warehouse_weekly() -> None:
+    """The DuckDB warehouse (services/warehouse): every fact table, the gold views and _meta in one file under
+    releases_dir/warehouse, after Sunday's 02:00 compute has written the week's scores. Off until the admin turns
+    warehouse_enabled on; skipped, not queued, while an admin-started build holds the lock."""
+    from instilens.config import settings
+    from instilens.services import warehouse
+
+    if not settings.warehouse_enabled:
+        return
+    out = warehouse.build_locked("scheduler")
+    log.info("warehouse %s", "skipped: a build is already running" if out is None else out)
+
+
 def _fresh(job):
     """Run a job with the latest admin overrides applied (settings can change between runs)."""
     from functools import wraps
@@ -184,6 +216,10 @@ def main() -> None:
     sched.add_job(_fresh(briefs), CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
     sched.add_job(_fresh(fundamentals), CronTrigger(day_of_week="sun", hour=6, minute=0, timezone=TZ), id="fundamentals_weekly")
     sched.add_job(_fresh(form4_daily), CronTrigger(hour=8, minute=30, timezone=TZ), id="form4_daily")
+    # :15 / :45, between the PYŞ ingest's :00 / :30 (kap_offpeak) and :00 / :05 / … (kap_rush) runs: the two jobs would otherwise start
+    # at the same second, each pacing its own KAP client at 1.5 s and both calling compute() for the same day at once.
+    sched.add_job(_fresh(kap_insiders), CronTrigger(day_of_week="mon-fri", hour="9-22", minute="15,45", timezone=TZ), id="kap_insiders")  # last run 22:45
+    sched.add_job(_fresh(warehouse_weekly), CronTrigger(day_of_week="sun", hour=3, minute=30, timezone=TZ), id="warehouse_weekly")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 

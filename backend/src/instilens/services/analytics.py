@@ -150,7 +150,7 @@ def stock_detail(session: Session, market: str, symbol: str) -> dict | None:
         "signals": [_signal_json(s, instrument.symbol) for s in signals],
         "events": events,
         "fundamentals": fundamentals.summary(session, instrument.id),  # null until the weekly job has run for the symbol
-        "insiders": insiders.detail(session, instrument),  # US only; null until the daily Form 4 job has read the issuer
+        "insiders": insiders.detail(session, instrument),  # null until the market's insider source has been read (the issuer's Form 4s, the KAP feed)
     }
 
 
@@ -795,9 +795,11 @@ def data_freshness(session: Session, market: str) -> list[dict]:
             {"source": "SEC Form 4", "cadence": "Within two business days of the trade", "last": form4.date().isoformat() if form4 else None, "delayed": False},
             prices_row,
         ]
+    kap_insiders = insiders.last_filed_at(session, "TR")
     return [
         {"source": "KAP transaction disclosures", "cadence": "Same-day", "last": last(select(func.max(TransactionEvent.published_at)).where(TransactionEvent.market_code == "TR")), "delayed": False},
         {"source": "KAP portfolio reports", "cadence": "Monthly snapshot", "last": last(select(func.max(PortfolioSnapshot.as_of)).join(Fund).join(Institution).where(Institution.market_code == "TR")), "delayed": True},
+        {"source": "KAP insider filings", "cadence": "Every 30 min on trading days", "last": kap_insiders.date().isoformat() if kap_insiders else None, "delayed": False},
         prices_row,
     ]
 

@@ -25,6 +25,8 @@ dependencies = [
   "num2words>=0.5.14",
   "pyotp>=2.10.0",
   "stripe>=15.6.1",
+  "duckdb>=1.5.5",
+  "pandas>=3.0.5",
 ]
 
 [project.optional-dependencies]

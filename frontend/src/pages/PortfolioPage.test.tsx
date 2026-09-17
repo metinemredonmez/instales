@@ -39,7 +39,7 @@ const DETAIL: PortfolioDetail = {
   portfolio: P1,
   as_of: "2026-09-16",
   positions: [
-    { id: 11, symbol: "ASELS", name: "Aselsan", derived: false, quantity: 1000, avg_cost: 50, opened_at: null, note: null, last_close: 62.5, close_date: "2026-09-16", market_value: 62500, cost_value: 50000, pnl_value: 12500, pnl_pct: 25, weight_pct: 41.7, smart_money_score: 78, consensus_score: 64, crowding_score: 40, funds_increasing_30d: 4, funds_reducing_30d: 1, insiders_net_90d: null },
+    { id: 11, symbol: "ASELS", name: "Aselsan", derived: false, quantity: 1000, avg_cost: 50, opened_at: null, note: null, last_close: 62.5, close_date: "2026-09-16", market_value: 62500, cost_value: 50000, pnl_value: 12500, pnl_pct: 25, weight_pct: 41.7, smart_money_score: 78, consensus_score: 64, crowding_score: 40, funds_increasing_30d: 4, funds_reducing_30d: 1, insiders_net_90d: 4_400_000 },
     { id: 12, symbol: "THYAO", name: "Türk Hava Yolları", derived: false, quantity: 300, avg_cost: 300, opened_at: null, note: null, last_close: 291, close_date: "2026-09-16", market_value: 87300, cost_value: 90000, pnl_value: -2700, pnl_pct: -3, weight_pct: 58.3, smart_money_score: 45, consensus_score: null, crowding_score: null, funds_increasing_30d: 2, funds_reducing_30d: 3, insiders_net_90d: null },
   ],
   totals: { market_value: 149800, cost_value: 140000, pnl_value: 9800, pnl_pct: 7, unpriced: 0 },
@@ -104,6 +104,10 @@ describe("PortfolioPage", () => {
     expect(screen.queryByText(/Pro ile açılır/)).toBeNull()
     // The positions table carries its own reading rule, as the insiders and fundamentals sections do.
     expect(positions().getByText("son kapanış fiyatıyla · tavsiye değildir")).toBeInTheDocument()
+    // The insiders' 90-day net value is a column on BIST too (KAP filings), in lira; "—" where the feed has nothing yet.
+    expect(positions().getByRole("columnheader", { name: "İçeriden net 90G" })).toBeInTheDocument()
+    expect(within(row("ASELS")).getByText("+₺4.4M")).toBeInTheDocument()
+    expect(within(row("THYAO")).getAllByRole("cell").at(-2)!.textContent).toBe("—")
   })
 
   it("a refused removal (400: the buy's later sale would oversell) is printed, not swallowed", async () => {

@@ -611,7 +611,7 @@ def test_insider_signals_are_episodic_and_the_alert_fires_once_per_cluster(sessi
     assert alerts.evaluate(session, day + timedelta(days=1)) == 2
     titles = sorted(n.title for n in session.scalars(select(Notification).where(Notification.alert_rule_id.is_not(None))))
     assert titles == ["OXY: 3 insiders bought on the open market in the last 30 days", f"OXY: Insider Buy Cluster ({sig.strength})"]
-    assert "INSIDER_BUY_CLUSTER" in alerts.RULE_TYPES and alerts.WATCHLIST_US_STOCK_RULES[-1] == "INSIDER_BUY_CLUSTER" and "INSIDER_BUY_CLUSTER" not in alerts.WATCHLIST_STOCK_RULES
+    assert "INSIDER_BUY_CLUSTER" in alerts.RULE_TYPES and alerts.WATCHLIST_STOCK_RULES[-1] == "INSIDER_BUY_CLUSTER"  # every watched stock, on both markets (KAP rows: test_kap_insiders)
 
 
 # --- read models, routes, stock_detail, tools ---------------------------------------------------------
@@ -628,9 +628,9 @@ def test_summary_and_transactions_follow_the_contract(session, monkeypatch):
     rows = insiders.transactions(session, aapl.id, 120, as_of=AS_OF)
     assert [r["code"] for r in rows] == ["S", "M", "F", "M"] and [r["derivative"] for r in rows] == [False, False, False, True]  # newest first, derivative rows flagged
     assert rows[0] == {"id": rows[0]["id"], "transaction_date": "2026-09-08", "filed_at": "2026-09-10T00:00:00", "insider": "Newstead Jennifer", "insider_cik": "1780525", "role": "officer",
-                       "title": "SVP, GC and Government Affairs", "code": "S", "acquired": False, "shares": 1438.0, "price": 317.23, "value": sale_value,
-                       "post_shares": 34352.0, "ownership": "D", "derivative": False, "confidence": "EXACT", "accession": AAPL_SALE,
-                       "url": f"https://www.sec.gov/Archives/edgar/data/320193/{AAPL_SALE.replace('-', '')}/{AAPL_SALE}-index.htm"}
+                       "title": "SVP, GC and Government Affairs", "code": "S", "acquired": False, "shares": 1438.0, "price": 317.23, "price_range": None, "value": sale_value,
+                       "post_shares": 34352.0, "post_pct_stake": None, "ownership": "D", "derivative": False, "party_kind": None, "buyback": False, "confidence": "EXACT",
+                       "accession": AAPL_SALE, "url": f"https://www.sec.gov/Archives/edgar/data/320193/{AAPL_SALE.replace('-', '')}/{AAPL_SALE}-index.htm"}  # the KAP-only keys stay null on US rows
     assert rows[1]["price"] is None and rows[1]["value"] is None and rows[1]["code"] == "M" and rows[1]["acquired"] is True
     assert len(insiders.transactions(session, aapl.id, 120, limit=2, as_of=AS_OF)) == 2
     b = insiders.summary(session, oxy.id, 120, AS_OF)
@@ -681,11 +681,13 @@ def test_routes_and_stock_detail_block(session, pipeline_run):
         assert c.get("/api/v1/stocks/AAPL/filings", params={"market": "US", "form": "S-1"}).status_code == 422
         assert c.get("/api/v1/stocks/AAPL/filings", params={"market": "US", "limit": 0}).status_code == 422
 
+        # A BIST symbol is supported (KAP insider filings, source "kap"); before the KAP feed has run it answers the
+        # same empty shape with `fetched_at: null` — never zeros presented as "no activity" (the KAP path: test_kap_insiders).
         tr = c.get("/api/v1/stocks/ASELS/insiders").json()
-        assert tr["supported"] is False and tr["symbol"] == "ASELS" and tr["market"] == "TR" and tr["days"] == 90 and tr["source"] == "sec-edgar" and tr["fetched_at"] is None
+        assert tr["supported"] is True and tr["symbol"] == "ASELS" and tr["market"] == "TR" and tr["days"] == 90 and tr["source"] == "kap" and tr["fetched_at"] is None
         assert tr["transactions"] == [] and tr["summary"] == {"buyers": 0, "sellers": 0, "buy_value": 0.0, "sell_value": 0.0, "net_value": 0.0, "open_market_buys": 0, "open_market_sells": 0, "cluster": None}
-        assert tr["truncated"] is False and tr["edgar_url"] is None and date.fromisoformat(tr["as_of"]) == date.today()
-        assert c.get("/api/v1/stocks/ASELS/filings").json() == {"symbol": "ASELS", "market": "TR", "supported": False, "fetched_at": None, "filings": []}
+        assert tr["truncated"] is False and tr["edgar_url"] is None and tr["more_url"] is None and tr["coverage_since"] is None and date.fromisoformat(tr["as_of"]) == date.today()
+        assert c.get("/api/v1/stocks/ASELS/filings").json() == {"symbol": "ASELS", "market": "TR", "supported": False, "fetched_at": None, "filings": []}  # the EDGAR filings index stays US-only
         assert c.get("/api/v1/stocks/ASELS").json()["insiders"] is None
 
         # A US symbol nothing has been fetched for yet: supported, empty, fetched_at null; stock_detail keeps null (no zeros before a fetch).
@@ -697,13 +699,14 @@ def test_routes_and_stock_detail_block(session, pipeline_run):
 
         insiders.refresh(session, client=_Edgar().client, as_of=AS_OF, pause_s=0)
         body = c.get("/api/v1/stocks/aapl/insiders", params={"market": "US", "days": 730}).json()
-        assert set(body) == {"symbol", "name", "market", "supported", "days", "as_of", "source", "fetched_at", "summary", "transactions", "truncated", "edgar_url"}
+        assert set(body) == {"symbol", "name", "market", "supported", "days", "as_of", "source", "fetched_at", "coverage_since", "summary", "transactions", "truncated", "edgar_url", "more_url"}
         assert body["symbol"] == "AAPL" and body["supported"] is True and body["days"] == 730 and body["source"] == "sec-edgar" and datetime.fromisoformat(body["fetched_at"])
+        assert body["more_url"] == body["edgar_url"] and body["coverage_since"] is None  # US: the issuer's Form 4 list under both names; coverage is per issuer, not stated
         assert set(body["summary"]) == {"buyers", "sellers", "buy_value", "sell_value", "net_value", "open_market_buys", "open_market_sells", "cluster"}
         assert (body["summary"]["sellers"], body["summary"]["open_market_sells"], body["summary"]["cluster"]) == (1, 1, None)
         assert [t["code"] for t in body["transactions"]] == ["S", "M", "F", "M"] and body["truncated"] is False and "CIK=320193" in body["edgar_url"]
-        assert set(body["transactions"][0]) == {"id", "transaction_date", "filed_at", "insider", "insider_cik", "role", "title", "code", "acquired", "shares", "price",
-                                               "value", "post_shares", "ownership", "derivative", "confidence", "accession", "url"}
+        assert set(body["transactions"][0]) == {"id", "transaction_date", "filed_at", "insider", "insider_cik", "role", "title", "code", "acquired", "shares", "price", "price_range",
+                                               "value", "post_shares", "post_pct_stake", "ownership", "derivative", "party_kind", "buyback", "confidence", "accession", "url"}
         assert body["transactions"][0]["accession"] == AAPL_SALE and body["transactions"][0]["url"].endswith(f"{AAPL_SALE}-index.htm")
         oxy_body = c.get("/api/v1/stocks/OXY/insiders", params={"market": "US", "days": 730}).json()
         assert oxy_body["summary"]["buyers"] == 1 and oxy_body["transactions"][0]["code"] == "P" and oxy_body["transactions"][0]["confidence"] == "EXACT"
@@ -719,11 +722,11 @@ def test_routes_and_stock_detail_block(session, pipeline_run):
         assert detail == insiders.detail(session, aapl) and insiders.detail(session, oxy)["buyers"] in (0, 1)  # the 90-day window is measured from today
         assert c.get("/api/v1/stocks/ASELS").json()["insiders"] is None
 
-        # The dedicated rule needs a US symbol: Form 4 data exists for US issuers only, so a BIST rule would never fire.
+        # The dedicated rule needs a stock on either market (Form 4 on US, KAP filings on BIST); a fund has no insiders.
         assert c.post("/api/v1/alerts/rules", json={"symbol": "OXY", "market": "US", "rule_type": "INSIDER_BUY_CLUSTER"}).status_code == 201
-        refused = c.post("/api/v1/alerts/rules", json={"symbol": "ASELS", "market": "TR", "rule_type": "INSIDER_BUY_CLUSTER"})
-        assert refused.status_code == 400 and "US symbol" in refused.json()["detail"]
-        assert c.post("/api/v1/alerts/rules", json={"fund_code": "TMV", "market": "TR", "rule_type": "INSIDER_BUY_CLUSTER"}).status_code == 400
+        assert c.post("/api/v1/alerts/rules", json={"symbol": "ASELS", "market": "TR", "rule_type": "INSIDER_BUY_CLUSTER"}).status_code == 201
+        refused = c.post("/api/v1/alerts/rules", json={"fund_code": "TMV", "market": "TR", "rule_type": "INSIDER_BUY_CLUSTER"})
+        assert refused.status_code == 400 and "needs a symbol" in refused.json()["detail"]
     finally:
         app.dependency_overrides.clear()
 
@@ -778,14 +781,15 @@ def test_migration_creates_insider_tables_on_scratch_sqlite(tmp_path, monkeypatc
     insp = inspect(eng)
     assert {"insider_transactions", "sec_filings"} <= set(insp.get_table_names())
     assert {c["name"] for c in insp.get_columns("insider_transactions")} == {"id", "disclosure_id", "instrument_id", "insider_cik", "insider_name", "roles", "title", "transaction_date",
-                                                                            "filed_at", "code", "acquired", "shares", "price", "post_shares", "ownership", "derivative", "is_superseded", "confidence", "row_hash"}
+                                                                            "filed_at", "code", "acquired", "shares", "price", "post_shares", "ownership", "derivative", "is_superseded", "confidence", "row_hash",
+                                                                            "kap_disclosure_index", "party_kind", "post_pct_stake"}  # the last three: KAP insiders (b4c5d6e7f8a9, test_kap_insiders)
     assert {c["name"] for c in insp.get_columns("sec_filings")} == {"id", "instrument_id", "form", "filed_at", "period", "items", "accession", "primary_document", "url"}
     assert {"sec_cik", "sec_form4_fetched_at"} <= {c["name"] for c in insp.get_columns("instruments")}
     assert {"instrument_id", "accession"} in [set(u["column_names"]) for u in insp.get_unique_constraints("sec_filings")]
     assert {"row_hash"} in [set(u["column_names"]) for u in insp.get_unique_constraints("insider_transactions")]
     assert "ix_instruments_sec_cik" in {i["name"] for i in insp.get_indexes("instruments")}
     with eng.begin() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "a3b4c5d6e7f8"  # the current head (plans / portfolios / billing)
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "b4c5d6e7f8a9"  # the current head (KAP insiders: three columns on insider_transactions)
         conn.execute(text("INSERT INTO sec_filings (instrument_id, form, filed_at, accession, url) VALUES (1, '8-K', '2026-07-30', '0000320193-26-000018', 'u')"))
         with pytest.raises(Exception):  # noqa: B017 — the unique key, whatever the driver calls the violation
             conn.execute(text("INSERT INTO sec_filings (instrument_id, form, filed_at, accession, url) VALUES (1, '8-K', '2026-07-30', '0000320193-26-000018', 'u')"))

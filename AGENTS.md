@@ -24,6 +24,6 @@ about verifiers environments and does not apply to this repository.)
 - Frontend: `cd frontend && npm run build` must pass (`tsc` + Vite). Charts: never dual-axis; one series per panel.
 - Backend: `cd backend && uv sync && uv run pytest -q && uv run ruff check src tests`.
 - Keep tests network-free; the Claude engine is exercised through its tools, not live calls.
-- Fixtures under `backend/fixtures` are synthetic; keep the narrative the tests assert.
+- `backend/fixtures/kap/` is synthetic (keep the narrative the tests assert); `sec/` and `kap_public/` are real filings, reproduced verbatim (see `backend/fixtures/README.md`).
 - Money is `Decimal`, quantities are `int`; never `float` in the domain or engines.
 - Enums from `domain/enums.py` only; DB values are strings — compare with `==`, never `is`.
