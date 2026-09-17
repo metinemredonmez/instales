@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { api, type Market } from "@/lib/api"
-import { useAuth } from "@/lib/auth"
+import { hasFeature, useAuth } from "@/lib/auth"
 import { Section } from "@/components/layout/Section"
+import { PlanLockedInline, planName } from "@/components/domain/PlanGate"
 import { Button } from "@/components/ui/button"
 import { disablePush, enablePush, pushResultKey, pushState, pushSupported } from "@/lib/push"
 import { useI18n } from "@/lib/i18n"
@@ -26,11 +27,13 @@ export function NotifySettingsCard() {
   const ch = q.data?.channels
   const [push, setPush] = useState<"on" | "off" | "…">("…")
   const [pushMsg, setPushMsg] = useState("")
+  // A plan without `push` (while enforced) shows the lock instead of the switch; the server delivers nothing to it either way.
+  const pushLocked = !!user && !hasFeature(user, "push")
   useEffect(() => { pushState().then(setPush).catch(() => setPush("off")) }, [])
   // enablePush picks the one configured path (OneSignal or VAPID) — prompt, subscribe, done.
   const togglePush = async () => {
     if (push === "on") { await disablePush().catch(() => {}); setPush("off"); setPushMsg(""); return }
-    const r = await enablePush(user?.id).catch(() => "disabled" as const)
+    const r = await enablePush(user?.id, !pushLocked).catch(() => "disabled" as const)
     setPush(r === "ok" ? "on" : "off")
     setPushMsg(t(pushResultKey(r)))
   }
@@ -44,7 +47,11 @@ export function NotifySettingsCard() {
               <div className="font-medium">📱 {t("notify.push.title")}</div>
               <div className="text-[11px] text-muted-foreground">{t("notify.push.howto")} {!pushSupported() && t("notify.push.noHttps")}</div>
             </div>
-            <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? t("notify.push.turnOff") : t("notify.push.turnOn")}</Button>
+            {pushLocked && push !== "on" ? (
+              <PlanLockedInline text={t("plan.locked.push", { p: planName(t, "PRO") })} />
+            ) : (
+              <Button size="sm" variant={push === "on" ? "outline" : "default"} onClick={togglePush} disabled={push === "…"}>{push === "on" ? t("notify.push.turnOff") : t("notify.push.turnOn")}</Button>
+            )}
           </div>
           {pushMsg && <div className="mt-2 text-xs text-muted-foreground">{pushMsg}</div>}
           {pushTest.data && !pushTest.data.onesignal && pushTest.data.sent === 0 && <div className="mt-1 text-xs text-negative">{pushTest.data.onesignal_error ?? t("notify.push.testFailed")}</div>}

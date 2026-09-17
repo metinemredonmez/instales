@@ -110,6 +110,30 @@ class AuthTokenKind(StrEnum):
 
     RESET = "RESET"
     VERIFY = "VERIFY"
+    ORG_INVITE = "ORG_INVITE"  # organisation invitation; the token's user is the inviting owner
+
+
+class Plan(StrEnum):
+    """Subscription tiers (`users.plan`, `subscriptions.plan`, `organizations.plan`); the matrix is services/plans.FEATURES."""
+
+    FREE = "FREE"
+    PRO = "PRO"
+    PRO_PLUS = "PRO_PLUS"
+
+
+class SubscriptionStatus(StrEnum):
+    """`subscriptions.status`, one step away from the provider's vocabulary (services/billing maps Stripe's)."""
+
+    TRIALING = "TRIALING"
+    ACTIVE = "ACTIVE"
+    PAST_DUE = "PAST_DUE"  # a renewal failed; the plan stays until the provider gives up (CANCELED)
+    CANCELED = "CANCELED"
+    INCOMPLETE = "INCOMPLETE"  # not (yet) paid for: Stripe's incomplete / paused, an unpaid checkout — grants nothing
+
+
+class OrgRole(StrEnum):
+    OWNER = "OWNER"
+    MEMBER = "MEMBER"
 
 
 class DeliveryChannel(StrEnum):

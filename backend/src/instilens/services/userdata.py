@@ -6,7 +6,7 @@ import math
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from instilens.domain.enums import ScoreType
@@ -19,6 +19,7 @@ from instilens.domain.models import (
     Watchlist,
     WatchlistItem,
 )
+from instilens.services import plans
 from instilens.services.alerts import PRICE_RULES, RULE_TYPES
 from instilens.services.analytics import last_closes
 
@@ -77,6 +78,8 @@ def add_watchlist_item(session: Session, owner: str, market: str, symbol: str | 
     dup = session.scalar(select(WatchlistItem).where(WatchlistItem.watchlist_id == wl.id, WatchlistItem.instrument_id == (inst.id if inst else None), WatchlistItem.fund_id == (fund.id if fund else None)))
     if dup:
         return {"id": dup.id, "created": False}
+    # The plan's per-watchlist cap (services/plans; a no-op unless plans are enforced). Rows already above it stay.
+    plans.enforce_limit(session, owner, "watchlist_items", session.scalar(select(func.count(WatchlistItem.id)).where(WatchlistItem.watchlist_id == wl.id)) or 0)
     item = WatchlistItem(watchlist_id=wl.id, instrument_id=inst.id if inst else None, fund_id=fund.id if fund else None)
     session.add(item)
     session.flush()
@@ -124,6 +127,8 @@ def create_rule(session: Session, owner: str, market: str, rule_type: str, symbo
         # stock without a close yet starts today, so a later history backfill cannot fire it for past crossings.
         closes = last_closes(session, inst.id, date.today(), 1)
         params = {**(params or {}), "price": price, "since": (closes[0][0] if closes else date.today()).isoformat()}
+    # The plan's cap on active rules (soft-deleted ones do not count); a no-op unless plans are enforced.
+    plans.enforce_limit(session, owner, "alert_rules", session.scalar(select(func.count(AlertRule.id)).where(AlertRule.owner_id == owner, AlertRule.is_active.is_(True))) or 0)
     rule = AlertRule(owner_id=owner, instrument_id=inst.id if inst else None, fund_id=fund.id if fund else None, rule_type=rule_type, params=params or {})
     session.add(rule)
     session.flush()

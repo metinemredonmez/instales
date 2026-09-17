@@ -9,7 +9,14 @@ Rule types (params in AlertRule.params):
   FUND_ACTIVITY      the fund had NEW/EXIT moves in the latest period         (fund)
   INSIDER_BUY_CLUSTER  ≥3 insiders made open-market purchases in 30 days (US) (instrument)
   PRICE_ABOVE / PRICE_BELOW  the daily close crossed {price}                (instrument, explicit rules only)
+  PORTFOLIO_MOVE     funds moved on a symbol held in one of the owner's portfolios (implicit only, see below)
 Language is descriptive on purpose — never "buy"/"sell".
+
+PORTFOLIO_MOVE is never a stored rule: every (owner, held symbol) pair across the owner's portfolios
+(services/portfolio.held_instruments) is one transient rule per evaluate, only while the owner's plan includes
+portfolios (services/plans.allows). It fires once per (symbol, period_end) when the latest period's snapshot diffs
+show a NEW or EXIT cluster (≥ PORTFOLIO_MOVE_MIN_FUNDS funds, the breadth the cluster signals need) or that many
+funds increasing (NEW + ADD) or reducing (REDUCE + EXIT).
 
 Price rules read `market_prices` closes — daily bars; the header feed carries the market strip, not stocks, so an
 intraday crossing is seen at the next close. A rule fires on the close date that crossed the threshold (the previous
@@ -47,6 +54,8 @@ from instilens.services.analytics import last_closes
 
 PRICE_RULES = ("PRICE_ABOVE", "PRICE_BELOW")  # explicit rules with params {"price": number > 0, "since": date}; never implicit for a watched stock
 RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY", "INSIDER_BUY_CLUSTER", *PRICE_RULES}
+PORTFOLIO_MOVE = "PORTFOLIO_MOVE"  # implicit per held symbol; not in RULE_TYPES, so it cannot be created as an explicit rule
+PORTFOLIO_MOVE_MIN_FUNDS = 3  # = engine.signals.CLUSTER_MIN_FUNDS
 CURRENCY_SIGN = {"TRY": "₺", "USD": "$"}
 PRICE_LOOKBACK = 10  # closes a price rule walks per evaluate (two trading weeks): a crossing survives that many missed runs
 
@@ -61,6 +70,7 @@ def evaluate(session: Session, as_of: date) -> int:
     created = 0
     rules = list(session.scalars(select(AlertRule).where(AlertRule.is_active.is_(True))))
     rules += _watchlist_rules(session)
+    rules += _portfolio_rules(session)
     langs = {str(u.id): (u.lang if u.lang in ("tr", "en") else "tr") for u in session.scalars(select(User))}
     for rule in rules:
         for key, title, body, link in _fire(session, rule, as_of, langs.get(str(rule.owner_id), "tr")):
@@ -88,8 +98,30 @@ def _watchlist_rules(session: Session) -> list[AlertRule]:
     return out
 
 
+def _portfolio_rules(session: Session) -> list[AlertRule]:
+    """Holding a symbol in a portfolio means: tell me when the funds move on it. One transient rule per (owner,
+    symbol) whatever the number of portfolios it sits in; owners whose plan lacks portfolios get none."""
+    from instilens.services import plans
+    from instilens.services.portfolio import held_instruments
+
+    out: list[AlertRule] = []
+    allowed: dict[str, bool] = {}
+    for owner, instrument_id in held_instruments(session):
+        if owner not in allowed:
+            allowed[owner] = plans.allows(session, owner, "portfolio")
+        if not allowed[owner]:
+            continue
+        r = AlertRule(owner_id=owner, instrument_id=instrument_id, fund_id=None, rule_type=PORTFOLIO_MOVE, params={}, is_active=True)
+        r.id = -instrument_id  # transient; dedup keys become "pf:<instrument>:PORTFOLIO_MOVE:<period_end>"
+        out.append(r)
+    return out
+
+
 def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, link: str | None) -> bool:
-    dedup = (f"wl:{-rule.id}:{rule.rule_type}:{key}" if (rule.id or 0) < 0 else f"{rule.id}:{key}")[:160]
+    if (rule.id or 0) < 0:  # transient (watchlist item / portfolio holding): the prefix keeps the two id spaces apart
+        dedup = f"{'pf' if rule.rule_type == PORTFOLIO_MOVE else 'wl'}:{-rule.id}:{rule.rule_type}:{key}"[:160]
+    else:
+        dedup = f"{rule.id}:{key}"[:160]
     exists = session.scalar(select(Notification.id).where(Notification.owner_id == rule.owner_id, Notification.dedup_key == dedup))
     if exists:
         return False
@@ -193,6 +225,31 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
                 title = f"{inst.symbol}: kapanış {amount(close)} ile eşik {amount(threshold)} {'üzerinde' if above else 'altında'}"
                 body = f"kapanış tarihi {on} · önceki kapanış {amount(previous) if previous is not None else 'yok'}"
             yield (f"{on}", title, body, f"/stocks/{inst.symbol}")
+
+    elif t == PORTFOLIO_MOVE and inst:
+        latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.instrument_id == inst.id))
+        if latest is None:
+            return
+        rows = session.execute(
+            select(Fund.code, PositionChange.activity).join(PositionChange, PositionChange.fund_id == Fund.id)
+            .where(PositionChange.instrument_id == inst.id, PositionChange.period_end == latest)
+        ).all()
+        by = {a: sorted(c for c, act in rows if act == a) for a in (ActivityType.NEW, ActivityType.ADD, ActivityType.REDUCE, ActivityType.EXIT)}
+        new, exited = by[ActivityType.NEW], by[ActivityType.EXIT]
+        inc, red = new + by[ActivityType.ADD], by[ActivityType.REDUCE] + exited
+        if max(len(new), len(exited), len(inc), len(red)) < PORTFOLIO_MOVE_MIN_FUNDS:
+            return
+        codes = ", ".join(sorted(set(inc + red)))
+        reduced = by[ActivityType.REDUCE]  # trimmed but still holding; the title keeps them apart from the funds that left
+        if lang == "en":
+            words = [(len(inc), "increased"), (len(reduced), "reduced"), (len(exited), "exited")]
+            title = f"{inst.symbol} in your portfolio: {', '.join(f'{n} fund{'s' if n != 1 else ''} {w}' for n, w in words if n)} in the latest period"
+            body = f"period end {latest} · new {len(new)} · increased {len(inc) - len(new)} · reduced {len(reduced)} · exited {len(exited)} · {codes}"
+        else:
+            words = [(len(inc), "artırdı"), (len(reduced), "azalttı"), (len(exited), "çıktı")]
+            title = f"Portföyündeki {inst.symbol}: son dönemde {', '.join(f'{n} fon {w}' for n, w in words if n)}"
+            body = f"dönem sonu {latest} · yeni {len(new)} · artıran {len(inc) - len(new)} · azaltan {len(reduced)} · çıkan {len(exited)} · {codes}"
+        yield (f"{latest}", title, body, "/portfolio")
 
     elif t == "FUND_ACTIVITY" and fund:
         latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))

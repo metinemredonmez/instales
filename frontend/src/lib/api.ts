@@ -145,7 +145,14 @@ export interface InstitutionDetail {
 }
 export interface Freshness { source: string; cadence: string; last: string | null; delayed: boolean }
 export interface SignalPerf { by_type: { signal_type: SignalType; count: number; avg_ret_7d: number | null; avg_ret_30d: number | null; avg_ret_90d: number | null; avg_max_drawdown: number | null }[] }
-export interface AdminUser { id: number; email: string; name: string; plan: string; role: string; is_active: boolean; created_at: string; last_login_at: string | null }
+/**
+ * `plan` / `plan_source` ("stripe" | "manual", null on FREE) / `plan_until` (an admin grant's expiry) are the account's own
+ * row; `effective_plan` / `effective_source` what it actually gets (an organisation seat or an expired grant differ).
+ */
+export interface AdminUser {
+  id: number; email: string; name: string; plan: string; role: string; is_active: boolean; created_at: string; last_login_at: string | null
+  plan_source?: string | null; plan_until?: string | null; effective_plan?: string; effective_source?: string
+}
 export interface Review {
   instruments: { id: number; market: string; symbol: string; name: string }[]
   funds: { id: number; code: string; name: string; institution: string }[]
@@ -618,6 +625,100 @@ export interface Notification {
   read_at: string | null
 }
 
+/* ---------- plans, portfolios, organisations, billing (services/plans.py, portfolio.py, billing.py) ---------- */
+
+export type PlanCode = "FREE" | "PRO" | "PRO_PLUS"
+/** Where the effective plan comes from: the account's own subscription, an organisation seat, or an admin grant. */
+export type PlanSource = "own" | "org" | "manual"
+/**
+ * /auth/me `features` — the plan's matrix as the API resolves it for this account: a boolean for an on/off feature
+ * (portfolio, tts, push), a number for a cap (watchlist_items, alert_rules, ai_research_per_day…). The keys are the
+ * API's; the UI reads the ones it knows and shows the rest by name on the plan page. Missing altogether on an API
+ * that predates plans — then nothing is gated client-side and the 402 answer is the only signal.
+ */
+export type Features = Record<string, boolean | number>
+
+/** One of the user's portfolios; `positions` is the row count the list carries. `market` is the listing market — positions are priced in its `currency`. */
+export interface Portfolio { id: number; name: string; market: Market; currency: string; positions?: number; created_at: string }
+/**
+ * One held position with the institutional context the stock page shows: the latest stored close (null until the price
+ * job has a bar), the P&L against the FIFO / entered average cost (null without a cost), the weight over the priced
+ * positions, the three stored scores, the 30-day fund head-counts and — US symbols the Form 4 job has read — the
+ * insiders' 90-day net value (null elsewhere). `derived` marks a row rewritten from transactions: it cannot be edited
+ * by hand, only through another transaction.
+ */
+export interface PortfolioPosition {
+  id: number
+  symbol: string
+  name: string
+  derived: boolean
+  quantity: number
+  avg_cost: number | null
+  opened_at: string | null
+  note: string | null
+  last_close: number | null
+  close_date: string | null
+  market_value: number | null
+  cost_value: number | null
+  pnl_value: number | null
+  pnl_pct: number | null
+  weight_pct: number | null
+  smart_money_score: number | null
+  consensus_score: number | null
+  crowding_score: number | null
+  funds_increasing_30d: number
+  funds_reducing_30d: number
+  insiders_net_90d: number | null
+}
+/** Totals over the priced positions; `unpriced` counts the ones without a stored close (not in market_value). */
+export interface PortfolioTotals { market_value: number | null; cost_value: number | null; pnl_value: number | null; pnl_pct: number | null; unpriced?: number }
+export interface PortfolioTransaction { id: number; symbol: string; side: "BUY" | "SELL"; quantity: number; price: number; traded_at: string; fee: number | null; note: string | null; created_at?: string }
+export interface PortfolioDetail {
+  portfolio: Portfolio
+  /** Latest score date — the moves window ends here. */
+  as_of?: string
+  positions: PortfolioPosition[]
+  totals: PortfolioTotals
+  /** The funds' 30-day moves on the held symbols: the same rows as /moves, cut to the holdings, largest |net flow| first. */
+  moves: { window_days: number; window_start: string; rows: MoveRow[] }
+  /** Newest first; a symbol sold down to zero keeps its rows. */
+  transactions: PortfolioTransaction[]
+}
+
+/** INCOMPLETE = not paid for (an unpaid checkout, Stripe's incomplete / paused): recorded, grants nothing. The admin's grant note never travels here. */
+export type SubscriptionStatus = "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELED" | "INCOMPLETE"
+export const LIVE_STATUSES: readonly SubscriptionStatus[] = ["TRIALING", "ACTIVE", "PAST_DUE"]
+export interface Subscription {
+  id: number; plan: PlanCode; status: SubscriptionStatus; provider: "stripe" | "manual"
+  current_period_end: string | null; cancel_at_period_end: boolean; created_at?: string; updated_at?: string
+}
+/**
+ * A paid tier's recurring price as the provider states it; `amount` null while unknown (unconfigured, or Stripe
+ * unreachable). `tax_behavior` is the Price's own word on VAT: inclusive / exclusive, or unspecified (nothing is claimed).
+ */
+export interface PlanPrice { id: string; amount: number | null; currency: string; interval: string | null; tax_behavior?: "inclusive" | "exclusive" | "unspecified" | null }
+/** /billing/plans — the matrix with the prices; `configured` false = Stripe keys / price ids missing (checkout answers 503). */
+export interface PlanInfo { code: PlanCode; price: PlanPrice | null; features: Features }
+export interface BillingPlans { configured: boolean; currency: string; plans: PlanInfo[]; features?: string[]; provider?: string; plans_enforced?: boolean }
+/** /billing/me — the effective plan, where it comes from, the subscription row behind it and the organisation seat if any. */
+export interface BillingMe {
+  plan: PlanCode
+  source: PlanSource
+  plan_source?: PlanSource
+  own_plan?: PlanCode
+  plan_until?: string | null
+  features?: Features
+  plans_enforced?: boolean
+  subscription: Subscription | null
+  org?: { id: number; name: string; plan: PlanCode; owner: boolean } | null
+  configured?: boolean
+  provider?: string
+}
+
+/** A seat: the invited address, the account behind it once accepted (`user_id`, `accepted_at`), `pending` until then. */
+export interface OrgMember { id: number; role: "OWNER" | "MEMBER"; email: string; name: string | null; user_id: number | null; accepted_at: string | null; pending: boolean; invited_at?: string }
+export interface Org { id: number; name: string; plan: PlanCode; seats: number; seats_used: number; owner_user_id: number; is_owner: boolean; created_at: string; members: OrgMember[] }
+
 // Web dev: Vite proxies /api → :8000. Desktop/mobile bundles set VITE_API_BASE to the hosted API.
 const BASE = `${import.meta.env.VITE_API_BASE ?? ""}/api/v1`
 
@@ -628,12 +729,65 @@ function authHeaders(): Record<string, string> {
   return t ? { authorization: `Bearer ${t}` } : {}
 }
 
+/**
+ * Every non-2xx answer. The message keeps its "<status> <body>" shape (pages match on `/^404\b/`), `status` and the
+ * parsed `detail` are there for code that wants to branch without reading the text.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly detail: unknown
+  constructor(status: number, detail: unknown, message: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.detail = detail
+  }
+}
+/**
+ * 402 {"detail": "plan_limit", feature, plan, limit, upgrade}: the account's plan does not include `feature`, or it hit
+ * the plan's cap for it (`limit`). `upgrade` names the cheapest plan that lifts it. Thrown for the caller to render
+ * inline (PlanGate's locked card) and announced on `instilens:plan-limit` for the global toast, so a page that does not
+ * handle it still shows the reason and the way to /plan instead of a bare error.
+ */
+export class PlanLimitError extends ApiError {
+  readonly feature: string
+  readonly plan: PlanCode | string
+  readonly limit: number | null
+  readonly upgrade: PlanCode
+  constructor(body: { detail?: unknown; feature?: unknown; plan?: unknown; limit?: unknown; upgrade?: unknown }) {
+    super(402, body, "402 plan_limit")
+    this.name = "PlanLimitError"
+    this.feature = typeof body.feature === "string" ? body.feature : ""
+    this.plan = typeof body.plan === "string" ? body.plan : "FREE"
+    this.limit = typeof body.limit === "number" ? body.limit : null
+    this.upgrade = body.upgrade === "PRO_PLUS" ? "PRO_PLUS" : "PRO"
+  }
+}
+export const isPlanLimit = (e: unknown): e is PlanLimitError => e instanceof PlanLimitError
+/** 503 from the billing routes: Stripe is not configured on this deployment — the UI shows "payments not open yet", never a checkout. */
+export const isNotConfigured = (e: unknown): boolean => e instanceof ApiError && e.status === 503
+
 async function handle<T>(res: Response): Promise<T> {
   if (res.status === 401) {
     window.dispatchEvent(new Event("instilens:unauthorized"))
     throw new Error("Oturum süresi doldu")
   }
-  if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => res.statusText)}`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    let body: Record<string, unknown> = {}
+    try { const j: unknown = JSON.parse(text); if (j && typeof j === "object") body = j as Record<string, unknown> } catch { /* not JSON */ }
+    if (res.status === 402) {
+      // {"detail": "plan_limit", feature, plan, limit, upgrade} — or the same fields nested under `detail` (HTTPException(detail={...})).
+      const nested = body.detail && typeof body.detail === "object" ? (body.detail as Record<string, unknown>) : null
+      const fields = nested ?? body
+      if (fields.detail === "plan_limit" || fields.feature !== undefined) {
+        const err = new PlanLimitError(fields)
+        window.dispatchEvent(new CustomEvent("instilens:plan-limit", { detail: err }))
+        throw err
+      }
+    }
+    throw new ApiError(res.status, "detail" in body ? body.detail : text, `${res.status} ${text}`)
+  }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
@@ -690,7 +844,8 @@ export const api = {
   freshness: (market: Market) => get<Freshness[]>("/freshness", { market }),
   signalPerformance: (market: Market) => get<SignalPerf>("/signals/performance", { market }),
   adminUsers: () => get<AdminUser[]>("/admin/users"),
-  adminPatchUser: (id: number, body: Partial<Pick<AdminUser, "plan" | "role" | "is_active">>) => send<AdminUser>("PATCH", `/admin/users/${id}`, body),
+  /** `plan_until` (ISO date | null) dates an admin-granted plan; sent only when the admin edits it. */
+  adminPatchUser: (id: number, body: Partial<Pick<AdminUser, "plan" | "role" | "is_active" | "plan_until">>) => send<AdminUser>("PATCH", `/admin/users/${id}`, body),
   adminReview: () => get<Review>("/admin/review"),
   adminVerify: (body: { kind: "instrument" | "fund" | "institution"; id: number; name?: string }) => send<{ ok: boolean }>("POST", "/admin/review/verify", body),
   adminComputeOutcomes: () => send<{ updated: number }>("POST", "/admin/outcomes/compute"),
@@ -740,4 +895,32 @@ export const api = {
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
   eventStreamUrl: (market: Market, ticket: string, after?: number | null) => `${BASE}/events/stream?market=${market}&ticket=${encodeURIComponent(ticket)}${after != null ? `&after=${after}` : ""}`,
+  // Portfolios (plan-gated: 402 plan_limit when the plan has none left / the position cap is reached).
+  portfolios: () => get<Portfolio[]>("/portfolios"),
+  createPortfolio: (body: { name: string; market: Market }) => send<Portfolio>("POST", "/portfolios", body),
+  renamePortfolio: (id: number, name: string) => send<Portfolio>("PATCH", `/portfolios/${id}`, { name }),
+  deletePortfolio: (id: number) => send<void>("DELETE", `/portfolios/${id}`),
+  portfolio: (id: number) => get<PortfolioDetail>(`/portfolios/${id}`),
+  /** Upsert by symbol (one row per portfolio × instrument); avg_cost null = quantity only, no P&L. Refused (409) for a derived row. */
+  upsertPosition: (id: number, body: { symbol: string; quantity: number; avg_cost?: number | null; opened_at?: string | null; note?: string | null }) => send<PortfolioPosition>("PUT", `/portfolios/${id}/positions`, body),
+  deletePosition: (id: number, positionId: number) => send<void>("DELETE", `/portfolios/${id}/positions/${positionId}`),
+  addTransaction: (id: number, body: { symbol: string; side: "BUY" | "SELL"; quantity: number; price: number; traded_at: string; fee?: number | null; note?: string | null }) => send<PortfolioTransaction>("POST", `/portfolios/${id}/transactions`, body),
+  deleteTransaction: (id: number, txId: number) => send<void>("DELETE", `/portfolios/${id}/transactions/${txId}`),
+  // Billing (Stripe Checkout / Billing Portal; 503 "payments not configured" until the keys and price ids are set).
+  billingPlans: () => get<BillingPlans>("/billing/plans"),
+  /** 409 "subscription_exists" while a paid subscription is live: the change goes through the portal's subscription_update flow. */
+  billingCheckout: (plan: PlanCode) => send<{ url: string }>("POST", "/billing/checkout", { plan }),
+  /** Plain: the Billing Portal home. `subscription_update`: the portal opened on the plan picker of the live subscription. */
+  billingPortal: (flow?: "subscription_update") => send<{ url: string }>("POST", "/billing/portal", flow ? { flow } : undefined),
+  billingMe: () => get<BillingMe>("/billing/me"),
+  // Organisation (PRO_PLUS seats): the caller's org, or null when they are in none.
+  org: () => get<Org | null>("/org"),
+  createOrg: (name: string) => send<Org>("POST", "/org", { name }),
+  deleteOrg: () => send<void>("DELETE", "/org"),
+  /** The seat is reserved either way; `sent` false = SMTP is not configured on this deployment, the link never left. */
+  orgInvite: (email: string) => send<{ member_id: number; email: string; sent: boolean; org: Org }>("POST", "/org/invite", { email }),
+  /** The mailed link's token; the signed-in account must be the invited (verified) address — 400 bad link, 409 with the reason otherwise. */
+  orgAccept: (token: string) => send<Org>("POST", "/org/accept", { token }),
+  /** The owner drops any seat; a member may pass their own row to leave. */
+  orgRemoveMember: (memberId: number) => send<void>("DELETE", `/org/members/${memberId}`),
 }

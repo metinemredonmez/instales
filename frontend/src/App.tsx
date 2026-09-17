@@ -1,6 +1,7 @@
 import { Route, Routes, useLocation } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { NowSpeaking } from "@/components/domain/NowSpeaking"
+import { PlanLimitToast } from "@/components/domain/PlanGate"
 import { RadarPage } from "@/pages/RadarPage"
 import { StockPage } from "@/pages/StockPage"
 import { FundPage } from "@/pages/FundPage"
@@ -11,6 +12,9 @@ import { ResearchPage } from "@/pages/ResearchPage"
 import { SearchPage } from "@/pages/SearchPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { WatchlistPage } from "@/pages/WatchlistPage"
+import { PortfolioPage } from "@/pages/PortfolioPage"
+import { PlanPage } from "@/pages/PlanPage"
+import { OrgAcceptPage } from "@/pages/OrgAcceptPage"
 import { AlertsPage } from "@/pages/AlertsPage"
 import { InstitutionPage, InstitutionsPage } from "@/pages/InstitutionsPage"
 import { ComparePage } from "@/pages/ComparePage"
@@ -67,6 +71,11 @@ export default function App() {
         {/* No sidebar entry: reached from the header box / ⌘K "search the texts" row */}
         <Route path="/search" element={<SearchPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
+        <Route path="/portfolio" element={<PortfolioPage />} />
+        {/* No sidebar entry: reached from the profile menu's plan label, the settings plan card and every locked card */}
+        <Route path="/plan" element={<PlanPage />} />
+        {/* The invitation mail's link; signed out it shows the login page first and keeps the token in the address */}
+        <Route path="/org/accept" element={<OrgAcceptPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/institutions" element={<InstitutionsPage />} />
@@ -85,6 +94,8 @@ export default function App() {
       </Routes>
       {/* Narration widget: global so a note keeps reading while the user moves between pages */}
       <NowSpeaking />
+      {/* 402 plan_limit answers from any page: the reason and the way to /plan, instead of a bare error */}
+      <PlanLimitToast />
     </AppShell>
   )
 }

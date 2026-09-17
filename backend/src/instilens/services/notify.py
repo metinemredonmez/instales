@@ -181,7 +181,13 @@ def onesignal_configured() -> bool:
 
 def push_user(session: Session, owner_id: str, title: str, body: str, link: str) -> str | None:
     """One push path per user: OneSignal when it is configured (and reaches the user), otherwise VAPID.
-    Never both, so a phone with both registrations does not buzz twice. Returns the channel that delivered."""
+    Never both, so a phone with both registrations does not buzz twice. Returns the channel that delivered.
+    A plan without `push` (services/plans, while enforced) gets none on either path — a device registered
+    earlier, or straight with OneSignal, follows the plan like a new one."""
+    from instilens.services import plans
+
+    if not plans.allows(session, owner_id, "push"):
+        return None
     if onesignal_configured() and send_onesignal(owner_id, title, body, link):
         return DeliveryChannel.ONESIGNAL.value
     if send_push(session, owner_id, title, body, link) > 0:

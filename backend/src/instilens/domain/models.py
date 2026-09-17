@@ -413,7 +413,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     name: Mapped[str] = mapped_column(String(128))
-    plan: Mapped[str] = mapped_column(String(16), default="FREE")  # FREE / PRO / PRO_PLUS
+    plan: Mapped[str] = mapped_column(String(16), default="FREE")  # FREE / PRO / PRO_PLUS (domain.enums.Plan) — the account's own plan
+    # Where the own plan came from: "stripe" (a paid subscription) or "manual" (admin-granted); NULL on FREE. A manual
+    # grant may carry `plan_until`, after which the account reads as FREE (services/plans.own_plan) — nothing rewrites
+    # the row. The plan a user actually gets can be higher through an organisation (services/plans.effective_plan).
+    plan_source: Mapped[str | None] = mapped_column(String(8))
+    plan_until: Mapped[date | None] = mapped_column(Date)
     role: Mapped[str] = mapped_column(String(16), default="USER")  # USER / ADMIN
     # Delivery preferences for alerts and the morning brief.
     notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -442,6 +447,9 @@ class AuthToken(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # What the token is about beyond its user, when its kind needs it: an ORG_INVITE names its org_members row, so a
+    # link only ever accepts the seat it was mailed for (services/org.accept).
+    subject: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
@@ -549,6 +557,134 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime)  # sent via email/telegram
+
+
+# --------------------------------------------------------------------------- user portfolios (Faz 6)
+
+
+class Portfolio(Base):
+    """A user's own holdings in one market (services/portfolio). Positions are the user's numbers, never a fund's;
+    what the platform adds at read time (closes, scores, the funds' 30-day moves on the held symbols) is read from
+    the fact tables and not stored here. `currency` is the market's."""
+
+    __tablename__ = "portfolios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"))
+    currency: Mapped[str] = mapped_column(String(8))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class PortfolioPosition(Base):
+    """One held instrument of a portfolio. Entered directly (quantity, optional average cost) or, once the instrument
+    has `portfolio_transactions`, rewritten from them — quantity and FIFO average cost of the lots still held
+    (services/portfolio.fifo) — after every transaction change; a position sold down to zero is removed."""
+
+    __tablename__ = "portfolio_positions"
+    __table_args__ = (UniqueConstraint("portfolio_id", "instrument_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), index=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 4))  # fractional shares exist (US brokers)
+    avg_cost: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))  # per share, in the portfolio currency; NULL = not stated
+    opened_at: Mapped[date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(String(256))
+
+
+class PortfolioTransaction(Base):
+    """One buy or sell the user recorded. `fee` (optional) enters a buy's cost basis and reduces a sale's proceeds."""
+
+    __tablename__ = "portfolio_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), index=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    side: Mapped[str] = mapped_column(String(4))  # BUY / SELL (domain.enums.Side)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    traded_at: Mapped[date] = mapped_column(Date)
+    fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    note: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+# --------------------------------------------------------------------------- organisations, plans and billing (Faz 6)
+
+
+class Organization(Base):
+    """A team sharing one plan (services/org). `plan` and `seats` mirror the owner's own plan as last read — the
+    plan members inherit is resolved live from the owner (services/plans.org_plan), so an expiry needs no event."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)  # one organisation per owner
+    plan: Mapped[str] = mapped_column(String(16), default="FREE")
+    seats: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class OrgMember(Base):
+    """Membership, pending or accepted. An invitation is a row with `invited_email` and no `user_id`; the e-mailed
+    ORG_INVITE token (auth_tokens, issued to the owner) turns it into a membership for the account with that
+    address — `accepted_at` set, `user_id` filled. The owner is a row too (role OWNER, accepted on creation)."""
+
+    __tablename__ = "org_members"
+    __table_args__ = (UniqueConstraint("org_id", "invited_email"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(8), default="MEMBER")  # domain.enums.OrgRole
+    invited_email: Mapped[str] = mapped_column(String(254))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class Subscription(Base):
+    """One plan grant and where it came from (services/billing): a Stripe subscription (`provider` stripe, the
+    provider's customer and subscription ids, the period the provider reports) or an admin grant (`provider` manual,
+    `note` says why, `current_period_end` its expiry if any). Belongs to a user or to an organisation. Rows are
+    never deleted: a replaced or ended grant is CANCELED and stays for the audit trail. One row per provider
+    subscription id, so two workers handling the same subscription's events cannot each insert one."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (UniqueConstraint("provider", "provider_subscription_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    org_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), index=True)
+    plan: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # domain.enums.SubscriptionStatus
+    provider: Mapped[str] = mapped_column(String(16))  # stripe / manual
+    provider_customer_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(String(256))
+    # `created` of the newest provider event applied to this row: webhooks are not delivered in order, so an older
+    # event that arrives later is skipped rather than re-activating a subscription the provider has since ended.
+    provider_event_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class ProcessedWebhook(Base):
+    """Every payment-provider event applied once (services/billing.apply_event): a redelivery of the same event id
+    is acknowledged and changes nothing."""
+
+    __tablename__ = "processed_webhooks"
+    __table_args__ = (UniqueConstraint("provider", "event_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    event_id: Mapped[str] = mapped_column(String(64))
+    event_type: Mapped[str] = mapped_column(String(64))
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # --------------------------------------------------------------------------- news (headlines only)

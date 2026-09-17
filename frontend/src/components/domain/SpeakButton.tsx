@@ -1,18 +1,24 @@
 import { useQuery } from "@tanstack/react-query"
 import { Loader2, Pause, Volume2 } from "lucide-react"
 import { api } from "@/lib/api"
+import { hasFeature, useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 import { tts, useTts } from "@/lib/tts"
+import { PlanLockedInline, planName } from "./PlanGate"
 import { VoicePicker } from "./VoicePicker"
 
 /**
  * Read an AI note aloud. Server TTS (ElevenLabs/OpenAI) when configured — and then we do NOT silently fall back
  * to the browser voice on failure, we show the error so a bad key is visible. Browser voice only when no provider.
  * Playback state lives in lib/tts (shared with the NowSpeaking widget), so the note keeps playing across pages.
+ * A plan without `tts` (while plans are enforced) gets the locked control instead: the audio route would answer
+ * 402 on the <audio> element, which reads as a media error and would blame the server key.
  */
 export function SpeakButton({ noteId, title, text, lang }: { noteId: number; title: string; text: string; lang: "tr" | "en" }) {
   const { t } = useI18n()
-  const status = useQuery({ queryKey: ["tts-status"], queryFn: api.ttsStatus, staleTime: 600_000 })
+  const { user } = useAuth()
+  const locked = !!user && !hasFeature(user, "tts")
+  const status = useQuery({ queryKey: ["tts-status"], queryFn: api.ttsStatus, staleTime: 600_000, enabled: !locked })
   const s = useTts()
   const mine = s.noteId === noteId
   const loading = mine && s.status === "preparing"
@@ -24,6 +30,7 @@ export function SpeakButton({ noteId, title, text, lang }: { noteId: number; tit
     if (loading || playing) return tts.stop()
     tts.play({ noteId, title, text, lang, provider, errorMessage: (p) => t("tts.serverError", { p }) })
   }
+  if (locked) return <PlanLockedInline text={t("plan.locked.tts", { p: planName(t, "PRO") })} />
   return (
     <span className="inline-flex items-center gap-1">
       <VoicePicker lang={lang} compact />

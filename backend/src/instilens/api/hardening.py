@@ -50,6 +50,10 @@ RATE_LIMITED_PATHS: dict[str, tuple[int | None, int]] = {  # None = settings.aut
     "/api/v1/me/settings/test": (3, 60),
     "/api/v1/alerts/evaluate": (3, 60),
     "/api/v1/push/test": (3, 60),
+    "/api/v1/org/invite": (20, 300),  # sends mail; a team owner may seat ten people in one sitting
+    "/api/v1/org/accept": (10, 200),  # single-use token guessing
+    "/api/v1/billing/checkout": (10, 300),  # each call creates a provider-side session
+    "/api/v1/billing/portal": (10, 300),
 }
 
 # ---------------------------------------------------------------- shared counter store (database)

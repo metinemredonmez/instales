@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, get_args
@@ -481,12 +482,13 @@ def moves(session: Session, market: str, *, kind: str, window_days: int | None =
     }
 
 
-def _window_activity(session: Session, market: str, start: date, as_of: date, *, fund: Fund | None = None) -> dict[int, dict]:
+def _window_activity(session: Session, market: str, start: date, as_of: date, *, fund: Fund | None = None, instrument_ids: Iterable[int] | None = None) -> dict[int, dict]:
     """The window's moves per instrument: snapshot diffs whose `period_end` falls in (start, as_of] and the
     transaction events the de-dup law lets through (an event counts only after the latest snapshot known on
     `as_of`). With `fund`: only that fund's diffs and its EXACT events — a GROUPED amount cannot be attributed
-    to one fund. Each entry carries the Instrument row and every event's value (`event_value`, priced once here)
-    too, so callers need no further queries. Rows come in id order so folding is repeatable across requests."""
+    to one fund. With `instrument_ids`: only those instruments (a portfolio's holdings). Each entry carries the
+    Instrument row and every event's value (`event_value`, priced once here) too, so callers need no further
+    queries. Rows come in id order so folding is repeatable across requests."""
     from instilens.services.pipeline import _event_is_uncovered, latest_snapshot_as_of
 
     changes = (
@@ -505,6 +507,12 @@ def _window_activity(session: Session, market: str, start: date, as_of: date, *,
     if fund is not None:
         changes = changes.where(PositionChange.fund_id == fund.id)
         events = events.where(TransactionEvent.confidence == Confidence.EXACT, TransactionEvent.funds.any(fund_id=fund.id))
+    if instrument_ids is not None:
+        ids = list(instrument_ids)
+        if not ids:
+            return {}
+        changes = changes.where(PositionChange.instrument_id.in_(ids))
+        events = events.where(TransactionEvent.instrument_id.in_(ids))
     out: dict[int, dict] = defaultdict(lambda: {"changes": [], "events": [], "values": {}})
     for c in session.scalars(changes):
         out[c.instrument_id]["changes"].append(c)

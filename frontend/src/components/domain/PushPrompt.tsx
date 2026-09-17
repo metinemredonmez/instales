@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { BellRing, X } from "lucide-react"
-import { useAuth } from "@/lib/auth"
+import { hasFeature, useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 import { dismissPushPrompt, enablePush, pushPromptDue, pushResultKey } from "@/lib/push"
 import { Button } from "@/components/ui/button"
@@ -16,7 +16,7 @@ export function PushPrompt() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   useEffect(() => {
-    if (!user) { setOpen(false); return }
+    if (!user || !hasFeature(user, "push")) { setOpen(false); return }  // not in the plan: nothing to offer
     let alive = true
     // Let the dashboard paint first; the question lands once the person has seen what they signed in to.
     const timer = window.setTimeout(() => { pushPromptDue().then((due) => { if (alive) setOpen(due) }).catch(() => {}) }, 2500)
@@ -26,7 +26,7 @@ export function PushPrompt() {
   const later = () => { dismissPushPrompt(); setOpen(false) }
   const enable = async () => {
     setBusy(true)
-    const r = await enablePush(user.id).catch(() => "disabled" as const)
+    const r = await enablePush(user.id, hasFeature(user, "push")).catch(() => "disabled" as const)
     setBusy(false)
     setMsg({ text: t(pushResultKey(r)), ok: r === "ok" })
     if (r === "ok") window.setTimeout(() => setOpen(false), 2500)

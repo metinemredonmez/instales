@@ -25,6 +25,7 @@ log = logging.getLogger("instilens.settings")
 # key → (type, group, min, max). Types: bool | int | str | list[str] | choice:<a|b>
 EDITABLE: dict[str, dict[str, Any]] = {
     "allow_registration": {"type": "bool", "group": "access"},
+    "plans_enforced": {"type": "bool", "group": "access"},  # plan gating (402 + caps, services/plans); off = every account works as before
     "account_lockout_attempts": {"type": "int", "group": "access", "min": 3, "max": 50},
     "account_lockout_minutes": {"type": "int", "group": "access", "min": 1, "max": 1440},
     "auth_rate_limit_per_minute": {"type": "int", "group": "access", "min": 3, "max": 100},

@@ -21,7 +21,7 @@ from instilens.api.deps import current_user, get_session
 from instilens.api.hardening import client_ip
 from instilens.config import settings
 from instilens.domain.models import User
-from instilens.services import auth
+from instilens.services import auth, plans
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -180,8 +180,11 @@ def mfa_disable(body: MfaCode, request: Request, user: User = Depends(current_us
 
 
 @router.get("/me")
-def me(user: User = Depends(current_user)):
-    return auth.public_user(user)
+def me(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """The account plus its plan block (services/plans.me_payload): `plan` is the plan in effect (own or inherited
+    from an organisation), `own_plan` the account's own, `features` the matrix that applies, `plans_enforced` the
+    switch — so the UI can show limits whether or not they are enforced yet."""
+    return {**auth.public_user(user), **plans.me_payload(session, user)}
 
 
 @router.post("/password")

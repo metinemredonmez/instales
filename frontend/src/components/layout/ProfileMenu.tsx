@@ -72,7 +72,8 @@ export function ProfileMenu() {
           <div className="px-2.5 pb-2 pt-1.5 leading-tight">
             <div className="truncate text-sm font-medium">{user?.name}</div>
             <div className="truncate text-xs text-muted-foreground">{user?.email}</div>
-            <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">{plan}</div>
+            {/* The plan label opens /plan: matrix, upgrade, billing portal. */}
+            <NavLink to="/plan" onClick={() => setOpen(false)} title={t("nav.plan")} className="mt-1 inline-block text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:underline">{plan}</NavLink>
             {user?.email_verified === false && (
               <NavLink to="/settings" onClick={() => setOpen(false)} className="mt-1.5 flex items-center gap-1 text-[11px] text-warning hover:underline" title={t("account.unverified")}>
                 <MailWarning className="size-3" /> {t("account.unverified")}

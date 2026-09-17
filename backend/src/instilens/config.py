@@ -76,6 +76,25 @@ class Settings(BaseSettings):
     breached_password_check: bool = True  # NIST 800-63B-4: reject passwords seen in breaches (HIBP k-anonymity)
     ai_requests_per_hour: int = 30  # per user: /research and forced AI refreshes (paid calls)
 
+    # Plans (services/plans). Every account has a plan (FREE by default) and /auth/me always reports its feature
+    # matrix, but nothing is gated — no 402, no caps — until plans_enforced is on (admin-editable at runtime), so
+    # existing users keep working while billing is being set up. ADMIN accounts are never gated.
+    plans_enforced: bool = False
+    # Billing (services/billing): Stripe through the official SDK only. Checkout / portal answer 503 "payments not
+    # configured" until all four keys are set; the webhook needs the signing secret (`stripe listen` in dev). Price
+    # ids are the recurring prices of the PRO and PRO_PLUS products in the Stripe dashboard; billing_currency is the
+    # currency those prices are in (reported to the UI, never used to make up an amount).
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    stripe_price_pro: str | None = None
+    stripe_price_pro_plus: str | None = None
+    billing_currency: str = "usd"
+    # Consumer-facing checkout: automatic_tax needs Stripe Tax enabled on the account and terms consent needs the
+    # Terms of Service URL set in the dashboard's public details — Stripe refuses the Checkout Session otherwise, so
+    # each is opt-in here rather than assumed. The tax status shown next to a price is the Price's own tax_behavior.
+    stripe_automatic_tax: bool = False
+    stripe_terms_consent: bool = False
+
     # Desktop releases (Tauri). Installers live on this disk; CI/scripts upload with the key; the app's
     # updater verifies the minisign signature made with TAURI_SIGNING_PRIVATE_KEY at build time.
     releases_dir: Path = BACKEND_ROOT / "media" / "releases"

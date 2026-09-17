@@ -159,8 +159,15 @@ def issue_email_token(session: Session, user: User, kind: str, ttl: timedelta) -
     now = datetime.now(UTC)
     for old in session.scalars(select(AuthToken).where(AuthToken.user_id == user.id, AuthToken.kind == kind, AuthToken.used_at.is_(None))):
         old.used_at = now
+    return mint_token(session, user, kind, ttl)
+
+
+def mint_token(session: Session, user: User, kind: str, ttl: timedelta, subject: str | None = None) -> str:
+    """A one-shot token for `user` that leaves earlier live tokens of the kind alone — an organisation owner has one
+    open ORG_INVITE link per invitee (services/org); reset and verify links go through issue_email_token. `subject`
+    ties the token to one thing (the invitation row), so it cannot be spent on another."""
     token = secrets.token_urlsafe(32)
-    session.add(AuthToken(kind=kind, token_hash=_token_hash(token), user_id=user.id, expires_at=now + ttl))
+    session.add(AuthToken(kind=kind, token_hash=_token_hash(token), user_id=user.id, expires_at=datetime.now(UTC) + ttl, subject=subject))
     session.flush()
     return token
 
@@ -181,6 +188,12 @@ def consume_email_token(session: Session, kind: str, token: str) -> User:
     row, user = _live_token(session, kind, token)
     row.used_at = datetime.now(UTC)
     return user
+
+
+def peek_token(session: Session, kind: str, token: str) -> tuple[AuthToken, User]:
+    """Validate without burning: the caller sets `used_at` once its own checks pass (an organisation invitation is
+    only consumed by the invited address, services/org.accept)."""
+    return _live_token(session, kind, token)
 
 
 def _mail(user: User, subject_tr: str, subject_en: str, body_tr: str, body_en: str) -> bool:

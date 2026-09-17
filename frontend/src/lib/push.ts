@@ -1,4 +1,4 @@
-import { api } from "./api"
+import { api, isPlanLimit } from "./api"
 import type { Key } from "@/i18n/tr"
 import { evictForeignWorker, loadOneSignal, oneSignalCall, oneSignalExternalId, waitFor } from "./onesignal"
 
@@ -27,11 +27,16 @@ export async function registerSw() {
   return navigator.serviceWorker.register("/sw.js")
 }
 
-/** Ask permission and subscribe this device (OneSignal or VAPID, per the server's configuration). */
-export type PushEnableResult = "ok" | "denied" | "unsupported" | "disabled" | "sdk" | "nouser"
+/**
+ * Ask permission and subscribe this device (OneSignal or VAPID, per the server's configuration). `allowed` is the
+ * account's plan matrix for `push` (lib/auth.hasFeature): a plan without it stops here, before any browser prompt —
+ * the OneSignal path never touches our API, so nothing else would gate it. "plan" = not in the plan.
+ */
+export type PushEnableResult = "ok" | "denied" | "unsupported" | "disabled" | "sdk" | "nouser" | "plan"
 
-export async function enablePush(userId?: number | null): Promise<PushEnableResult> {
+export async function enablePush(userId?: number | null, allowed = true): Promise<PushEnableResult> {
   if (!pushSupported()) return "unsupported"
+  if (!allowed) return "plan"
   const { mode, appId, publicKey } = await pushMode()
   if (mode === "onesignal" && appId) {
     loadOneSignal(appId)
@@ -54,7 +59,13 @@ export async function enablePush(userId?: number | null): Promise<PushEnableResu
   const perm = await Notification.requestPermission()
   if (perm !== "granted") return "denied"
   const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToUint8(publicKey) }))
-  await api.pushSubscribe(sub.toJSON(), navigator.userAgent.slice(0, 200))
+  try {
+    await api.pushSubscribe(sub.toJSON(), navigator.userAgent.slice(0, 200))
+  } catch (e) {
+    // 402 plan_limit: the server will not deliver to this device, so the browser subscription must not read as "on".
+    if (isPlanLimit(e)) { await sub.unsubscribe().catch(() => false); return "plan" }
+    throw e
+  }
   return "ok"
 }
 
@@ -85,7 +96,7 @@ export async function pushState(): Promise<"on" | "off"> {
 
 /** i18n key for an enablePush outcome — shared by the settings card and the login-time prompt. */
 export const pushResultKey = (r: PushEnableResult): Key =>
-  r === "ok" ? "notify.push.on" : r === "denied" ? "notify.push.denied" : r === "unsupported" ? "notify.push.unsupported" : r === "sdk" ? "notify.push.sdk" : r === "nouser" ? "notify.push.noUser" : "notify.push.noKey"
+  r === "ok" ? "notify.push.on" : r === "denied" ? "notify.push.denied" : r === "unsupported" ? "notify.push.unsupported" : r === "sdk" ? "notify.push.sdk" : r === "nouser" ? "notify.push.noUser" : r === "plan" ? "notify.push.plan" : "notify.push.noKey"
 
 // ---------------------------------------------------------------- login-time prompt
 // Push is per device, so the "asked already" record lives in this browser; a dismissal snoozes for a week, and

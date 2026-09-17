@@ -11,10 +11,15 @@ from instilens.api.hardening import (
 )
 from instilens.api.routes.admin import router as admin_router
 from instilens.api.routes.auth import router as auth_router
+from instilens.api.routes.billing import router as billing_router
+from instilens.api.routes.billing import webhook_router as billing_webhook_router
+from instilens.api.routes.org import router as org_router
+from instilens.api.routes.portfolio import router as portfolio_router
 from instilens.api.routes.public import router as public_router
 from instilens.api.routes.userdata import router as userdata_router
 from instilens.api.routes.v1 import router, ticket_router
 from instilens.config import settings
+from instilens.services.plans import PlanLimit
 
 _prod = settings.environment == "production"
 app = FastAPI(
@@ -39,8 +44,20 @@ app.include_router(auth_router)
 app.include_router(router)
 app.include_router(ticket_router)
 app.include_router(userdata_router)
+app.include_router(portfolio_router)
+app.include_router(org_router)
+app.include_router(billing_router)
+app.include_router(billing_webhook_router)
 app.include_router(admin_router)
 app.include_router(public_router)
+
+
+@app.exception_handler(PlanLimit)
+def _plan_limit(_request: Request, exc: PlanLimit) -> JSONResponse:
+    """A gated feature or an exhausted cap (services/plans), wherever it was raised — a route dependency or a
+    service — answers 402 with one shape the SPA turns into the upgrade prompt: {"detail": "plan_limit", "feature",
+    "plan", "limit", "upgrade"}."""
+    return JSONResponse(exc.detail(), status_code=402)
 
 
 @app.exception_handler(AiUnavailable)

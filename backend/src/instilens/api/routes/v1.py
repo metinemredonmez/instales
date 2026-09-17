@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from instilens.ai import build_engine
-from instilens.api.deps import current_user, get_session, require_admin, ticket_user
+from instilens.api.deps import current_user, get_session, require_admin, require_plan, ticket_user
 from instilens.api.hardening import client_ip, hit
 from instilens.config import settings
 from instilens.db.session import session_scope
@@ -44,10 +44,22 @@ def _warm_audio_later(note) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
-def _ai_budget(request: Request, user: User) -> None:
-    """Paid model calls: per-user hourly cap (ASVS 7.17 — expensive endpoints get their own budget)."""
+def _ai_budget(request: Request, user: User, session: Session) -> None:
+    """Paid model calls: per-user hourly cap (ASVS 7.17 — expensive endpoints get their own budget) and, while
+    plans are enforced, the plan's daily quota (services/plans `ai_research_per_day`; 402 plan_limit once it is
+    used up). Both ride on the shared counter store; the daily count is read before either is charged, so a call
+    the quota refuses never spends an hourly slot."""
+    from instilens.api.hardening import failures
+    from instilens.services import plans
+
+    daily = plans.limit(session, user, "ai_research_per_day")
+    if daily is not None and failures(f"aiday:{user.id}", 86400) >= daily:
+        plan = plans.effective_plan(session, user)[0]
+        raise plans.PlanLimit("ai_research_per_day", plan, daily, plans.upgrade_for("ai_research_per_day", plan))
     if not hit(f"ai:{user.id}", settings.ai_requests_per_hour, 3600):
         raise HTTPException(429, "AI request budget exhausted for this hour", headers={"Retry-After": "3600"})
+    if daily is not None:
+        hit(f"aiday:{user.id}", daily, 86400)
     log.info("ai call user=%s ip=%s path=%s", user.id, client_ip(request), request.url.path)
 
 MarketParam = Query("TR", pattern="^(TR|US)$")
@@ -210,7 +222,7 @@ def get_stock_ai(symbol: str, request: Request, market: str = MarketParam, refre
     if refresh:
         require_admin(user)
     try:  # the budget is charged inside, only when the model is really called (first generation or refresh) — never on a cache hit
-        note = stock_assessment(session, market, symbol, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user))
+        note = stock_assessment(session, market, symbol, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user, session))
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
     _warm_audio_later(note)
@@ -227,7 +239,7 @@ def get_brief(request: Request, market: str = MarketParam, refresh: bool = False
     if refresh:
         require_admin(user)
     try:  # budget charged only on a real model call, never on a cache hit
-        note = daily_brief(session, market, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user))
+        note = daily_brief(session, market, force=refresh, lang=lang, budget=lambda: _ai_budget(request, user, session))
     except AiUnavailable as exc:
         raise HTTPException(503, f"ai unavailable: {exc}") from exc
     if refresh:
@@ -235,10 +247,11 @@ def get_brief(request: Request, market: str = MarketParam, refresh: bool = False
     return note_json(note)
 
 
-@ticket_router.get("/ai-notes/{note_id}/audio")
+@ticket_router.get("/ai-notes/{note_id}/audio", dependencies=[Depends(require_plan("tts", ticket=True))])
 def get_note_audio(note_id: int, gender: str = Query("female", pattern="^(female|male)$"), voice: str | None = Query(None, max_length=64), user: User = Depends(ticket_user), session: Session = Depends(get_session)):
     """MP3 narration of an AI note. Cached → file (seekable). Not cached → streamed while ElevenLabs synthesises,
-    so playback starts within a second or two instead of after the whole note is rendered."""
+    so playback starts within a second or two instead of after the whole note is rendered. A plan feature (`tts`)
+    while plans are enforced: 402 plan_limit otherwise."""
     from fastapi.responses import FileResponse, StreamingResponse
 
     from instilens.ai.tts import cached_path, note_text, provider, stream, voice_allowed
@@ -263,7 +276,7 @@ PREVIEW_TEXT = {"tr": "Merhaba, ben InstiLens. Sabah brifingini ve hisse notlar�
                 "en": "Hi, I'm InstiLens. I'll read the morning brief and stock notes in this voice."}
 
 
-@ticket_router.get("/tts/preview/{voice_id}")
+@ticket_router.get("/tts/preview/{voice_id}", dependencies=[Depends(require_plan("tts", ticket=True))])
 def tts_preview(voice_id: str, lang: str = LangParam, user: User = Depends(ticket_user)):
     """A two-sentence sample in the given voice, so the picker can audition voices instantly (cached on disk)."""
     from fastapi.responses import FileResponse
@@ -443,8 +456,9 @@ class ResearchRequest(BaseModel):
 
 @router.post("/research")
 def post_research(body: ResearchRequest, request: Request, user: User = Depends(current_user), session: Session = Depends(get_session)):
-    """AI research: natural-language question → tool-grounded answer with an audit trail. Per-user hourly budget."""
-    _ai_budget(request, user)
+    """AI research: natural-language question → tool-grounded answer with an audit trail. Per-user hourly budget,
+    plus the plan's daily quota while plans are enforced."""
+    _ai_budget(request, user, session)
     answer = build_engine(session).ask(body.question, body.market)
     return {
         "question": answer.question,

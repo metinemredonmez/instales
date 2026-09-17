@@ -1,6 +1,33 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import type { Features, PlanCode, PlanSource } from "./api"
 
-export interface User { id: number; email: string; name: string; plan: "FREE" | "PRO" | "PRO_PLUS"; role?: "USER" | "ADMIN"; lang?: "tr" | "en"; email_verified?: boolean; mfa_enabled?: boolean }
+/**
+ * The plan block of /auth/me (services/plans.me_payload): `plan` is the effective plan, `plan_source` where it comes from
+ * (own subscription, an organisation seat, an admin grant), `own_plan` / `plan_until` the account's own row, `features`
+ * the matrix that applies (bool = on/off, number = cap) and `plans_enforced` the runtime switch — while it is off every
+ * account works as before and the matrix only describes. All absent on an API without plans.
+ */
+export interface User {
+  id: number; email: string; name: string; plan: PlanCode; role?: "USER" | "ADMIN"; lang?: "tr" | "en"; email_verified?: boolean; mfa_enabled?: boolean
+  plan_source?: PlanSource; own_plan?: PlanCode; plan_until?: string | null; features?: Features; plans_enforced?: boolean
+}
+
+/**
+ * Client-side read of the plan matrix for `feature` (a key of /auth/me `features`), the way PlanGate uses it: an admin
+ * has everything; while plans are not enforced (or the payload does not say) nothing is locked here — the API's 402 is
+ * the authority and the matrix only saves a round trip; a feature the payload does not name is assumed available;
+ * otherwise `false` and `0` mean locked.
+ */
+export function hasFeature(user: User | null | undefined, feature: string | string[]): boolean {
+  if (!user) return false
+  if (user.role === "ADMIN" || !user.plans_enforced) return true
+  const keys = Array.isArray(feature) ? feature : [feature]
+  for (const k of keys) {
+    const v = user.features?.[k]
+    if (v === false || v === 0) return false
+  }
+  return true
+}
 export interface Session { access_token: string; user: User }
 /** Login answer when the account has TOTP enabled: no session yet, a short-lived token for the code step. */
 export interface MfaChallenge { mfa_required: true; mfa_token: string }

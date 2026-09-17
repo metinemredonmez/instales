@@ -24,6 +24,7 @@ dependencies = [
   "python-multipart>=0.0.32",
   "num2words>=0.5.14",
   "pyotp>=2.10.0",
+  "stripe>=15.6.1",
 ]
 
 [project.optional-dependencies]

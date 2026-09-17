@@ -1,4 +1,4 @@
-import { Activity, ArrowLeftRight, Bell, Building2, GitCompare, Monitor, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star } from "lucide-react"
+import { Activity, ArrowLeftRight, Bell, Briefcase, Building2, GitCompare, Monitor, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star } from "lucide-react"
 import type { Key } from "@/i18n/tr"
 
 export type NavItem = { to: string; key: Key; icon: React.ComponentType<{ className?: string }>; end?: boolean; mobile?: boolean }
@@ -17,6 +17,8 @@ export const NAV: NavItem[] = [
 /** Personal pages (sidebar group "Kişisel"). */
 export const MINE: NavItem[] = [
   { to: "/watchlist", key: "nav.watchlist", icon: Star, mobile: true },
+  // Plan-gated (PRO+); the page itself shows the locked card, so the entry stays for everyone. /plan has no entry: the profile menu's plan label and the locked cards lead there.
+  { to: "/portfolio", key: "nav.portfolio", icon: Briefcase },
   { to: "/alerts", key: "alerts.title", icon: Bell },
   { to: "/settings", key: "nav.settings", icon: Settings },
   { to: "/desktop", key: "nav.desktop", icon: Monitor },

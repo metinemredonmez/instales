@@ -35,12 +35,17 @@ Same schema, same engines; `market` is a column, not a fork.
 not as the engine: the deterministic layer is the product, the model is the interface to it.
 
 ## Not in the MVP
-Trading, orders, portfolio management, broker integration, native mobile, news/social sentiment,
-technical analysis, crypto, politician/dark-pool/options data.
+Trading, orders, broker integration, native mobile, news/social sentiment, technical analysis, crypto,
+politician/dark-pool/options data. (Portfolio *tracking* — the user's own positions beside the institutional
+context — shipped in Faz 7 as a paid feature; it records what the user holds, it never places an order.)
 
 ## Monetization (after free beta)
-Free (delayed, basic pages) · Pro (live radar, scores, signals, screener, alerts) · Pro+ (AI research,
-export, API, global) · B2B data feed / API for brokers and research desks.
+Three tiers, one matrix — `backend/src/instilens/services/plans.FEATURES` is the source and the plan page shows
+it as it stands there (docs/06 decision 14). Every plan reads the radar, scores, signals, screener and the morning
+brief. Free: 10 watchlist items, 3 alert rules, 5 AI research questions a day. Pro: portfolio tracking (1 portfolio,
+100 positions), narration, push, 100 items / 50 rules / 50 questions. Pro+: 5 portfolios, organisation seats (10),
+500 items / 500 rules / 300 questions. Plus a B2B data feed / API for brokers and research desks (not in the matrix
+yet). Gating is a runtime switch, off until payments are open.
 
 ## Legal boundary
 Descriptive statistics about public disclosures — never recommendations. SPK investment-advice review

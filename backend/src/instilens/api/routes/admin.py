@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -6,7 +8,7 @@ from sqlalchemy.orm import Session
 from instilens.api.deps import get_session, require_admin
 from instilens.api.hardening import client_ip
 from instilens.domain.models import AuditEvent, User
-from instilens.services import admin
+from instilens.services import admin, billing
 from instilens.services.auth import audit
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -14,6 +16,8 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends
 
 class UserPatch(BaseModel):
     plan: str | None = Field(None, pattern="^(FREE|PRO|PRO_PLUS)$")
+    plan_until: date | None = None  # the manual grant runs out at the end of this day (null = open-ended); alone, it re-dates the grant the account has
+    plan_note: str | None = Field(None, max_length=200)  # with `plan`: why (kept on the subscription row)
     role: str | None = Field(None, pattern="^(USER|ADMIN)$")
     is_active: bool | None = None
 
@@ -41,7 +45,13 @@ def patch_user(user_id: int, body: UserPatch, request: Request, actor: User = De
         admins = session.scalar(select(func.count(User.id)).where(User.role == "ADMIN", User.is_active.is_(True))) or 0
         if admins <= 1:
             raise HTTPException(400, "cannot remove the last active admin")
-    out = admin.update_user(session, user_id, plan=body.plan, role=body.role, is_active=body.is_active)
+    if body.plan_until is not None and body.plan_until < date.today():
+        raise HTTPException(400, "plan_until is in the past")
+    try:
+        out = admin.update_user(session, user_id, plan=body.plan, role=body.role, is_active=body.is_active, plan_until=body.plan_until, plan_note=body.plan_note,
+                                redate="plan_until" in body.model_fields_set, actor=actor.email)
+    except billing.BillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if body.role is not None or body.is_active is not None:
         target.token_version = (target.token_version or 1) + 1  # role/access changes take effect on the next request
     audit(session, "admin.user_patch", actor=actor.email, subject=target.email, ip=client_ip(request), detail=body.model_dump_json(exclude_none=True))
@@ -172,6 +182,8 @@ def config_status():
         "tts": {"provider": tts_provider(), "voices": {k: bool(getattr(settings, f"elevenlabs_voice_{k}", "")) for k in ("tr_female", "tr_male", "en_female", "en_male")}},
         "news": {"enabled": settings.news_enabled, "newsapi": bool(settings.newsapi_key)},
         "channels": {"telegram": bool(settings.telegram_bot_token), "email": bool(settings.smtp_host), "web_push": bool(settings.vapid_public_key), "onesignal": bool(settings.onesignal_app_id)},
+        "billing": {"provider": billing.provider().name, "configured": billing.configured(), "plans_enforced": settings.plans_enforced,
+                    "prices": {"PRO": bool(settings.stripe_price_pro), "PRO_PLUS": bool(settings.stripe_price_pro_plus)}},
     }
 
 
@@ -209,7 +221,6 @@ def compute_outcomes(session: Session = Depends(get_session)):
 def _run_pipeline_bg(run_id: int) -> None:
     """Runs under the database lock row `run_id` (see hardening.acquire_pipeline_lock) so several workers never overlap."""
     import traceback
-    from datetime import date
 
     from instilens.api.hardening import finish_pipeline_run
     from instilens.db.session import session_scope

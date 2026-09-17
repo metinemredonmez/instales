@@ -46,3 +46,16 @@ def require_admin(user: User = Depends(current_user)) -> User:
     if user.role != "ADMIN":
         raise HTTPException(403, "admin only")
     return user
+
+
+def require_plan(feature: str, *, ticket: bool = False):
+    """A dependency that gates a route on a plan feature (services/plans.FEATURES): the signed-in user when their
+    plan includes it, otherwise PlanLimit → 402 {"detail": "plan_limit", ...} (api/main). A no-op while plans are
+    not enforced and for ADMIN. `ticket=True` for the query-string-authenticated routes (EventSource, <audio>)."""
+    from instilens.services import plans
+
+    def dep(session: Session = Depends(get_session), user: User = Depends(ticket_user if ticket else current_user)) -> User:
+        plans.require(session, user, feature)
+        return user
+
+    return dep

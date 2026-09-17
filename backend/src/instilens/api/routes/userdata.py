@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from instilens.api.deps import current_user, get_session
+from instilens.api.deps import current_user, get_session, require_plan
 from instilens.domain.models import User
 from instilens.services import userdata
 from instilens.services.alerts import RULE_TYPES
@@ -150,8 +150,9 @@ def push_public_key():
     return {"public_key": _s.vapid_public_key, "enabled": bool(_s.vapid_public_key), "onesignal_app_id": _s.onesignal_app_id}
 
 
-@router.post("/push/subscribe", status_code=201)
+@router.post("/push/subscribe", status_code=201, dependencies=[Depends(require_plan("push"))])
 def push_subscribe(body: PushSubBody, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """Register a device. A plan feature (`push`) while plans are enforced: 402 plan_limit otherwise."""
     from sqlalchemy import select as _select
 
     from instilens.domain.models import PushSubscription

@@ -100,3 +100,55 @@ whose newest report is older than two reporting periods (TR 60 d, US 182 d) are 
 `stale_holders`. A position a report restates at quantity 0 is not a holding. Nothing derived is stored except the
 CROWDING score row; `alert_rules.rule_type` gains PRICE_ABOVE / PRICE_BELOW with `params.price` and `params.since`
 (the close date the rule starts from), evaluated against `market_prices` closes (`04`).
+
+## Plans, portfolios, organisations and billing (Faz 6)
+
+Migration `a3b4c5d6e7f8`. Every plan value the product shows comes from one place, `services/plans.FEATURES`
+(FREE / PRO / PRO_PLUS × feature; a bool is on/off, an int is a cap) — `/auth/me` and `/billing/plans` hand it to
+the UI as it stands there. Gating is the runtime setting `plans_enforced` (admin-editable, off by default): while it
+is off nothing answers 402 and no cap applies, so existing accounts keep working; ADMIN is never gated. A gated
+feature or an exhausted cap is `PlanLimit` → 402 `{"detail": "plan_limit", "feature", "plan", "limit", "upgrade"}`.
+Rows already above a cap are never touched; a cap stops the next addition only.
+
+| Table | Grain | Notes |
+|---|---|---|
+| `users.plan_source`, `users.plan_until` | user | where the account's own `plan` came from — `stripe` (a paid subscription) or `manual` (an admin grant); NULL on FREE — and a manual grant's expiry: past it the account *reads* as FREE (`plans.own_plan`), the row is not rewritten. The plan an account actually gets is `max(own plan, plans of the organisations it is an accepted member of)` (`plans.effective_plan`, source `own` / `manual` / `org`) |
+| `portfolios` | user × portfolio | one market each, priced in that market's `currency`; caps per plan (`portfolios`) |
+| `portfolio_positions` | portfolio × instrument | the user's own numbers: `quantity` Numeric(20,4) (fractional shares exist), `avg_cost` Numeric(20,6) per share or NULL, `opened_at`, `note`. Entered by hand, or — once the instrument has transactions in the portfolio — rewritten after every transaction change from them: the quantity still held and the FIFO average cost of the lots still held (a sale closes the oldest lots first; a buy's `fee` enters its lot, a sale's fee reduces proceeds only). A position sold to zero is removed, its transactions stay; a hand edit of a derived row is refused (409). Cap per plan (`portfolio_positions`) |
+| `portfolio_transactions` | one buy / sell | `side` BUY/SELL, `quantity`, `price`, `traded_at`, `fee`, `note`. An oversell (more than held on its date, in trade order) is refused before anything is written |
+| `organizations` | team | one per owner (`owner_user_id` unique). `plan` / `seats` mirror the owner's own plan as last read; what members inherit is resolved live from the owner (`plans.org_plan`), so an expiry or a cancellation reaches them without an event. Seats = the plan's `org_seats`, the owner's row included |
+| `org_members` | seat | `invited_email` + no `user_id` while pending; the mailed ORG_INVITE token (`auth_tokens`, issued to the owner with `subject` = this row's id, 7 days, single use — `auth.mint_token`, which keeps the owner's other open invitations alive) turns it into a membership for the signed-in account with that address, verified where SMTP exists (`user_id`, `accepted_at`) — a link accepts its own seat only. Inviting says nothing about the address (no account probing); an account already in an organisation is turned away at accept. The owner is a row too (role OWNER) |
+| `subscriptions` | grant | `provider` stripe (customer / subscription ids, `current_period_end`, `cancel_at_period_end` as Stripe reports them, `provider_event_at` = the newest event applied, so an older one delivered later is skipped; one row per provider subscription id) or manual (`note` = who and why — admin pages only, never `/billing/me`; `current_period_end` = the expiry); `status` TRIALING / ACTIVE / PAST_DUE / CANCELED / INCOMPLETE (not paid for: Stripe's incomplete / paused, an unpaid checkout — grants nothing); belongs to a user or an organisation. Never deleted: a replaced or ended grant is CANCELED and stays |
+| `processed_webhooks` | provider × event id | every provider event applied once (`billing.apply_event`); a redelivery is acknowledged and changes nothing |
+
+Read model `GET /portfolios/{id}` (`services/portfolio.detail`): every position priced at the latest stored close
+(`market_prices` — a daily bar, never intraday; `close_date` says which), `market_value`, `cost_value`, `pnl_value`
+/ `pnl_pct` against the average cost (null without one), `weight_pct` over the priced positions, the stored
+SMART_MONEY / CONSENSUS / CROWDING scores (newest per symbol), the funds' 30-day counts on the symbol
+(`funds_increasing_30d` / `funds_reducing_30d`, the same aggregation as `/moves` cut to the holdings) and, for US
+symbols the Form 4 job has read, `insiders_net_90d`; `totals` add the priced positions (`unpriced` counts the rest);
+`moves` lists the 30-day institutional moves on the held symbols with their parties. Nothing derived is stored.
+
+Alerts: `PORTFOLIO_MOVE` is an implicit rule per (owner, held symbol) — never stored, never creatable — evaluated
+with the others after every compute while the owner's plan includes portfolios; it fires once per (symbol,
+period_end) when the latest period's snapshot diffs show ≥ 3 funds new / exited / increasing / reducing, in
+descriptive text ("Portföyündeki THYAO: son dönemde 4 fon artırdı").
+
+Billing (`services/billing`): Stripe through the official SDK only — a Checkout Session (`mode=subscription`, the
+plan's price id, the user id and plan as metadata on the session and the subscription; `automatic_tax` and terms
+consent when the deployment opted in), a Billing Portal session (plain, or `flow_data` subscription_update on the
+live subscription for a plan change), and the webhook (raw body, `stripe.Webhook.construct_event` against the
+signing secret; 400 on a bad signature). One live paid subscription per account: a second checkout is 409
+`subscription_exists`. `checkout.session.completed` → the row ACTIVE and the account on the plan when
+`payment_status` is paid (INCOMPLETE otherwise, the plan waits); `customer.subscription.updated` → status / plan (the
+price id, metadata only when there are no items) / period / cancel-at-period-end — paused or incomplete grants
+nothing; `invoice.payment_failed` → PAST_DUE with the plan kept (Stripe retries); `customer.subscription.deleted` →
+CANCELED and the account back on FREE (or on another live subscription of the provider). Events carry `created`; one
+older than the row's `provider_event_at` is skipped. A manual grant of a higher plan is not undone by the paid
+subscription's events, and the admin page cannot grant or re-date an account whose paid subscription is live (400,
+"managed by stripe"). Until the secret key, the webhook secret and both price ids are set, checkout / portal answer
+503 "payments not configured" and `/billing/plans` reports `configured: false` with null prices — an amount is only
+ever what Stripe's Price object states (cached an hour, with its `tax_behavior`), never typed in here. Admin grants
+(`ManualProvider.grant`, the Users page) write a manual row with the note and the optional expiry; a plan set before
+grants were recorded (no `plan_source`) is adopted as manual on its first re-date. The AI research quota per day
+(`ai_research_per_day`) rides on the same counter store as the hourly AI budget (`rate_hits`, key `aiday:<user>`).
