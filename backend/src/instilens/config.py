@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     sec_fixture_dir: Path = BACKEND_ROOT / "fixtures" / "sec"
     sec_user_agent: str = "InstiLens research@instilens.app"
     sec_ciks: list[str] = ["1067983", "1350694", "1037389"]  # Berkshire, Bridgewater, Renaissance — edit freely
+    # Form 4 insider transactions + issuer filings (services/insiders). The daily job (08:30, after EDGAR's overnight
+    # window) is gated by sec_form4_enabled and asks EDGAR for at most sec_form4_max_issuers issuers per run, stalest
+    # first — both editable from the admin UI. Issuer CIKs come from the SEC's company_tickers.json (`instilens sec-ciks`).
+    sec_form4_enabled: bool = True
+    sec_form4_max_issuers: int = 200
+    sec_form4_days_back: int = 120  # how far back the per-issuer filing listing is read
 
     # Auth & hardening. In production INSTILENS_ENVIRONMENT=production refuses the default secret.
     environment: str = "development"

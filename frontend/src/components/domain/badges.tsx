@@ -39,8 +39,11 @@ const SIGNAL_TONE: Record<SignalType, { key: `signal.${string}` & Parameters<T>[
   NEGATIVE_DIVERGENCE: { key: "signal.negativeDivergence", tone: "neg" },
   NEW_POSITION_CLUSTER: { key: "signal.newPositionCluster", tone: "pos" },
   EXIT_CLUSTER: { key: "signal.exitCluster", tone: "neg" },
+  INSIDER_BUY_CLUSTER: { key: "signal.insiderBuyCluster", tone: "pos" },
 }
 export const SIGNAL_TYPES = Object.keys(SIGNAL_TONE) as SignalType[]
+/** Signals only ever written for US instruments (SEC Form 4 data): a BIST filter for them would never match. */
+export const US_ONLY_SIGNALS = new Set<SignalType>(["INSIDER_BUY_CLUSTER"])
 export const signalLabel = (t: T, type: SignalType) => t(SIGNAL_TONE[type].key)
 
 export function SignalBadge({ type }: { type: SignalType }) {

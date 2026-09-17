@@ -7,6 +7,7 @@ Rule types (params in AlertRule.params):
   SCORE_ABOVE        Smart Money Score crossed {threshold}                    (instrument)
   SIGNAL             one of {types} fired                                     (instrument)
   FUND_ACTIVITY      the fund had NEW/EXIT moves in the latest period         (fund)
+  INSIDER_BUY_CLUSTER  ≥3 insiders made open-market purchases in 30 days (US) (instrument)
 Language is descriptive on purpose — never "buy"/"sell".
 """
 
@@ -17,7 +18,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from instilens.domain.enums import ActivityType, ScoreType
+from instilens.domain.enums import ActivityType, ScoreType, SignalType
 from instilens.domain.models import (
     AlertRule,
     Fund,
@@ -32,10 +33,11 @@ from instilens.domain.models import (
 )
 from instilens.services import live
 
-RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY"}
+RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY", "INSIDER_BUY_CLUSTER"}
 
 
 WATCHLIST_STOCK_RULES = ("NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SIGNAL")
+WATCHLIST_US_STOCK_RULES = WATCHLIST_STOCK_RULES + ("INSIDER_BUY_CLUSTER",)  # Form 4 data exists for US issuers only
 WATCHLIST_FUND_RULES = ("FUND_ACTIVITY", "KAP_TRANSACTION")
 
 
@@ -58,8 +60,12 @@ def _watchlist_rules(session: Session) -> list[AlertRule]:
     from instilens.domain.models import Watchlist, WatchlistItem
 
     out: list[AlertRule] = []
-    for item, owner in session.execute(select(WatchlistItem, Watchlist.owner_id).join(Watchlist, Watchlist.id == WatchlistItem.watchlist_id)):
-        kinds = WATCHLIST_STOCK_RULES if item.instrument_id else WATCHLIST_FUND_RULES if item.fund_id else ()
+    for item, owner, market in session.execute(
+        select(WatchlistItem, Watchlist.owner_id, Instrument.market_code)
+        .join(Watchlist, Watchlist.id == WatchlistItem.watchlist_id)
+        .outerjoin(Instrument, Instrument.id == WatchlistItem.instrument_id)
+    ):
+        kinds = (WATCHLIST_US_STOCK_RULES if market == "US" else WATCHLIST_STOCK_RULES) if item.instrument_id else WATCHLIST_FUND_RULES if item.fund_id else ()
         for k in kinds:
             r = AlertRule(owner_id=owner, instrument_id=item.instrument_id, fund_id=item.fund_id, rule_type=k, params={}, is_active=True)
             r.id = -item.id  # transient; dedup keys become "wl:<item>:<kind>:…"
@@ -127,8 +133,26 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
         for sig in session.scalars(stmt):
             if types and sig.signal_type not in types:
                 continue
+            if (rule.id or 0) < 0 and sig.signal_type == SignalType.INSIDER_BUY_CLUSTER:
+                continue  # a watched US stock gets the dedicated INSIDER_BUY_CLUSTER rule below — one notification, not two
             # keyed by the signal episode (row id), not by the day, so an ongoing signal notifies once
             yield (f"{sig.signal_type}:{sig.id}", f"{inst.symbol}: {sig.signal_type.replace('_', ' ').title()} ({sig.strength})", f"{sig.window_start} → {sig.window_end} · {sig.confidence}", f"/stocks/{inst.symbol}")
+
+    elif t == "INSIDER_BUY_CLUSTER" and inst:
+        stmt = select(Signal).where(Signal.instrument_id == inst.id, Signal.signal_type == SignalType.INSIDER_BUY_CLUSTER, Signal.window_end == as_of)
+        for sig in session.scalars(stmt):
+            ev = sig.evidence or {}
+            n, value, since = ev.get("insiders", 0), float(ev.get("value") or 0), ev.get("since", sig.window_start.isoformat())
+            names = ", ".join(ev.get("names") or [])
+            if lang == "en":
+                title = f"{inst.symbol}: {n} insiders bought on the open market in the last 30 days"
+                body = f"{names} · ${value:,.0f} reported (Form 4) · since {since}"
+            else:
+                title = f"{inst.symbol}: {n} şirket içi kişi son 30 günde açık piyasadan hisse aldı"
+                body = f"{names} · bildirilen tutar ${value:,.0f} (Form 4) · {since} tarihinden beri"
+            # keyed by the signal episode (row id — compute_intelligence keeps the row across same-day recomputes and
+            # extends it day by day): an ongoing cluster notifies once, however many days it lasts
+            yield (f"cluster:{sig.id}", title, body, f"/stocks/{inst.symbol}")
 
     elif t == "FUND_ACTIVITY" and fund:
         latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))

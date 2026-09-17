@@ -12,9 +12,10 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from instilens.services import analytics, fundamentals
+from instilens.services import analytics, fundamentals, insiders
 
 PeriodName = Literal["annual", "quarterly"]
+FilingForm = Literal["8-K", "10-K", "10-Q", "4", "4/A"]
 
 SignalName = Literal[
     "ACCUMULATION",
@@ -23,6 +24,7 @@ SignalName = Literal[
     "NEGATIVE_DIVERGENCE",
     "NEW_POSITION_CLUSTER",
     "EXIT_CLUSTER",
+    "INSIDER_BUY_CLUSTER",
 ]
 
 
@@ -279,6 +281,54 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
             return _dump({"error": f"unknown symbol {symbol}"})
         return _dump({k: data[k] for k in ("symbol", "name", "currency", "source", "fetched_at", "snapshot", "derived")})
 
+    def get_insider_trades(symbol: str, days: int = 90, limit: int = 30) -> str:
+        """Insider transactions of a US company as reported to the SEC on Form 4 over the last `days`: a summary
+        (buyers / sellers = distinct insiders with open-market purchases / sales, their values, the 30-day purchase
+        cluster if any) and the reported rows, newest first. Each row carries the transaction code AS FILED and you
+        must state its meaning instead of calling every acquisition a "buy": P = open-market or private purchase
+        (the insider paid market price), S = open-market or private sale, A = grant or award, M = option exercise or
+        RSU settlement (shares received under a plan, not bought), F = shares withheld to cover tax on a vesting or
+        exercise (not a sale in the market), G = gift, D = disposition to the issuer, C = conversion, X = exercise
+        of an in-the-money derivative, J = other (see the filing's footnotes); `derivative: true` rows come from the
+        derivative table (options, RSUs). `price` is the price the filing states (null when it states none — never
+        estimate it), `value` = shares × price, `role` the insider's relationship (director, officer,
+        ten_percent_owner, other) and `title` the officer title as filed. Every row names its EDGAR accession and
+        filing URL — cite them. `fetched_at` is when EDGAR was last read for this issuer; null together with an
+        empty `transactions` means the issuer has not been read yet — say so, never "no insider activity".
+        `truncated: true` means the window holds more rows than returned (`edgar_url` lists them all); `supported:
+        false` means the symbol is not a US issuer (no Form 4 data). These are reported facts with EDGAR accession
+        links, not recommendations; never turn a purchase or a cluster into a verdict.
+
+        Args:
+            symbol: US ticker, e.g. AAPL.
+            days: Lookback in days (30-730, default 90).
+            limit: Max transaction rows, newest first (default 30, at most 200).
+        """
+        days = max(30, min(730, days))
+        data = insiders.stock_insiders(session, market, symbol, days)
+        if data is None:
+            return _dump({"error": f"unknown symbol {symbol}"})
+        rows = data["transactions"][: max(1, min(limit, insiders.MAX_TRANSACTIONS))]
+        return _dump({**data, "transactions": rows, "truncated": data["truncated"] or len(rows) < len(data["transactions"])})
+
+    def get_filings(symbol: str, form: FilingForm | None = None, limit: int = 10) -> str:
+        """A US issuer's recent EDGAR filings, newest first: Form 4 (insider transactions), 8-K (current report —
+        `items` lists the item codes, e.g. 2.02 = results of operations, 5.02 = officer/director changes, 1.01 =
+        material agreement, 8.01 = other events), 10-K (annual report) and 10-Q (quarterly report), each with its
+        filing date, the period it reports on, the accession, the filing index `url` and the `primary_url` of the
+        main document. Pass `form` to keep one type. `supported: false` means the symbol is not a US issuer;
+        `fetched_at` null with an empty list means the issuer has not been read yet, not that nothing was filed. An
+        index of what was filed when — cite the accession or URL; the documents' contents are not included.
+
+        Args:
+            symbol: US ticker, e.g. AAPL.
+            form: 8-K | 10-K | 10-Q | 4 | 4/A; omit for every form.
+            limit: Max filings, newest first (default 10, at most 100).
+        """
+        data = insiders.stock_filings(session, market, symbol, form, max(1, min(limit, 100)))
+        return _dump(data if data is not None else {"error": f"unknown symbol {symbol}"})
+
     return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news,
             get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes,
-            get_income_statements, get_balance_sheets, get_cash_flow_statements, get_financial_metrics]
+            get_income_statements, get_balance_sheets, get_cash_flow_statements, get_financial_metrics,
+            get_insider_trades, get_filings]

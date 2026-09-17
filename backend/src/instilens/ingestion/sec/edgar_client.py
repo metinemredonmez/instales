@@ -8,6 +8,7 @@ A 13F is a *portfolio snapshot* of the filer at quarter end, so it feeds the sam
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime
 from xml.etree import ElementTree
@@ -17,8 +18,13 @@ import httpx
 from instilens.domain.enums import DisclosureKind, Market, Source
 from instilens.domain.schemas import RawDisclosure
 
+log = logging.getLogger("instilens.sec")
+
 SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:0>10}.json"
 ARCHIVE = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/"
+FILING_INDEX = ARCHIVE + "{accession}-index.htm"  # the human-readable filing index every stored number links to
+TICKERS = "https://www.sec.gov/files/company_tickers.json"  # official ticker → CIK map, refreshed by the SEC daily
+ISSUER_FORMS = ("4", "4/A", "8-K", "10-K", "10-Q")  # what the Form 4 job lists per issuer (services/insiders)
 NS = {"n": "http://www.sec.gov/edgar/document/thirteenf/informationtable"}
 AMENDMENT_TYPE = re.compile(r"<(?:\w+:)?amendmentType>\s*([^<]+?)\s*</", re.I)
 # Cover-page amendment types. RESTATEMENT replaces the original information table; NEW HOLDINGS only lists the
@@ -43,6 +49,34 @@ class EdgarClient:
             if len(out) >= limit:
                 break
         return out
+
+    def recent_filings(self, cik: str, forms: tuple[str, ...] = ISSUER_FORMS, limit: int | None = 200, since: str | None = None) -> list[dict]:
+        """The issuer's newest filings of the given forms from its submissions JSON (the `recent` block, newest first).
+        Each entry: form, accession, filed (ISO), period (report date or None), primary_document (path inside the
+        filing folder as EDGAR names it — Form 4s point at the XSL-rendered view), items (8-K item codes such as
+        "2.02", empty for other forms), and `url` — the filing index page. See `parse_recent_filings` for `since`."""
+        data = self.client.get(SUBMISSIONS.format(cik=int(cik))).raise_for_status().json()
+        return parse_recent_filings(data, forms, limit, since)
+
+    def form4_document(self, cik: str, accession: str, primary_document: str | None) -> str:
+        """The XML of a Form 4 / 4/A. The submissions JSON names the XSL-rendered view (`xslF345X06/form4.xml`); the
+        raw document is the same file name at the filing root. When that guess misses (older filings name the
+        document differently), the filing index is read for its first .xml."""
+        base = ARCHIVE.format(cik=int(cik), acc_nodash=accession.replace("-", ""))
+        if primary_document:
+            r = self.client.get(base + primary_document.rsplit("/", 1)[-1])
+            if r.status_code != 404:  # anything but "no such file" (a refusal, an outage) is the caller's to handle
+                return r.raise_for_status().text
+        index = self.client.get(base).raise_for_status().text
+        candidates = re.findall(r'href="([^"]+\.xml)"', index)
+        if not candidates:
+            raise ValueError(f"no form 4 xml in {base}")
+        first = candidates[0]
+        return self.client.get("https://www.sec.gov" + first if first.startswith("/") else base + first.rsplit("/", 1)[-1]).raise_for_status().text
+
+    def company_tickers(self) -> dict:
+        """The SEC's ticker → CIK map (company_tickers.json) as published: {"0": {"cik_str", "ticker", "title"}, ...}."""
+        return self.client.get(TICKERS).raise_for_status().json()
 
     def information_table(self, cik: str, accession: str) -> list[dict]:
         base = ARCHIVE.format(cik=int(cik), acc_nodash=accession.replace("-", ""))
@@ -94,6 +128,32 @@ def link_amendments(filings: list[dict]) -> list[dict]:
             earlier = [g for g in ordered[:i] if g["cik"] == f["cik"] and g["period"] == f["period"]]
             amends = earlier[-1]["accession"] if earlier else None
         out.append({**f, "amends": amends})
+    return out
+
+
+def parse_recent_filings(data: dict, forms: tuple[str, ...] = ISSUER_FORMS, limit: int | None = 200, since: str | None = None) -> list[dict]:
+    """`recent_filings` over an already-loaded submissions document (the fixture path in tests). With `since` (ISO
+    date) only filings filed on or after it are returned and the window comes before the cap: `limit` applies to
+    what is left, never cuts a busy quarter short. The `recent` block holds at least a year of filings or the last
+    thousand, whichever is more (SEC), so a window inside a year is always complete; a longer one that reaches past
+    the block's oldest entry is reported once as a warning — the archived chunks (`filings.files`) are not read."""
+    cik = str(int(data["cik"]))
+    recent = data["filings"]["recent"]
+    columns = ("form", "accessionNumber", "filingDate", "reportDate", "primaryDocument", "items")
+    out = []
+    for form, acc, filed, period, primary, items in zip(*(recent.get(c) or [] for c in columns), strict=False):
+        if form not in forms or (since and filed < since):
+            continue
+        out.append({
+            "cik": cik, "form": form, "accession": acc, "filed": filed, "period": period or None, "primary_document": primary or None,
+            "items": [i.strip() for i in (items or "").split(",") if i.strip()],
+            "url": FILING_INDEX.format(cik=cik, acc_nodash=acc.replace("-", ""), accession=acc),
+        })
+        if limit is not None and len(out) >= limit:
+            break
+    oldest = min(recent.get("filingDate") or [], default=None)
+    if since and oldest and oldest > since and data["filings"].get("files"):
+        log.warning("sec: CIK %s listing ends at %s, inside the window from %s; older filings sit in EDGAR's archived chunks and are not read", cik, oldest, since)
     return out
 
 

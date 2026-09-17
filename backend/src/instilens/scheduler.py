@@ -6,6 +6,7 @@ Cadence (Europe/Istanbul):
   prices             daily 19:30 (TR close) and 00:30 (US close)
   compute            after every ingest that stored something, and nightly 02:00 regardless
   fundamentals       weekly, Sunday 06:00 (TR then US; gated by the fundamentals_enabled setting)
+  form4              daily 08:30 (after EDGAR's overnight window; gated by the sec_form4_enabled setting), then compute
 """
 
 from __future__ import annotations
@@ -120,6 +121,22 @@ def fundamentals() -> None:
             log.info("%s fundamentals %s rows", market, refresh(s, market))
 
 
+def form4_daily() -> None:
+    """SEC Form 4 insider transactions + the 8-K/10-K/10-Q index of the stalest US issuers (services/insiders). New
+    filings feed the insider signals, so a run that stored any Form 4 recomputes right away instead of waiting for
+    the nightly compute."""
+    from instilens.config import settings
+    from instilens.services.insiders import refresh
+
+    if not settings.sec_form4_enabled:
+        return
+    with session_scope() as s:
+        out = refresh(s)
+    log.info("US insiders %s", out)
+    if out["form4"]:
+        compute()
+
+
 def _fresh(job):
     """Run a job with the latest admin overrides applied (settings can change between runs)."""
     from functools import wraps
@@ -151,6 +168,7 @@ def main() -> None:
     sched.add_job(_fresh(news_pull), CronTrigger(minute="*/10", timezone=TZ), id="news")
     sched.add_job(_fresh(briefs), CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
     sched.add_job(_fresh(fundamentals), CronTrigger(day_of_week="sun", hour=6, minute=0, timezone=TZ), id="fundamentals_weekly")
+    sched.add_job(_fresh(form4_daily), CronTrigger(hour=8, minute=30, timezone=TZ), id="form4_daily")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 

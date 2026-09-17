@@ -102,6 +102,8 @@ def create_rule(session: Session, owner: str, market: str, rule_type: str, symbo
     if rule_type not in RULE_TYPES:
         raise UserDataError(f"unknown rule_type {rule_type}")
     inst, fund = resolve_subject(session, market, symbol, fund_code)
+    if rule_type == "INSIDER_BUY_CLUSTER" and (inst is None or inst.market_code != "US"):
+        raise UserDataError("INSIDER_BUY_CLUSTER needs a US symbol (SEC Form 4 data exists for US issuers only)")
     rule = AlertRule(owner_id=owner, instrument_id=inst.id if inst else None, fund_id=fund.id if fund else None, rule_type=rule_type, params=params or {})
     session.add(rule)
     session.flush()

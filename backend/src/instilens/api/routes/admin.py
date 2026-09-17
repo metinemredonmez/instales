@@ -234,6 +234,11 @@ def _run_pipeline_bg(run_id: int) -> None:
                 out[f"prices_{m}"] = load_prices(s, m, days=60)
                 out[f"news_{m}"] = fetch_feeds(s, m, newsapi_key=_settings.newsapi_key)
             out["position_changes"] = pipeline.rebuild_positions(s)
+            if _settings.sec_form4_enabled:  # Form 4 insider rows + issuer filings for the issuers the 13F diffs touched; per-issuer failures are logged inside
+                from instilens.services.insiders import refresh as refresh_insiders
+
+                s.commit()  # the run so far is durable before the issuer walk (which commits issuer by issuer)
+                out["form4"] = refresh_insiders(s)["form4"]
             out["scored"] = pipeline.compute_intelligence(s, date.today())
             out["notifications"] = evaluate(s, date.today())
             from instilens.services.notify import deliver_pending

@@ -17,6 +17,7 @@ const ruleLabel = (t: T): Record<string, string> => ({
   SCORE_ABOVE: t("alerts.rule.scoreAbove"),
   SIGNAL: t("common.signal"),
   FUND_ACTIVITY: t("alerts.rule.fundActivity"),
+  INSIDER_BUY_CLUSTER: t("alerts.rule.insiderBuyCluster"),
 })
 
 export function AlertsPage() {
@@ -57,7 +58,8 @@ export function AlertsPage() {
               <label className="block"><div className="mb-1 text-xs text-muted-foreground">{t("alerts.subject")}</div><input value={ref} onChange={(e) => setRef(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 outline-none focus:ring-2 focus:ring-ring/40" /></label>
               <label className="block"><div className="mb-1 text-xs text-muted-foreground">{t("alerts.rule")}</div>
                 <select value={type} onChange={(e) => setType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 outline-none">
-                  {(rules.data?.rule_types ?? Object.keys(RULE_LABEL)).map((k) => <option key={k} value={k}>{RULE_LABEL[k] ?? k}</option>)}
+                  {/* Form 4 data exists for US issuers only: the insider rule is never offered on BIST (the API refuses it there too). */}
+                  {(rules.data?.rule_types ?? Object.keys(RULE_LABEL)).filter((k) => market === "US" || k !== "INSIDER_BUY_CLUSTER").map((k) => <option key={k} value={k}>{RULE_LABEL[k] ?? k}</option>)}
                 </select>
               </label>
               {type === "SCORE_ABOVE" && <label className="block"><div className="mb-1 text-xs text-muted-foreground">{t("alerts.threshold")}</div><input type="number" value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} className="num h-9 w-full rounded-md border border-input bg-background px-3 outline-none" /></label>}

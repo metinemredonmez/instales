@@ -6,7 +6,7 @@ import { useMarket } from "@/lib/market"
 import { useI18n } from "@/lib/i18n"
 import { fmtPct } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
-import { Flow, ScorePill, SIGNAL_TYPES, SignalBadge, signalLabel } from "@/components/domain/badges"
+import { Flow, ScorePill, SIGNAL_TYPES, SignalBadge, signalLabel, US_ONLY_SIGNALS } from "@/components/domain/badges"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -54,7 +54,7 @@ export function ScreenerPage() {
           <div>
             <div className="mb-1.5 text-xs text-muted-foreground">{t("screener.signalAny")}</div>
             <div className="flex flex-wrap gap-1.5">
-              {SIGNAL_TYPES.map((s) => (
+              {SIGNAL_TYPES.filter((s) => market === "US" || !US_ONLY_SIGNALS.has(s)).map((s) => (
                 <button key={s} onClick={() => toggleSignal(s)} className={cn("rounded-sm border px-1.5 py-0.5 text-[11px]", f.signal?.includes(s) ? "border-primary bg-primary/15 text-foreground" : "border-border text-muted-foreground")}>
                   {signalLabel(t, s)}
                 </button>

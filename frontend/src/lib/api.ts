@@ -12,6 +12,8 @@ export type SignalType =
   | "NEGATIVE_DIVERGENCE"
   | "NEW_POSITION_CLUSTER"
   | "EXIT_CLUSTER"
+  /** US only: ≥ 3 distinct insiders bought on the open market (Form 4 code P) within 30 days. */
+  | "INSIDER_BUY_CLUSTER"
 
 export interface RadarRow {
   symbol: string
@@ -173,7 +175,74 @@ export interface StockDetail {
   events: TxEvent[]
   /** Valuation summary for the header chips; null until the fundamentals job has run for this symbol. */
   fundamentals: FundamentalsSummary | null
+  /** Form 4 head-count for the header chip (US instruments only; null on BIST and until Form 4s have been ingested). */
+  insiders: InsidersSummary | null
 }
+
+/**
+ * /stocks/{symbol}/insiders — SEC Form 4 transactions of the issuer's officers, directors and 10 % owners over the
+ * last `days` days (30..730, default 90), newest first, at most 200. Every row carries the filing's accession and
+ * EDGAR URL. `code` is the Form 4 transaction code as filed; the UI labels the ten common ones and prints the letter
+ * for anything else. `value` is shares × price and null when the filing reports no price (grants, gifts).
+ * `fetched_at` is when the daily job last read the issuer's filings and null until it has — an empty window then means
+ * "not read yet", not "no activity". `truncated` says the window holds more rows than the 200 returned; `edgar_url` is
+ * the issuer's Form 4 list on EDGAR, where they all are. BIST symbols answer `supported: false` with nothing else
+ * populated — KAP insider filings are not ingested yet.
+ */
+export type InsiderWindow = 90 | 180 | 365
+export type InsiderCode = "P" | "S" | "A" | "M" | "F" | "G" | "D" | "C" | "X" | "J" | "W"
+export interface InsiderTx {
+  id: number
+  transaction_date: string
+  filed_at: string
+  insider: string
+  insider_cik: string
+  /** Comma-joined: director | officer | ten_percent_owner | other. */
+  role: string
+  /** Officer title as printed on the filing ("Chief Executive Officer"); null for a plain director or owner. */
+  title: string | null
+  code: InsiderCode | string
+  /** The filing's (A)/(D) column: true for an acquisition. */
+  acquired: boolean
+  shares: number
+  price: number | null
+  value: number | null
+  post_shares: number | null
+  /** D = direct, I = indirect (through a trust, spouse, fund…). */
+  ownership: "D" | "I"
+  derivative: boolean
+  /** Lineage: EXACT — the insider's own report of their own transaction. */
+  confidence: string
+  accession: string
+  url: string
+}
+export interface InsiderCluster { since: string; insiders: number; value: number }
+export interface InsiderStats {
+  buyers: number
+  sellers: number
+  buy_value: number
+  sell_value: number
+  net_value: number
+  open_market_buys: number
+  open_market_sells: number
+  /** Present when ≥ 3 distinct insiders bought on the open market within the 30 days ending `as_of`. */
+  cluster: InsiderCluster | null
+}
+export type Insiders =
+  | { supported: false; symbol?: string; name?: string; market?: Market; days?: number }
+  | { supported: true; symbol: string; name: string; market: Market; days: number; as_of: string; source: "sec-edgar"; fetched_at: string | null; summary: InsiderStats; transactions: InsiderTx[]; truncated: boolean; edgar_url: string | null }
+/** stock_detail.insiders — the 90-day head-count; `cluster` says whether the INSIDER_BUY_CLUSTER signal fired. */
+export interface InsidersSummary { days: number; buyers: number; sellers: number; net_value: number; cluster: boolean }
+
+/**
+ * /stocks/{symbol}/filings — the issuer's latest EDGAR filings, newest first; `form` narrows to one form type.
+ * `items` holds the 8-K item codes ("2.02") and is empty on other forms; `url` is the filing index page,
+ * `primary_url` the main document when EDGAR names one. `fetched_at` is when the daily job last read the issuer and
+ * null until it has — an empty list then means "not read yet", not "nothing filed". BIST symbols answer `supported: false`.
+ */
+export type FilingForm = "8-K" | "10-K" | "10-Q" | "4"
+export interface Filing { form: string; filed_at: string; period: string | null; items: string[]; accession: string; url: string; primary_url: string | null }
+export interface Filings { symbol: string; supported: boolean; fetched_at: string | null; filings: Filing[] }
 
 /**
  * /stocks/{symbol}/fundamentals — Yahoo-sourced valuation snapshot, reported statements and ratios derived from them.
@@ -526,6 +595,9 @@ export const api = {
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),
   fundamentals: (market: Market, symbol: string, period: FundamentalsPeriod = "annual") => get<Fundamentals>(`/stocks/${symbol}/fundamentals`, { market, period }),
+  insiders: (market: Market, symbol: string, days: InsiderWindow = 90) => get<Insiders>(`/stocks/${symbol}/insiders`, { market, days }),
+  /** form null = every form type. */
+  filings: (market: Market, symbol: string, form: FilingForm | null = null, limit = 20) => get<Filings>(`/stocks/${symbol}/filings`, { market, form, limit }),
   watchlist: () => get<WatchItem[]>("/watchlist"),
   addWatch: (body: { symbol?: string; fund_code?: string; market: Market }) => send<{ id: number; created: boolean }>("POST", "/watchlist", body),
   removeWatch: (id: number) => send<void>("DELETE", `/watchlist/${id}`),

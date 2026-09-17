@@ -405,11 +405,17 @@ def collapse_signal_episodes(session: Session) -> int:
 
 def compute_intelligence(session: Session, as_of: date, window_days: int | None = None) -> int:
     """Recompute scores and signals for every instrument with activity in its market's window."""
+    from instilens.domain.models import SignalOutcome
+
     collapse_signal_episodes(session)
     max_window = window_days or max(MARKET_WINDOW_DAYS.values())
     earliest = as_of - timedelta(days=max_window)
     session.execute(delete(Score).where(Score.as_of == as_of))
-    session.execute(delete(Signal).where(Signal.window_end == as_of))
+    # Signals already written for this day (a second compute of the same day: the 08:00 SEC job, the 08:30 Form 4 job
+    # and every KAP ingest that parsed something all recompute) are updated in place — their ids are what alert
+    # dedup keys and outcome rows hang on — and only the ones not detected again are removed at the end.
+    today: dict[tuple[int, int | None, str], Signal] = {(s.instrument_id, s.fund_id, s.signal_type): s for s in session.scalars(select(Signal).where(Signal.window_end == as_of))}
+    redetected: set[tuple[int, int | None, str]] = set()
     market_of = dict(session.execute(select(Instrument.id, Instrument.market_code)).all())
 
     def start_for(instrument_id: int) -> date:
@@ -454,33 +460,51 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
                 conv = scoring.conviction_score(c.from_weight_pct, c.to_weight_pct)
                 session.add(_score_row(instrument_id, c.fund_id, ScoreType.CONVICTION, as_of, conv, {}))
         for sig in _detect_signals(session, instrument_id, by_instrument[instrument_id], events_by_instrument[instrument_id], activity, start_for(instrument_id), as_of):
-            # One row per signal EPISODE: if the same signal was already open for this instrument (its window_end
-            # is the previous compute day or later), extend it instead of inserting a duplicate every day.
-            open_row = session.scalar(
-                select(Signal)
-                .where(Signal.instrument_id == instrument_id, Signal.fund_id.is_(None), Signal.signal_type == sig.signal_type,
-                       Signal.window_end >= as_of - timedelta(days=7), Signal.window_end < as_of)
-                .order_by(Signal.window_end.desc()).limit(1)
-            )
-            if open_row is not None:
-                open_row.window_end, open_row.strength, open_row.evidence, open_row.confidence = as_of, sig.strength, sig.evidence, sig.confidence
-                continue
-            session.add(
-                Signal(
-                    market_code=instrument.market_code,
-                    instrument_id=instrument_id,
-                    fund_id=None,
-                    signal_type=sig.signal_type,
-                    strength=sig.strength,
-                    window_start=sig.window_start,
-                    window_end=as_of,
-                    evidence=sig.evidence,
-                    confidence=sig.confidence,
-                )
-            )
+            _write_signal_episode(session, instrument, sig, as_of, today, redetected)
         written += 1
+    # Insider purchase clusters (US, Form 4) are keyed on the same episodes; they need no fund activity to exist.
+    from instilens.services.insiders import detected_signals
+
+    for instrument, sig in detected_signals(session, as_of):
+        _write_signal_episode(session, instrument, sig, as_of, today, redetected)
+    for key, row in today.items():
+        if key not in redetected:  # written earlier today, no longer true once the day's data was complete
+            session.execute(delete(SignalOutcome).where(SignalOutcome.signal_id == row.id))
+            session.delete(row)
     session.flush()
     return written
+
+
+def _write_signal_episode(session: Session, instrument: Instrument, sig, as_of: date, today: dict, redetected: set) -> None:
+    """One row per signal EPISODE: the row written for this day earlier (`today`, keyed by instrument, fund and
+    type) is updated in place and marked `redetected`; else, if the same signal was already open for this
+    instrument (its window_end is the previous compute day or later), it is extended instead of inserting a
+    duplicate every day. `window_start` is the episode's first day and never moves."""
+    key = (instrument.id, None, sig.signal_type)
+    open_row = today.get(key) or session.scalar(
+        select(Signal)
+        .where(Signal.instrument_id == instrument.id, Signal.fund_id.is_(None), Signal.signal_type == sig.signal_type,
+               Signal.window_end >= as_of - timedelta(days=7), Signal.window_end < as_of)
+        .order_by(Signal.window_end.desc()).limit(1)
+    )
+    if open_row is not None:
+        open_row.window_end, open_row.strength, open_row.evidence, open_row.confidence = as_of, sig.strength, sig.evidence, sig.confidence
+        redetected.add(key)
+        return
+    redetected.add(key)
+    session.add(
+        Signal(
+            market_code=instrument.market_code,
+            instrument_id=instrument.id,
+            fund_id=None,
+            signal_type=sig.signal_type,
+            strength=sig.strength,
+            window_start=sig.window_start,
+            window_end=as_of,
+            evidence=sig.evidence,
+            confidence=sig.confidence,
+        )
+    )
 
 
 def latest_snapshot_as_of(session: Session, as_of: date) -> dict[int, date]:

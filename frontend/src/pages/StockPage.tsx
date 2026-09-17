@@ -10,6 +10,8 @@ import { Section } from "@/components/layout/Section"
 import { ActivityBadge, ConfidenceBadge, Flow, ScorePill, SignalBadge } from "@/components/domain/badges"
 import { EventRow } from "@/components/domain/EventRow"
 import { Fundamentals, FundamentalsChips } from "@/components/domain/Fundamentals"
+import { Insiders, InsidersChip } from "@/components/domain/Insiders"
+import { Filings } from "@/components/domain/Filings"
 import { StockChart } from "@/components/domain/StockChart"
 import { Timeline } from "@/components/domain/Timeline"
 import { AiNoteCard } from "@/components/domain/AiNoteCard"
@@ -50,7 +52,11 @@ export function StockPage() {
         <div>
           <div className="text-xs text-muted-foreground">{d.market} · {t("stock.asOf")} {fmtDate(d.as_of)} · {t("stock.latestPeriod")} {fmtDate(d.latest_period_end)}</div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{d.symbol} <span className="text-lg font-normal text-muted-foreground">{d.name !== d.symbol ? d.name : ""}</span></h1>
-          {d.fundamentals && <FundamentalsChips f={d.fundamentals} />}
+          {/* Header chips: valuation figures, then the Form 4 head-count; the row hides itself when neither has anything to show. */}
+          <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] empty:hidden">
+            {d.fundamentals && <FundamentalsChips f={d.fundamentals} />}
+            {d.insiders && <InsidersChip s={d.insiders} />}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">{d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}<WatchButton symbol={d.symbol} market={market} /></div>
       </div>
@@ -93,6 +99,14 @@ export function StockPage() {
 
       {/* Flows first (that is the product); the reported numbers sit below them as context, ahead of the signal evidence. */}
       <Fundamentals symbol={d.symbol} market={market} />
+
+      {/* Form 4 and the filing index exist for SEC filers only; on BIST the API answers supported:false, so the sections are not mounted. */}
+      {d.market === "US" && (
+        <>
+          <Insiders symbol={d.symbol} market={market} />
+          <Filings symbol={d.symbol} market={market} />
+        </>
+      )}
 
       {d.signals.length > 0 && (
         <Section title={t("common.signals")} hint={t("stock.withEvidence")}>

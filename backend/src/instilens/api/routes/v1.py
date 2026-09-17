@@ -142,6 +142,33 @@ def get_stock_fundamentals(symbol: str, market: str = MarketParam, period: str =
     return data
 
 
+@router.get("/stocks/{symbol}/insiders")
+def get_stock_insiders(symbol: str, market: str = MarketParam, days: int = Query(90, ge=30, le=730), session: Session = Depends(get_session)):
+    """Insider transactions of a US issuer from SEC Form 4 over the last `days`: a summary (distinct insiders with
+    open-market purchases / sales, their values, the 30-day purchase cluster if any) and every reported row, newest
+    first, each with its transaction code as filed (P purchase, S sale, A grant, M exercise / RSU settlement, F tax
+    withholding, G gift …), price when stated (null otherwise, never looked up), accession and filing URL. TR symbols
+    answer `supported: false` — KAP insider filings come later. Reported facts, not recommendations."""
+    from instilens.services import insiders
+
+    data = insiders.stock_insiders(session, market, symbol, days)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/filings")
+def get_stock_filings(symbol: str, market: str = MarketParam, form: str | None = Query(None, pattern="^(8-K|10-K|10-Q|4|4/A)$"), limit: int = Query(20, ge=1, le=100), session: Session = Depends(get_session)):
+    """The issuer's recent EDGAR filings (Form 4, 8-K with its item codes, 10-K, 10-Q), newest first, with the
+    filing index URL and the primary document. `form` narrows to one type. TR symbols answer `supported: false`."""
+    from instilens.services import insiders
+
+    data = insiders.stock_filings(session, market, symbol, form, limit)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
 @router.get("/stocks/{symbol}/ai")
 def get_stock_ai(symbol: str, request: Request, market: str = MarketParam, refresh: bool = False, lang: str = LangParam, user: User = Depends(current_user), session: Session = Depends(get_session)):
     """AI note for the stock (flows × headlines). Cached per day and language; refresh=true (admin) regenerates."""

@@ -72,6 +72,7 @@ class SignalType(StrEnum):
     NEGATIVE_DIVERGENCE = "NEGATIVE_DIVERGENCE"  # price up, funds selling
     NEW_POSITION_CLUSTER = "NEW_POSITION_CLUSTER"
     EXIT_CLUSTER = "EXIT_CLUSTER"
+    INSIDER_BUY_CLUSTER = "INSIDER_BUY_CLUSTER"  # US only: ≥3 insiders with open-market purchases (Form 4 code P) in 30 days
 
 
 class ScoreType(StrEnum):

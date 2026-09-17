@@ -23,7 +23,7 @@ from instilens.domain.models import (
     SnapshotHolding,
     TransactionEvent,
 )
-from instilens.services import fundamentals
+from instilens.services import fundamentals, insiders
 
 
 def close_on_or_before(session: Session, instrument_id: int, on: date):
@@ -135,6 +135,7 @@ def stock_detail(session: Session, market: str, symbol: str) -> dict | None:
         "signals": [_signal_json(s, instrument.symbol) for s in signals],
         "events": events,
         "fundamentals": fundamentals.summary(session, instrument.id),  # null until the weekly job has run for the symbol
+        "insiders": insiders.detail(session, instrument),  # US only; null until the daily Form 4 job has read the issuer
     }
 
 
@@ -764,8 +765,10 @@ def data_freshness(session: Session, market: str) -> list[dict]:
     prices = resolve_provider().status()  # the cadence names whoever actually prints the bars
     prices_row = {"source": "Market prices", "cadence": f"Daily ({prices.name}, {prices.delay})", "last": last(select(func.max(MarketPrice.trade_date)).join(Instrument).where(Instrument.market_code == market)), "delayed": False}
     if market == "US":
+        form4 = insiders.last_filed_at(session)
         return [
             {"source": "SEC 13F", "cadence": "Quarterly, up to 45 days after quarter end", "last": last(select(func.max(PortfolioSnapshot.as_of)).join(Fund).join(Institution).where(Institution.market_code == "US")), "delayed": True},
+            {"source": "SEC Form 4", "cadence": "Within two business days of the trade", "last": form4.date().isoformat() if form4 else None, "delayed": False},
             prices_row,
         ]
     return [

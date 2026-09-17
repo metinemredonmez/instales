@@ -58,3 +58,34 @@ at read time from the newest statement and the one a year earlier — nothing de
 instruments of the market seen in a position change or transaction within 400 days or on a watchlist, stalest first
 (never fetched, then oldest `fetched_at`), at most `fundamentals_max_instruments` (300, admin-editable) per market and
 run so a weekly job walks the whole universe over a few weeks; CUSIP placeholders are never sent to a provider.
+
+## Insiders and issuer filings (Faz 4, US only)
+
+SEC Form 4 is the report an insider (director, officer, ≥10 % owner) files within two business days of a transaction
+in the issuer's stock. `services/insiders.refresh` (daily 08:30, `form4_daily`, gated by `sec_form4_enabled`; also
+`instilens insiders`) reads each issuer's EDGAR submissions listing and stores three things:
+
+| Table | Grain | Notes |
+|---|---|---|
+| `instruments.sec_cik`, `instruments.sec_form4_fetched_at` | instrument | the issuer's EDGAR CIK from the SEC's `company_tickers.json` (`instilens sec-ciks`, also at the start of the job for CIK-less issuers, committed before the batch is chosen; class-share tickers compared with `/` and `.` folded to `-`); when the issuer was last read, which orders the job stalest first. Share classes (GOOG / GOOGL, LEN / LEN-B) share the CIK: one listing, one set of Form 4s, every class stamped together |
+| `disclosures` (kind `SEC_FORM4`) | one Form 4 / 4/A | `source_id` = accession, `raw_uri` = the filing index page, `payload` = the whole parsed document (issuer, reporting owners with relationship flags, both transaction tables, footnotes); PARSED on arrival. A 4/A supersedes, through `supersedes_id`, the live Form 4 of the same owner and issuer filed on its `dateOfOriginalSubmission`; failing that the earlier amendment naming the same original (a second 4/A replaces the first, never sits beside it); failing that the latest earlier document for the same period of report (within a week of the stated day, when one is stated). Within a day originals are stored before amendments, and an original that lands after its amendment (retried document) is flagged on arrival. The superseded document stays, flagged |
+| `insider_transactions` | one transaction-table row | `disclosure_id` + `confidence` (lineage; EXACT — the insider's own report), `instrument_id` = the issuer the document names (an issuer's listing also carries the Form 4s it files as a 10 % owner of another company: those rows go to that company's instrument, or nowhere), `insider_cik` / `insider_name` of the attributed owner — a joint filing (a director and their trust, a 10 % owner group) names several owners for one set of rows: the natural person flagged director or officer, else the first owner — `roles` (comma-joined director, officer, ten_percent_owner, other: the union over the filing's owners) / `title` (the attributed owner's, else the first stated), `transaction_date`, `filed_at`, `code` as filed, `acquired` (A/D), `shares`, `price` (NULL when the filing states none — an RSU settlement's price cell holds only a footnote), `post_shares`, `ownership` (D/I), `derivative` (row of the derivative table), `is_superseded`, `row_hash` (accession, owner, ordinal, fields — unique, so a re-run writes nothing). Holding rows of the filing are positions, not transactions, and are not stored |
+| `sec_filings` | issuer × accession | the listing index: `form` (4, 4/A, 8-K, 10-K, 10-Q), `filed_at`, `period` (report date), `items` (8-K item codes, e.g. `["2.02", "9.01"]`), `primary_document`, `url` (filing index). The documents themselves are not stored |
+
+Transaction codes are the meaning of a row and are never flattened into "buy" / "sell": P open-market or private
+purchase, S sale, A grant or award, M option exercise or RSU settlement, F shares withheld for tax, G gift, D
+disposition to the issuer, C conversion, X exercise of an in-the-money derivative, J other (footnoted). The read models
+(`/stocks/{symbol}/insiders`, the `insiders` block of stock_detail, the `get_insider_trades` tool) count only P rows as
+buyers and S rows as sellers (distinct insiders; values = Σ shares × price of the rows that state a price) and list every
+row with its code, accession and filing URL; `value` is shares × price at read time, nothing derived is stored. The
+read models join the issuer's classes by CIK, so GOOG and GOOGL show the same rows and both get the cluster signal.
+`/stocks/{symbol}/insiders` returns at most 200 rows and says `truncated: true` when the window holds more, with
+`edgar_url` (the issuer's Form 4 list on EDGAR); `fetched_at` null on either endpoint means the issuer has not been read
+yet — never "no activity" / "no filings". Refresh universe: US instruments seen in a 13F position change within 400
+days or on a watchlist, stalest first, at most `sec_form4_max_issuers` (200, admin-editable) per run — chosen among the
+instruments that carry a CIK, so a ticker the SEC map does not know (ADR variants, preferreds, delisted names) is
+reported as skipped and never holds a slot; `sec_form4_days_back` (120) days of listing per issuer (the window is cut
+before any cap; EDGAR's `recent` block holds at least a year, a longer window logs a warning). CUSIP placeholders have no
+ticker to map and are left out. Each issuer's writes run in a savepoint and are committed as soon as it is done. TR
+instruments answer `supported: false` — KAP insider filings come later. Test fixtures are real EDGAR documents
+(`backend/fixtures/sec/form4/`, sources in `fixtures/sec/README.md`).

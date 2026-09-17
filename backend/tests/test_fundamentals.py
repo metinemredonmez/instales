@@ -601,7 +601,7 @@ def test_migration_creates_fundamentals_tables_on_scratch_sqlite(tmp_path, monke
     assert {"instrument_id", "kind", "period_kind", "period_end"} in uniques
     assert {"instrument_id", "as_of"} in [set(u["column_names"]) for u in insp.get_unique_constraints("fundamental_snapshots")]
     with engine.begin() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "d0e1f2a3b4c5"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "e1f2a3b4c5d6"  # the current head (insiders builds on this revision)
         conn.execute(text("INSERT INTO fundamentals (instrument_id, kind, period_kind, period_end, currency, items, source, fetched_at) "
                           "VALUES (1, 'income', 'annual', '2025-12-31', 'TRY', '{\"revenue\": 1.0}', 'yahoo', '2026-09-17 10:00:00')"))
         with pytest.raises(Exception):  # noqa: B017 — the unique key, whatever the driver calls the violation

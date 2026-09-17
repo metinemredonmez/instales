@@ -64,3 +64,35 @@ methodology change and must be reflected here.
 ## Outcomes (credibility layer)
 Each signal stores price at detection; `signal_outcomes` gets +7/30/90D returns, max return and
 max drawdown. This is how we answer "do InstiLens signals work?" with data.
+
+## Insider purchase cluster (INSIDER_BUY_CLUSTER, US only)
+
+Source: SEC Form 4 rows (`insider_transactions`, see `03-data-model.md`). The signal fires for an issuer when at least
+`CLUSTER_MIN_INSIDERS = 3` **distinct insiders** made **open-market purchases** — transaction code P in the
+non-derivative table — inside the `CLUSTER_WINDOW_DAYS = 30` days ending on the compute day. Grants and awards (A),
+option exercises and RSU settlements (M), shares withheld for tax (F), gifts (G), sales (S) and every derivative-table
+row never count: only a P row is a decision to pay market price for the stock. Rows of a superseded filing (replaced by
+a 4/A) are ignored; the amendment's rows count instead. An insider is a person, not a filing: a joint filing names every
+reporting owner (a director and their trust, a fund and its general partner), and two filings whose owner sets overlap
+count as one insider, whichever owner led each.
+
+```
+value    = Σ shares × price over the window's P rows that state a price   (unpriced rows count in breadth, not in value)
+strength = round( 100 × min(1, insiders / 5) × ( 0.5 + 0.5 × min(1, value / $1,000,000) ) )
+```
+| insiders | value | strength |
+|---|---|---|
+| 3 | $0 known | 30 |
+| 3 | ≥ $1M | 60 |
+| 4 | $500k | 60 |
+| 5+ | ≥ $1M | 100 |
+
+Breadth is the main factor (five buyers saturate it); the value term lifts a cluster the more the insiders paid but never
+zeroes one whose filings state no prices. Confidence is the weakest of the purchases' rows — EXACT for every Form 4 row
+today: each purchase is the insider's own report, with its accession. `window_start` is the first purchase in the window;
+the row is episodic like every other signal (an open episode is extended day by day, a second compute of the same day
+updates the row in place — its id never changes) and `evidence` lists `insiders`, `names`, `value`, `unpriced`,
+`purchases`, `since`, `accessions` and `window_days`. Constants live in `engine/insiders.py`. The signal feeds the
+generic SIGNAL alert rule and the dedicated INSIDER_BUY_CLUSTER rule (implicit for watched US stocks, refused on a BIST
+symbol or a fund; text: "3 insiders bought on the open market in the last 30 days" — descriptive, never advice), keyed by
+the episode row so an ongoing cluster notifies once.

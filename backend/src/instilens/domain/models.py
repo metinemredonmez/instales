@@ -66,6 +66,10 @@ class Instrument(Base):
     # From the latest fundamentals snapshot (services/fundamentals); lets a holding be read as a share of the company.
     shares_outstanding: Mapped[int | None] = mapped_column(BigInteger)
     shares_as_of: Mapped[date | None] = mapped_column(Date)
+    # US: the issuer's EDGAR CIK (from the SEC's company_tickers.json, `ingestion/sec/tickers`), which keys its
+    # submissions listing — Form 4s and 8-K/10-K/10-Q. `sec_form4_fetched_at` orders the daily job stalest first.
+    sec_cik: Mapped[str | None] = mapped_column(String(10), index=True)
+    sec_form4_fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Institution(Base):
@@ -287,6 +291,67 @@ class FundamentalSnapshot(Base):
     quote_currency: Mapped[str | None] = mapped_column(String(3))
     source: Mapped[str] = mapped_column(String(16))
     fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+# --------------------------------------------------------------------------- insiders (SEC Form 4) and issuer filings
+
+
+class InsiderTransaction(Base):
+    """One row of a Form 4 transaction table, as the insider reported it (services/insiders). Lineage: the
+    `disclosures` row (kind SEC_FORM4, `source_id` = accession, `raw_uri` = the filing index) whose `payload` is the
+    whole parsed document. `code` is the Form 4 transaction code (P open-market purchase, S sale, A grant/award,
+    M option exercise or RSU settlement, F shares withheld for tax, G gift, ...) — the meaning of a row, never
+    flattened into "buy"/"sell". `price` is NULL when the filing states none (footnote only); `value` is never
+    stored, it is shares × price at read time. `derivative` rows come from the derivative table (options, RSUs).
+    A 4/A supersedes its original through `Disclosure.supersedes_id`; the original's rows stay with
+    `is_superseded=True` for audit. `row_hash` (accession, owner, ordinal position, fields) makes a re-run a no-op.
+    `confidence` is EXACT for every Form 4 row (the insider's own report of their own transaction); the column is
+    the lineage every fact table carries. Share classes of one issuer (GOOG / GOOGL) share a CIK and one set of
+    Form 4s, stored once under whichever class was read first — the read models join the issuer's classes by CIK."""
+
+    __tablename__ = "insider_transactions"
+    __table_args__ = (
+        UniqueConstraint("row_hash"),
+        Index("ix_insider_transactions_instrument_date", "instrument_id", "transaction_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    disclosure_id: Mapped[int] = mapped_column(ForeignKey("disclosures.id"), index=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    insider_cik: Mapped[str] = mapped_column(String(10), index=True)
+    insider_name: Mapped[str] = mapped_column(String(160))
+    roles: Mapped[str] = mapped_column(String(64))  # comma-joined: director, officer, ten_percent_owner, other
+    title: Mapped[str | None] = mapped_column(String(160))  # officer title as filed
+    transaction_date: Mapped[date] = mapped_column(Date)
+    filed_at: Mapped[datetime] = mapped_column(DateTime)
+    code: Mapped[str] = mapped_column(String(2))
+    acquired: Mapped[bool] = mapped_column(Boolean)  # transactionAcquiredDisposedCode A → True, D → False
+    shares: Mapped[Decimal] = mapped_column(Money)
+    price: Mapped[Decimal | None] = mapped_column(Money)
+    post_shares: Mapped[Decimal | None] = mapped_column(Money)  # shares owned following the transaction
+    ownership: Mapped[str] = mapped_column(String(1))  # D direct / I indirect
+    derivative: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_superseded: Mapped[bool] = mapped_column(Boolean, default=False)
+    confidence: Mapped[str] = mapped_column(String(16), default="EXACT")
+    row_hash: Mapped[str] = mapped_column(String(64))
+
+
+class SecFiling(Base):
+    """One entry of an issuer's EDGAR submissions listing (Form 4, 4/A, 8-K, 10-K, 10-Q): what was filed when, with
+    the 8-K item codes and the links. Descriptive index only — the documents themselves are not stored."""
+
+    __tablename__ = "sec_filings"
+    __table_args__ = (UniqueConstraint("instrument_id", "accession"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
+    form: Mapped[str] = mapped_column(String(10))
+    filed_at: Mapped[date] = mapped_column(Date, index=True)
+    period: Mapped[date | None] = mapped_column(Date)  # the report date EDGAR lists (period of report), if any
+    items: Mapped[list | None] = mapped_column(JSON)  # 8-K item codes, e.g. ["2.02", "9.01"]
+    accession: Mapped[str] = mapped_column(String(24))
+    primary_document: Mapped[str | None] = mapped_column(String(160))
+    url: Mapped[str] = mapped_column(String(255))  # the filing index page
 
 
 # --------------------------------------------------------------------------- intelligence layer

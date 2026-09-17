@@ -54,6 +54,8 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "quotes_interval_s": {"type": "int", "group": "data", "min": 15, "max": 600},
     "fundamentals_enabled": {"type": "bool", "group": "data"},  # gates the weekly statements/metrics job (services/fundamentals)
     "fundamentals_max_instruments": {"type": "int", "group": "data", "min": 10, "max": 5000},  # per market and run, stalest first
+    "sec_form4_enabled": {"type": "bool", "group": "data"},  # gates the daily Form 4 / issuer filings job (services/insiders)
+    "sec_form4_max_issuers": {"type": "int", "group": "data", "min": 10, "max": 2000},  # issuers per run, stalest first
 }
 _DEFAULTS: dict[str, Any] = {}
 

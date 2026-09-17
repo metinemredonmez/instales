@@ -66,8 +66,9 @@ export function Fundamentals({ symbol, market }: { symbol: string; market: Marke
 }
 
 /**
- * Header line under the stock name: market cap · P/E · P/B · net margin. Only figures Yahoo stated become chips;
- * with none (statements fetched, no snapshot yet) the row is not rendered at all — never a row of dashes.
+ * Header chips under the stock name: market cap · P/E · P/B · net margin. Only figures Yahoo stated become chips;
+ * with none (statements fetched, no snapshot yet) nothing is rendered — never a row of dashes. The chips sit in the
+ * StockPage's header row next to the insiders chip, which hides itself when it ends up empty.
  */
 export function FundamentalsChips({ f }: { f: FundamentalsSummary }) {
   const { t } = useI18n()
@@ -80,14 +81,14 @@ export function FundamentalsChips({ f }: { f: FundamentalsSummary }) {
   const present = chips.filter(([, v]) => v !== "—")
   if (present.length === 0) return null
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+    <>
       {present.map(([k, v]) => (
         <span key={k} className="inline-flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5">
           <span className="text-muted-foreground">{k}</span>
           <span className="num font-medium">{v}</span>
         </span>
       ))}
-    </div>
+    </>
   )
 }
 

@@ -89,6 +89,27 @@ def fundamentals(market: str = "TR", symbols: str = typer.Option("", help="comma
         typer.echo(f"{market}: {n} fundamentals rows written")
 
 
+@app.command()
+def insiders(symbols: str = typer.Option("", help="comma-separated US symbols; default: issuers seen in 13F flows or on a watchlist, stalest first"),
+             days_back: int | None = typer.Option(None, help="days of filings to read per issuer (default sec_form4_days_back)")) -> None:
+    """Pull SEC Form 4 insider transactions and the 8-K/10-K/10-Q filing index of US issuers from EDGAR."""
+    from instilens.services.insiders import refresh
+
+    with session_scope() as s:
+        out = refresh(s, [x for x in symbols.split(",") if x] or None, days_back=days_back)
+        typer.echo(f"US insiders: {out['issuers']} issuers · {out['filings']} filings · {out['form4']} Form 4 · {out['transactions']} transactions · {out['skipped']} skipped")
+
+
+@app.command("sec-ciks")
+def sec_ciks(all_: bool = typer.Option(False, "--all", help="re-map instruments that already carry a CIK")) -> None:
+    """Map US instruments to their EDGAR CIK from the SEC's company_tickers.json (official, free)."""
+    from instilens.ingestion.sec.tickers import refresh_ciks
+    from instilens.services.insiders import build_client
+
+    with session_scope() as s:
+        typer.echo(f"mapped {refresh_ciks(s, build_client(), only_missing=not all_)} instruments")
+
+
 @app.command("load-cusips")
 def load_cusips(path: str) -> None:
     """Load a CUSIP→ticker CSV (cusip,symbol,name) so 13F rows resolve to tickers."""
@@ -123,7 +144,7 @@ def compute(as_of: str | None = typer.Option(None, help="YYYY-MM-DD, default tod
 
 @app.command()
 def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> None:
-    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (active provider) → positions → intelligence → alerts → outcomes."""
+    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (active provider) → positions → Form 4 insiders → intelligence → alerts → outcomes."""
     from instilens.ingestion.prices import load_prices
     from instilens.services.alerts import evaluate
     from instilens.services.notify import deliver_pending
@@ -148,6 +169,11 @@ def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> No
             for market in ("TR", "US"):
                 typer.echo(f"[{market}] prices {load_prices(s, market, days=400)}")
         typer.echo(f"position changes {pipeline.rebuild_positions(s)}")
+        if settings.sec_form4_enabled:  # after positions: the issuer universe is what the 13F diffs touched
+            from instilens.services.insiders import refresh as refresh_insiders
+
+            s.commit()  # the run so far is durable before the issuer walk (which commits issuer by issuer)
+            typer.echo(f"[US] insiders {refresh_insiders(s)}")
         typer.echo(f"instruments scored {pipeline.compute_intelligence(s, day)}")
         typer.echo(f"notifications {evaluate(s, day)}")
         typer.echo(f"delivered {deliver_pending(s)}")

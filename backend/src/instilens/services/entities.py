@@ -26,7 +26,9 @@ class EntityResolver:
     def ensure_markets(self) -> None:
         for market, row in MARKETS.items():
             if self.session.get(MarketRow, market.value) is None:
-                self.session.add(row)
+                # A fresh instance per session: MARKETS holds templates, and one mapped object must never be shared
+                # between sessions (re-attaching the same instance skips the INSERT and breaks on the next rollback).
+                self.session.add(MarketRow(code=row.code, name=row.name, currency=row.currency, timezone=row.timezone))
         self.session.flush()
 
     def instrument(self, market: Market, symbol: str, name: str | None = None) -> Instrument:

@@ -1,7 +1,8 @@
 # Fixtures — TEST DATA ONLY
 
 The application never loads these; `instilens run` uses real sources. `kap/` is synthetic (tests);
-`sec/` are real 13F filings, `kap_public/` are real KAP pages/PDFs, `cusips_US.csv` is a real OpenFIGI map.
+`sec/` are real 13F filings (and, under `sec/form4/`, real Form 4 documents + trimmed submissions listings — see
+`sec/README.md`), `kap_public/` are real KAP pages/PDFs, `cusips_US.csv` is a real OpenFIGI map.
 
 Everything in this directory is invented for development and tests. Fund codes and company names
 are placeholders; quantities, prices and ownership percentages are **not** real disclosures.
