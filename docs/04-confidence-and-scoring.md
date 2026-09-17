@@ -96,3 +96,58 @@ updates the row in place — its id never changes) and `evidence` lists `insider
 generic SIGNAL alert rule and the dedicated INSIDER_BUY_CLUSTER rule (implicit for watched US stocks, refused on a BIST
 symbol or a fund; text: "3 insiders bought on the open market in the last 30 days" — descriptive, never advice), keyed by
 the episode row so an ongoing cluster notifies once.
+
+## Crowding Score (CROWDING, instrument, 0–100)
+
+How many funds hold a stock and how the held quantity is spread among them — a count of reported positions, never a
+valuation view: "crowded" is descriptive ("14 funds hold it, the ten largest hold 80 % of what funds hold"), it is not
+"overbought" and never a verdict. Inputs come from `services/ownership.py`: each fund's **latest** portfolio snapshot on
+or before the compute day (one row per fund, never two dates of one fund), leaving out — and counting as
+`stale_holders` — funds whose newest report is older than two reporting periods (`PERIOD_DAYS × 2`: TR 60 days,
+US 182); the held share of the company uses `instruments.shares_outstanding` (the fundamentals job); breadth momentum
+is the score window's `funds_increasing − funds_reducing` (the same parties the Smart Money Score counts).
+
+```
+raw = 100 × ( 0.35·holders + 0.25·held_pct + 0.20·concentration + 0.20·momentum )
+adjusted = raw                                     (no confidence multiplier: every holder row is a fund's own report)
+```
+| Component | Input | Full marks at |
+|---|---|---|
+| holders | funds holding the stock (latest non-stale snapshot each) | 25 |
+| held_pct | Σ holder quantity / shares outstanding × 100 | 30 % |
+| concentration | 1 − HHI / 10000, HHI = Σ (holder's share of the held quantity in %)² | spread evenly (HHI → 0) |
+| momentum | funds increasing − funds reducing in the score window, positive only | +5 |
+
+Saturation is the score engine's concave `sqrt(x / sat)`. **Shares unknown** (no fundamentals yet): `held_pct` is
+skipped and its 25 % is spread over the other three (weights rescaled to 0.4667 / 0.2667 / 0.2667, still summing to
+1); the breakdown says so (`why.held_pct.skipped`, `weight: 0`). Levels: **low < 35**, **medium 35..65**, **high > 65**
+(of the stored two-decimal score). Constants live in `engine/crowding.py`.
+
+Stored as `scores` rows with `score_type = CROWDING`, `fund_id NULL`, one per instrument at least one fund holds in a
+non-stale report as known on the compute day (an instrument without window activity still gets its row — momentum
+is simply 0); written by `compute_intelligence` from one holder query per market, so the stock page (the header chip
+from `stock_detail.scores.CROWDING` and the ownership section from `/stocks/{symbol}/ownership`) and the ownership AI
+tools (`get_stock_ownership`, `get_crowding_score`) read one number. Radar and the Screener list the Smart Money and
+Consensus scores only. `components` holds
+`raw`, `adjusted`, `level`, the effective `weights`, the normalized `components` and `why` — per component its raw
+input, normalized value, weight and contribution in points (`Σ contribution = raw`), plus `stale_holders`.
+
+The ownership page also reports `top10_pct_of_held` (the ten largest holders' share of the held quantity) and `hhi`;
+`/funds/overlap` (2..6 funds of one market, latest snapshot each) gives `overlap_pct_symbols` = common / union × 100
+and `overlap_pct_weighted` = Σ min(w_a, w_b) over the common symbols in percentage points of a book — null when either
+fund reports no weight for one of them (a partial sum would read as a smaller overlap than the truth).
+`/funds/{code}/compare/{other}` carries the same two figures.
+
+## Price alerts (PRICE_ABOVE / PRICE_BELOW)
+
+Explicit rules only (never implicit for a watched stock), `params: {"price": 0 < number ≤ 1e9, "since": date}`,
+stocks only. Evaluated against `market_prices` **daily closes** — the header quote feed carries the market strip, not
+stocks, so an intraday crossing is seen at the next close. A rule fires on the close date that crossed the threshold
+(that close is beyond it and the previous close was not, or there is no previous close) and once per crossing: the
+dedup key is `{rule.id}:{close_date}`. Every evaluate walks the last `PRICE_LOOKBACK` (10) closes pairwise, not only
+the newest pair, so a crossing still fires when two closes land between two runs (a lagging feed, a skipped compute);
+the close before the window is only ever a "previous", never a crossing of its own. `since` is the latest close known
+when the rule was created (today when the stock has no close yet): closes before it never count, so a rule created
+while the close is already beyond its threshold waits for the next crossing, unless that latest close is itself the
+crossing. Text is descriptive — "ASELS: kapanış 123,4 ₺ ile eşik 120 ₺ üzerinde" / "ASELS: close 123.4 ₺ is above the 120 ₺
+threshold" — never a call to act.

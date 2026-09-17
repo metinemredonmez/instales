@@ -79,6 +79,7 @@ class ScoreType(StrEnum):
     SMART_MONEY = "SMART_MONEY"  # instrument-level
     CONSENSUS = "CONSENSUS"  # instrument-level
     CONVICTION = "CONVICTION"  # fund × instrument
+    CROWDING = "CROWDING"  # instrument-level: how many funds hold it and how concentrated (engine/crowding)
 
 
 class ParseStatus(StrEnum):

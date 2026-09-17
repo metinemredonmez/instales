@@ -35,6 +35,20 @@ def close_on_or_before(session: Session, instrument_id: int, on: date):
     )
 
 
+def last_closes(session: Session, instrument_id: int, on: date, n: int = 2) -> list[tuple[date, Decimal]]:
+    """The `n` latest (trade_date, close) rows on or before `on`, newest first — the price alerts walk them pairwise
+    for the close that crossed a threshold."""
+    from instilens.domain.models import MarketPrice
+
+    return [
+        (d, c)
+        for d, c in session.execute(
+            select(MarketPrice.trade_date, MarketPrice.close).where(MarketPrice.instrument_id == instrument_id, MarketPrice.trade_date <= on)
+            .order_by(MarketPrice.trade_date.desc()).limit(n)
+        )
+    ]
+
+
 def event_value(session: Session, ev: TransactionEvent):
     """Disclosed value if the filing carried a price, else nominal × close on the trade date (None if no price)."""
     if ev.net_value is not None:
@@ -631,17 +645,15 @@ def stock_timeline(session: Session, market: str, symbol: str) -> list[dict] | N
 
 
 def compare_funds(session: Session, code_a: str, code_b: str) -> dict | None:
+    """Two funds' latest books side by side. `overlap_pct` is the share of symbols both hold among the symbols either
+    holds; `overlap_pct_weighted` is Σ min(weight_a, weight_b) over the common symbols (null when a common holding
+    has no reported weight in either book) — the same helpers `/funds/overlap` uses (services/ownership)."""
+    from instilens.services import ownership
+
     a = session.scalar(select(Fund).where(Fund.code == code_a.upper()))
     b = session.scalar(select(Fund).where(Fund.code == code_b.upper()))
     if a is None or b is None:
         return None
-
-    def latest_holdings(fund: Fund) -> dict[str, dict]:
-        snap = session.scalar(select(PortfolioSnapshot).where(PortfolioSnapshot.fund_id == fund.id).order_by(PortfolioSnapshot.as_of.desc()).limit(1))
-        if snap is None:
-            return {}
-        return {sym: {"quantity": h.quantity, "weight_pct": float(h.weight_pct) if h.weight_pct is not None else None}
-                for h, sym in session.execute(select(SnapshotHolding, Instrument.symbol).join(Instrument, Instrument.id == SnapshotHolding.instrument_id).where(SnapshotHolding.snapshot_id == snap.id))}
 
     def latest_moves(fund: Fund) -> dict[str, str]:
         latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))
@@ -649,18 +661,22 @@ def compare_funds(session: Session, code_a: str, code_b: str) -> dict | None:
             return {}
         return {sym: act for sym, act in session.execute(select(Instrument.symbol, PositionChange.activity).join(Instrument, Instrument.id == PositionChange.instrument_id).where(PositionChange.fund_id == fund.id, PositionChange.period_end == latest))}
 
-    ha, hb, ma, mb = latest_holdings(a), latest_holdings(b), latest_moves(a), latest_moves(b)
+    books = ownership.fund_books(session, [a, b])
+    ha, hb, ma, mb = books[a.code].holdings, books[b.code].holdings, latest_moves(a), latest_moves(b)
     common = sorted(set(ha) & set(hb))
     up, down = {"ADD", "NEW"}, {"REDUCE", "EXIT"}
     both_inc = [s for s in set(ma) | set(mb) if ma.get(s) in up and mb.get(s) in up]
     both_red = [s for s in set(ma) | set(mb) if ma.get(s) in down and mb.get(s) in down]
     opposite = [{"symbol": s, "a": ma.get(s), "b": mb.get(s)} for s in set(ma) & set(mb) if (ma[s] in up and mb[s] in down) or (ma[s] in down and mb[s] in up)]
+    weight = lambda p: float(p.weight_pct) if p.weight_pct is not None else None  # noqa: E731
+    weighted = ownership.weighted_overlap({s: p.weight_pct for s, p in ha.items()}, {s: p.weight_pct for s, p in hb.items()})
     return {
         "a": {"code": a.code, "name": a.name, "institution": a.institution.name}, "b": {"code": b.code, "name": b.name, "institution": b.institution.name},
-        "common": [{"symbol": s, "a_weight_pct": ha[s]["weight_pct"], "b_weight_pct": hb[s]["weight_pct"], "a_move": ma.get(s), "b_move": mb.get(s)} for s in common],
+        "common": [{"symbol": s, "a_weight_pct": weight(ha[s]), "b_weight_pct": weight(hb[s]), "a_move": ma.get(s), "b_move": mb.get(s)} for s in common],
         "only_a": sorted(set(ha) - set(hb)), "only_b": sorted(set(hb) - set(ha)),
         "both_increasing": sorted(both_inc), "both_reducing": sorted(both_red), "opposite": sorted(opposite, key=lambda o: o["symbol"]),
-        "overlap_pct": round(100 * len(common) / max(len(set(ha) | set(hb)), 1), 1),
+        "overlap_pct": ownership.symbol_overlap(ha, hb),
+        "overlap_pct_weighted": round(float(weighted), 2) if weighted is not None else None,
     }
 
 

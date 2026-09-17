@@ -48,7 +48,91 @@ export interface FundCompare {
   both_increasing: string[]
   both_reducing: string[]
   opposite: { symbol: string; a: Activity; b: Activity }[]
+  /** Common symbols / union × 100. */
   overlap_pct: number
+  /** Σ min(weight_a, weight_b) over the common symbols; null when either fund's latest snapshot carries no weights. */
+  overlap_pct_weighted: number | null
+}
+
+/**
+ * /funds/overlap?codes=A,B,C — 2..6 funds of one market, each read at its latest snapshot. `pairwise` holds every
+ * unordered pair once (symbol-based and weighted overlap, the weighted figure null when either fund lacks weights);
+ * `common_all` is the symbols every requested fund holds, with each fund's weight, sorted by the smallest weight desc.
+ * 404 when a code is unknown, 422 with fewer than two codes or mixed markets.
+ */
+export interface OverlapFund { code: string; name: string; institution: string; as_of: string | null; holdings: number }
+export interface OverlapPair { a: string; b: string; overlap_pct_symbols: number; overlap_pct_weighted: number | null }
+export interface FundOverlap {
+  /** Newest of the funds' report dates; null when none has a snapshot yet. */
+  as_of: string | null
+  funds: OverlapFund[]
+  pairwise: OverlapPair[]
+  common_all: { symbol: string; name: string; weights: Record<string, number | null> }[]
+}
+
+/**
+ * /stocks/{symbol}/ownership — who holds the stock, from each fund's LATEST snapshot only (one row per fund, no
+ * double counting across dates), largest quantity first. Snapshots older than two reporting periods for the market
+ * (TR 60 d, US 182 d) are left out of `holders` and counted in `stale_holders`. `totals.pct_of_shares` is
+ * quantity / shares_outstanding × 100 and null while the share count is unknown; `top10_pct_of_held` is the ten largest
+ * holders' share of the held quantity and `hhi` the Herfindahl index of holder quantities (0..10000). `crowding` is the
+ * CROWDING score (engine/crowding.py) with its level and the per-component explanation; null when it has not been computed.
+ */
+export type CrowdingLevel = "low" | "medium" | "high"
+/**
+ * One crowding component as engine/crowding.py explains it (holders · held_pct · concentration · momentum): the raw
+ * input, its 0..1 normalisation, the weight actually applied and the points it added to the 0..100 score. `skipped`
+ * names why a component was left out — held_pct while the share count is unknown, its weight spread over the rest.
+ * The engine adds the odd figure next to these (saturation, funds_increasing…), and `why` also carries plain
+ * numbers such as `stale_holders`, which are context, not components.
+ */
+export interface CrowdingComponent { raw: number | null; contribution: number; normalized?: number | null; weight?: number; skipped?: string; [extra: string]: unknown }
+export interface Crowding { score: number; level: CrowdingLevel; why: Record<string, CrowdingComponent | number | null> }
+export interface OwnershipTotals {
+  holders: number
+  institutions: number
+  quantity: number
+  /** Σ of the values the reports state; null when none does. */
+  market_value: number | null
+  /** Holders whose report states no value — not in market_value. */
+  unvalued_holders?: number
+  pct_of_shares: number | null
+  top10_pct_of_held: number | null
+  hhi: number | null
+}
+export interface Holder {
+  fund: string
+  name: string
+  institution: string
+  quantity: number
+  market_value: number | null
+  /** Weight of the position inside that fund's portfolio. */
+  weight_pct: number | null
+  pct_of_shares: number | null
+  as_of: string
+  last_move: Activity | null
+  last_move_period_end: string | null
+  confidence: Confidence
+}
+/**
+ * stock_detail.scores.CROWDING — the stored score row. `why` is the crowding engine's explanation (the `Crowding` shape
+ * above, possibly with extra keys); `level` travels with the row when the API sends it and is otherwise read off the
+ * score with the documented thresholds (low < 35, medium 35..65, high > 65).
+ */
+export interface CrowdingScore { score: number; raw?: number; level?: CrowdingLevel; why: Record<string, unknown> }
+export interface Ownership {
+  symbol: string
+  name: string
+  market: Market
+  /** Latest snapshot date among the listed holders. */
+  as_of: string | null
+  shares_outstanding: number | null
+  shares_as_of: string | null
+  currency: string
+  totals: OwnershipTotals
+  crowding: Crowding | null
+  holders: Holder[]
+  stale_holders: number
 }
 export interface InstitutionRow { code: string; name: string; kind: string; funds: number; events: number; is_verified: boolean }
 export interface InstitutionDetail {
@@ -167,7 +251,8 @@ export interface StockDetail {
   name: string
   market: Market
   as_of: string | null
-  scores: Partial<Record<"SMART_MONEY" | "CONSENSUS", ScoreDetail>>
+  /** CROWDING is stored like the others but explained by the crowding engine, so its `why` has its own shape. */
+  scores: Partial<Record<"SMART_MONEY" | "CONSENSUS", ScoreDetail>> & { CROWDING?: CrowdingScore }
   latest_period_end: string | null
   top_buyers: PositionChange[]
   top_sellers: PositionChange[]
@@ -480,13 +565,23 @@ export interface WatchItem {
   net_flow_value?: number
 }
 
+/**
+ * Alert rule types the API accepts (its /alerts/rules answer lists the live set). SCORE_ABOVE carries `threshold`;
+ * PRICE_ABOVE / PRICE_BELOW carry `price` in the market currency and are evaluated against the latest daily close of
+ * market_prices (the header feed carries no stock quotes today), firing once per crossing — stocks only.
+ */
+export type RuleType = "NEW_FUND_POSITION" | "FUND_EXIT" | "KAP_TRANSACTION" | "SCORE_ABOVE" | "SIGNAL" | "FUND_ACTIVITY" | "INSIDER_BUY_CLUSTER" | "PRICE_ABOVE" | "PRICE_BELOW"
+export type PriceRuleType = Extract<RuleType, "PRICE_ABOVE" | "PRICE_BELOW">
+export type RuleParams = { threshold?: number; price?: number; since?: string } & Record<string, unknown>
+/** Rules are owner-wide: the list holds every market's rules, so `market` is the subject's, not the page's. */
 export interface AlertRule {
   id: number
-  rule_type: string
-  params: Record<string, unknown>
+  rule_type: RuleType | string
+  params: RuleParams
   is_active: boolean
   symbol: string | null
   fund_code: string | null
+  market: Market
 }
 
 export interface Notification {
@@ -538,6 +633,8 @@ export const api = {
   radar: (market: Market, limit = 20, window: number | null = null) => get<Radar>("/radar", { market, limit, window }),
   timeline: (market: Market, symbol: string) => get<TimelineItem[]>(`/stocks/${symbol}/timeline`, { market }),
   compare: (a: string, b: string) => get<FundCompare>(`/funds/${a}/compare/${b}`),
+  /** 2..6 fund codes of one market, sent comma-joined (`codes=A,B,C`). */
+  fundOverlap: (codes: string[]) => get<FundOverlap>("/funds/overlap", { codes: codes.join(",") }),
   institutions: (market: Market) => get<InstitutionRow[]>("/institutions", { market }),
   institution: (market: Market, code: string) => get<InstitutionDetail>(`/institutions/${code}`, { market }),
   ttsStatus: () => get<{ provider: string | null }>("/tts/status"),
@@ -598,11 +695,12 @@ export const api = {
   insiders: (market: Market, symbol: string, days: InsiderWindow = 90) => get<Insiders>(`/stocks/${symbol}/insiders`, { market, days }),
   /** form null = every form type. */
   filings: (market: Market, symbol: string, form: FilingForm | null = null, limit = 20) => get<Filings>(`/stocks/${symbol}/filings`, { market, form, limit }),
+  ownership: (market: Market, symbol: string, limit = 50) => get<Ownership>(`/stocks/${symbol}/ownership`, { market, limit }),
   watchlist: () => get<WatchItem[]>("/watchlist"),
   addWatch: (body: { symbol?: string; fund_code?: string; market: Market }) => send<{ id: number; created: boolean }>("POST", "/watchlist", body),
   removeWatch: (id: number) => send<void>("DELETE", `/watchlist/${id}`),
-  rules: () => get<{ rule_types: string[]; rules: AlertRule[] }>("/alerts/rules"),
-  addRule: (body: { symbol?: string; fund_code?: string; market: Market; rule_type: string; params?: Record<string, unknown> }) => send<{ id: number }>("POST", "/alerts/rules", body),
+  rules: () => get<{ rule_types: (RuleType | string)[]; rules: AlertRule[] }>("/alerts/rules"),
+  addRule: (body: { symbol?: string; fund_code?: string; market: Market; rule_type: RuleType | string; params?: RuleParams }) => send<{ id: number }>("POST", "/alerts/rules", body),
   removeRule: (id: number) => send<void>("DELETE", `/alerts/rules/${id}`),
   notifications: () => get<Notification[]>("/alerts/notifications"),
   markRead: (id?: number) => send<{ marked: number }>("POST", `/alerts/notifications/read${id ? `?id=${id}` : ""}`),

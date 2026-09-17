@@ -43,7 +43,7 @@ from instilens.domain.models import (
     TransactionEventFund,
 )
 from instilens.domain.schemas import RawDisclosure
-from instilens.engine import scoring
+from instilens.engine import crowding, scoring
 from instilens.engine.positions import HoldingView, SnapshotView, diff_snapshots
 from instilens.engine.signals import (
     FundMove,
@@ -404,7 +404,8 @@ def collapse_signal_episodes(session: Session) -> int:
 
 
 def compute_intelligence(session: Session, as_of: date, window_days: int | None = None) -> int:
-    """Recompute scores and signals for every instrument with activity in its market's window."""
+    """Recompute scores and signals for every instrument with activity in its market's window, and the CROWDING
+    score for every instrument a fund holds in its latest (non-stale) report. Returns the instruments scored."""
     from instilens.domain.models import SignalOutcome
 
     collapse_signal_episodes(session)
@@ -416,7 +417,9 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
     # dedup keys and outcome rows hang on — and only the ones not detected again are removed at the end.
     today: dict[tuple[int, int | None, str], Signal] = {(s.instrument_id, s.fund_id, s.signal_type): s for s in session.scalars(select(Signal).where(Signal.window_end == as_of))}
     redetected: set[tuple[int, int | None, str]] = set()
-    market_of = dict(session.execute(select(Instrument.id, Instrument.market_code)).all())
+    instrument_rows = session.execute(select(Instrument.id, Instrument.market_code, Instrument.shares_outstanding)).all()
+    market_of = {i: m for i, m, _ in instrument_rows}
+    shares_of = {i: s for i, _, s in instrument_rows}  # from the fundamentals job; None until it has run for the symbol
 
     def start_for(instrument_id: int) -> date:
         return as_of - timedelta(days=window_days or MARKET_WINDOW_DAYS.get(market_of.get(instrument_id, "TR"), 30))
@@ -445,7 +448,8 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
         if _event_is_uncovered(e, latest_snapshot_by_fund):
             events_by_instrument[e.instrument_id].append(e)
 
-    written = 0
+    scored: set[int] = set()
+    breadth: dict[int, tuple[int, int]] = {}  # parties increasing / reducing in the window — the crowding momentum input
     for instrument_id in set(by_instrument) | set(events_by_instrument):
         activity = _instrument_activity(session, instrument_id, by_instrument[instrument_id], events_by_instrument[instrument_id], as_of)
         instrument = session.get(Instrument, instrument_id)
@@ -461,7 +465,22 @@ def compute_intelligence(session: Session, as_of: date, window_days: int | None 
                 session.add(_score_row(instrument_id, c.fund_id, ScoreType.CONVICTION, as_of, conv, {}))
         for sig in _detect_signals(session, instrument_id, by_instrument[instrument_id], events_by_instrument[instrument_id], activity, start_for(instrument_id), as_of):
             _write_signal_episode(session, instrument, sig, as_of, today, redetected)
-        written += 1
+        breadth[instrument_id] = (activity.funds_increasing, activity.funds_reducing)
+        scored.add(instrument_id)
+    # Crowding: one row per instrument at least one fund holds in its latest (non-stale) report as known on `as_of`.
+    # The holder rows of a whole market come from one query (services/ownership), never one per instrument; an
+    # instrument without window activity still gets its row — its momentum is simply zero.
+    from instilens.services.ownership import crowding_inputs, market_holders
+
+    for market in sorted(set(market_of.values())):
+        for instrument_id, held in market_holders(session, market, as_of).items():
+            if not held.fresh:
+                continue
+            inc, red = breadth.get(instrument_id, (0, 0))
+            inputs = crowding_inputs(held, shares_of.get(instrument_id), inc, red, window_days or MARKET_WINDOW_DAYS.get(market, 30))
+            session.add(_score_row(instrument_id, None, ScoreType.CROWDING, as_of, crowding.crowding_score(inputs), {}))
+            scored.add(instrument_id)
+    written = len(scored)
     # Insider purchase clusters (US, Form 4) are keyed on the same episodes; they need no fund activity to exist.
     from instilens.services.insiders import detected_signals
 

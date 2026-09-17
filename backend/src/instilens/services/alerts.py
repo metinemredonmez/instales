@@ -8,12 +8,22 @@ Rule types (params in AlertRule.params):
   SIGNAL             one of {types} fired                                     (instrument)
   FUND_ACTIVITY      the fund had NEW/EXIT moves in the latest period         (fund)
   INSIDER_BUY_CLUSTER  ≥3 insiders made open-market purchases in 30 days (US) (instrument)
+  PRICE_ABOVE / PRICE_BELOW  the daily close crossed {price}                (instrument, explicit rules only)
 Language is descriptive on purpose — never "buy"/"sell".
+
+Price rules read `market_prices` closes — daily bars; the header feed carries the market strip, not stocks, so an
+intraday crossing is seen at the next close. A rule fires on the close date that crossed the threshold (the previous
+close was on the other side, or there is no previous close) and once per crossing: the dedup key is the close date.
+Every consecutive pair of the last PRICE_LOOKBACK closes is checked, not only the newest one, so a crossing still
+fires when two closes land between two evaluates. Closes before the one known when the rule was created
+(`params.since`, set by `userdata.create_rule`) never count: a rule created while the close is already beyond its
+threshold waits for the next crossing, unless that latest close is itself the crossing.
 """
 
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +33,7 @@ from instilens.domain.models import (
     AlertRule,
     Fund,
     Instrument,
+    MarketRow,
     Notification,
     PositionChange,
     Score,
@@ -32,8 +43,12 @@ from instilens.domain.models import (
     User,
 )
 from instilens.services import live
+from instilens.services.analytics import last_closes
 
-RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY", "INSIDER_BUY_CLUSTER"}
+PRICE_RULES = ("PRICE_ABOVE", "PRICE_BELOW")  # explicit rules with params {"price": number > 0, "since": date}; never implicit for a watched stock
+RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY", "INSIDER_BUY_CLUSTER", *PRICE_RULES}
+CURRENCY_SIGN = {"TRY": "₺", "USD": "$"}
+PRICE_LOOKBACK = 10  # closes a price rule walks per evaluate (two trading weeks): a crossing survives that many missed runs
 
 
 WATCHLIST_STOCK_RULES = ("NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SIGNAL")
@@ -78,7 +93,7 @@ def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, 
     exists = session.scalar(select(Notification.id).where(Notification.owner_id == rule.owner_id, Notification.dedup_key == dedup))
     if exists:
         return False
-    session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id if (rule.id or 0) > 0 else None, dedup_key=dedup, title=title, body=body, link=link))
+    session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id if (rule.id or 0) > 0 else None, dedup_key=dedup, title=title[:256], body=body, link=link))
     live.publish(session, "notification", owner_id=rule.owner_id, payload={"title": title, "link": link})
     return True
 
@@ -154,6 +169,31 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
             # extends it day by day): an ongoing cluster notifies once, however many days it lasts
             yield (f"cluster:{sig.id}", title, body, f"/stocks/{inst.symbol}")
 
+    elif t in PRICE_RULES and inst:  # explicit rules only: no watchlist tuple carries a price rule
+        price = rule.params.get("price")
+        # One close more than the walk: the oldest row is only ever the "previous" of the next one — a close at the
+        # edge of the window is not a crossing just because the window shows nothing before it.
+        closes = list(reversed(last_closes(session, inst.id, as_of, PRICE_LOOKBACK + 1)))
+        if price is None or not closes:
+            return
+        threshold = Decimal(str(price))
+        since = date.fromisoformat(rule.params["since"]) if rule.params.get("since") else None
+        above = t == "PRICE_ABOVE"
+        beyond = (lambda c: c > threshold) if above else (lambda c: c < threshold)
+        currency = session.get(MarketRow, inst.market_code).currency
+        amount = lambda v: _price(v, lang, CURRENCY_SIGN.get(currency, currency))  # noqa: E731
+        for i in range(1 if len(closes) > PRICE_LOOKBACK else 0, len(closes)):
+            (on, close), previous = closes[i], (closes[i - 1][1] if i else None)
+            if not beyond(close) or (previous is not None and beyond(previous)) or (since is not None and on < since):
+                continue  # not beyond the threshold, already was at the previous close, or before the rule existed: no crossing on this date
+            if lang == "en":
+                title = f"{inst.symbol}: close {amount(close)} is {'above' if above else 'below'} the {amount(threshold)} threshold"
+                body = f"close date {on} · previous close {amount(previous) if previous is not None else 'none'}"
+            else:
+                title = f"{inst.symbol}: kapanış {amount(close)} ile eşik {amount(threshold)} {'üzerinde' if above else 'altında'}"
+                body = f"kapanış tarihi {on} · önceki kapanış {amount(previous) if previous is not None else 'yok'}"
+            yield (f"{on}", title, body, f"/stocks/{inst.symbol}")
+
     elif t == "FUND_ACTIVITY" and fund:
         latest = session.scalar(select(func.max(PositionChange.period_end)).where(PositionChange.fund_id == fund.id))
         if latest is None:
@@ -165,3 +205,9 @@ def _fire(session: Session, rule: AlertRule, as_of: date, lang: str = "tr"):
         if rows:
             body = " · ".join(f"{s} {a}" for s, a in sorted(rows))
             yield (f"{latest}", f"{fund.code}: {len(rows)} {'new entries/exits' if lang == 'en' else 'yeni giriş/çıkış'}", body, f"/funds/{fund.code}")
+
+
+def _price(v: Decimal, lang: str, sign: str) -> str:
+    """A close or threshold as the user reads it: trailing zeros dropped ("123.4 ₺", "120 ₺"), decimal comma in Turkish."""
+    text = format(v.normalize(), "f")
+    return f"{text.replace('.', ',') if lang == 'tr' else text} {sign}"

@@ -110,6 +110,23 @@ def get_institution(code: str, market: str = MarketParam, session: Session = Dep
     return data
 
 
+@router.get("/funds/overlap")  # registered before /funds/{code}, or "overlap" would be read as a fund code
+def get_fund_overlap(codes: str = Query(..., min_length=1, max_length=120, description="2..6 fund codes of one market, comma-separated"), session: Session = Depends(get_session)):
+    """How far two to six funds' latest books overlap: every pair's symbol overlap (common / union) and weighted
+    overlap (Σ min weight over the common symbols; null when a fund reports no weight for one of them), plus the
+    symbols every requested fund holds with each fund's weight. 404 when a code is unknown, 422 with fewer than two
+    codes, more than six, or funds of two markets."""
+    from instilens.services import ownership
+
+    try:
+        data = ownership.fund_overlap(session, codes.split(","))
+    except ownership.OverlapRequestError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if data is None:
+        raise HTTPException(404, "fund not found")
+    return data
+
+
 @router.get("/funds/{code}/compare/{other}")
 def get_fund_compare(code: str, other: str, session: Session = Depends(get_session)):
     data = analytics.compare_funds(session, code, other)
@@ -121,6 +138,22 @@ def get_fund_compare(code: str, other: str, session: Session = Depends(get_sessi
 @router.get("/stocks/{symbol}")
 def get_stock(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
     data = analytics.stock_detail(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/ownership")
+def get_stock_ownership(symbol: str, market: str = MarketParam, limit: int = Query(50, ge=1, le=500), session: Session = Depends(get_session)):
+    """Who holds the stock: one row per fund from its LATEST portfolio report (never two dates of one fund), largest
+    quantity first, with the fund's weight, the share of the company it holds (null until the share count is known),
+    its last move and the report's confidence. Reports older than two reporting periods for the market (TR 60 days,
+    US 182) are left out and counted in `stale_holders`. `totals` add every counted holder; `top10_pct_of_held` and
+    `hhi` describe how concentrated the held quantity is; `crowding` is the stored CROWDING score with its
+    explanation (null until the pipeline has computed one). Reported positions, not recommendations."""
+    from instilens.services import ownership
+
+    data = ownership.stock_ownership(session, market, symbol, limit)
     if data is None:
         raise HTTPException(404, "instrument not found")
     return data

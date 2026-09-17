@@ -18,7 +18,7 @@ Source of truth: `backend/src/instilens/domain/models.py`.
 | `fundamentals` | instrument × kind × period_kind × period_end | reported statement lines (`items` JSON, canonical keys), `currency`, `source`, `fetched_at` |
 | `fundamental_snapshots` | instrument × as_of | trailing metrics (`metrics` JSON), `currency` (reporting), `quote_currency` (listing), `source`, `fetched_at` |
 | `signals` | instrument × type × window | `evidence` JSON shown verbatim as "why" |
-| `scores` | instrument (× fund) × type × as_of | `raw_score`, `adjusted_score`, `components` (incl. activity summary) |
+| `scores` | instrument (× fund) × type × as_of | `raw_score`, `adjusted_score`, `components` (incl. activity summary); `score_type` SMART_MONEY / CONSENSUS / CONVICTION (× fund) / CROWDING (from the funds' latest snapshots — `04`, `services/ownership.py`) |
 | `signal_outcomes` | signal | +7/30/90D returns, max return, drawdown |
 | `watchlists`, `watchlist_items`, `alert_rules`, `notifications` | user layer | phase 7 |
 
@@ -89,3 +89,14 @@ before any cap; EDGAR's `recent` block holds at least a year, a longer window lo
 ticker to map and are left out. Each issuer's writes run in a savepoint and are committed as soon as it is done. TR
 instruments answer `supported: false` — KAP insider filings come later. Test fixtures are real EDGAR documents
 (`backend/fixtures/sec/form4/`, sources in `fixtures/sec/README.md`).
+
+## Ownership and fund overlap (Faz 5)
+
+No new table. `/stocks/{symbol}/ownership`, `/funds/overlap` and the CROWDING score rows (`scores.score_type =
+CROWDING`) are read models over `portfolio_snapshots` × `snapshot_holdings` — each fund's **latest** snapshot on or
+before the reference day (one row per fund), `position_changes` for the holder's last move (the change whose
+`to_snapshot_id` is that snapshot) and `instruments.shares_outstanding` for the held share of the company. Holders
+whose newest report is older than two reporting periods (TR 60 d, US 182 d) are left out and counted as
+`stale_holders`. A position a report restates at quantity 0 is not a holding. Nothing derived is stored except the
+CROWDING score row; `alert_rules.rule_type` gains PRICE_ABOVE / PRICE_BELOW with `params.price` and `params.since`
+(the close date the rule starts from), evaluated against `market_prices` closes (`04`).

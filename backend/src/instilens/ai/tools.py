@@ -12,7 +12,7 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from instilens.services import analytics, fundamentals, insiders
+from instilens.services import analytics, fundamentals, insiders, ownership
 
 PeriodName = Literal["annual", "quarterly"]
 FilingForm = Literal["8-K", "10-K", "10-Q", "4", "4/A"]
@@ -328,7 +328,62 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
         data = insiders.stock_filings(session, market, symbol, form, max(1, min(limit, 100)))
         return _dump(data if data is not None else {"error": f"unknown symbol {symbol}"})
 
+    def get_stock_ownership(symbol: str, limit: int = 15) -> str:
+        """Who holds a stock according to the funds' LATEST portfolio reports: `totals` (holders, institutions, held
+        quantity, Σ reported market value, pct_of_shares = held quantity / shares outstanding × 100 — null until the
+        share count is known — top10_pct_of_held and hhi, the Herfindahl index of holder quantities 0..10000, for how
+        concentrated the holding is), the `limit` largest holders (fund, institution, quantity, market_value, weight_pct
+        inside that fund, pct_of_shares, the report's as_of, last_move NEW/ADD/REDUCE/HOLD with its period end,
+        confidence) and `crowding` (the CROWDING score with level low/medium/high and its per-component `why`; null
+        until computed). One row per fund, never two dates of one fund; reports older than two reporting periods
+        (TR 60 days, US 182) are left out and counted in `stale_holders` — say so when it is not zero. Reported
+        positions, not recommendations: "12 funds hold it, the ten largest hold 80 % of what funds hold" is the
+        whole story, never "crowded therefore sell".
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+            limit: Max holder rows, largest first (default 15).
+        """
+        data = ownership.stock_ownership(session, market, symbol, max(1, min(limit, 500)))
+        return _dump(data if data is not None else {"error": f"unknown symbol {symbol}"})
+
+    def get_fund_overlap(codes: list[str]) -> str:
+        """How far two to six funds' latest books overlap. `pairwise`: for every pair, overlap_pct_symbols (symbols both
+        hold / symbols either holds × 100) and overlap_pct_weighted (Σ min(weight_a, weight_b) over the common
+        symbols, in percentage points of a book — null when a fund reports no weight for one of them). `common_all`:
+        the symbols every requested fund holds, each with every fund's weight, ordered by the smallest weight any fund
+        gives the symbol, largest first. `funds` carries each fund's report date (as_of) and holding count — cite the
+        dates, the books can be of different months. All funds must be in the current market (a fund of another
+        market, or a mixed request, returns an error). Reported holdings, not recommendations.
+
+        Args:
+            codes: 2 to 6 fund codes, e.g. ["TMV", "MAC"] (US: CIK<number>).
+        """
+        try:
+            data = ownership.fund_overlap(session, list(codes), market)
+        except ownership.OverlapRequestError as exc:
+            return _dump({"error": str(exc)})
+        return _dump(data if data is not None else {"error": "unknown fund code among " + ", ".join(codes)})
+
+    def get_crowding_score(symbol: str) -> str:
+        """The CROWDING score of a stock (0..100, level low < 35 / medium 35..65 / high > 65) with its explanation and
+        the ownership totals behind it. It describes how many funds hold the stock and how concentrated the holding
+        is — 35 % holder count (25 holders = full), 25 % share of the company held (30 % = full; skipped and the rest
+        re-weighted while the share count is unknown, `why.held_pct.skipped` says so), 20 % spread among holders
+        (1 − HHI/10000), 20 % net breadth momentum of the score window (funds increasing − reducing, +5 = full) —
+        computed from the funds' latest reports, not a valuation view: "crowded" means many funds hold it, never
+        "overbought" or a verdict. `crowding` is null until the pipeline has computed the day's scores.
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+        """
+        data = ownership.stock_ownership(session, market, symbol, limit=1)
+        if data is None:
+            return _dump({"error": f"unknown symbol {symbol}"})
+        return _dump({k: data[k] for k in ("symbol", "name", "market", "as_of", "shares_outstanding", "totals", "crowding", "stale_holders")})
+
     return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news,
             get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes,
             get_income_statements, get_balance_sheets, get_cash_flow_statements, get_financial_metrics,
-            get_insider_trades, get_filings]
+            get_insider_trades, get_filings,
+            get_stock_ownership, get_fund_overlap, get_crowding_score]

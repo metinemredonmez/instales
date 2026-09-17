@@ -7,11 +7,12 @@ import { useMarket } from "@/lib/market"
 import { useI18n, type T } from "@/lib/i18n"
 import { fmtDate, fmtLots } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
-import { ActivityBadge, ConfidenceBadge, Flow, ScorePill, SignalBadge } from "@/components/domain/badges"
+import { ActivityBadge, ConfidenceBadge, Flow, ScorePill, SignalBadge, scoreLabel } from "@/components/domain/badges"
 import { EventRow } from "@/components/domain/EventRow"
 import { Fundamentals, FundamentalsChips } from "@/components/domain/Fundamentals"
 import { Insiders, InsidersChip } from "@/components/domain/Insiders"
 import { Filings } from "@/components/domain/Filings"
+import { CrowdingChip, Ownership } from "@/components/domain/Ownership"
 import { StockChart } from "@/components/domain/StockChart"
 import { Timeline } from "@/components/domain/Timeline"
 import { AiNoteCard } from "@/components/domain/AiNoteCard"
@@ -52,18 +53,19 @@ export function StockPage() {
         <div>
           <div className="text-xs text-muted-foreground">{d.market} · {t("stock.asOf")} {fmtDate(d.as_of)} · {t("stock.latestPeriod")} {fmtDate(d.latest_period_end)}</div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">{d.symbol} <span className="text-lg font-normal text-muted-foreground">{d.name !== d.symbol ? d.name : ""}</span></h1>
-          {/* Header chips: valuation figures, then the Form 4 head-count; the row hides itself when neither has anything to show. */}
+          {/* Header chips: valuation figures, the Form 4 head-count, then the stored crowding score; the row hides itself when none has anything to show. */}
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] empty:hidden">
             {d.fundamentals && <FundamentalsChips f={d.fundamentals} />}
             {d.insiders && <InsidersChip s={d.insiders} />}
+            {d.scores.CROWDING && <CrowdingChip s={d.scores.CROWDING} />}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">{d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}<WatchButton symbol={d.symbol} market={market} /></div>
       </div>
 
       <div className="rise-stagger grid gap-3 md:grid-cols-3">
-        <ScoreCard title="Smart Money Score" detail={sm} />
-        <ScoreCard title={t("stock.consensus")} detail={cs} />
+        <ScoreCard title={scoreLabel(t, "SMART_MONEY")} detail={sm} />
+        <ScoreCard title={scoreLabel(t, "CONSENSUS")} detail={cs} />
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("stock.activityWindow", { d: MARKET_WINDOW_DAYS[d.market] ?? MARKET_WINDOW_DAYS[market] })}</div>
           {act ? (
@@ -96,6 +98,9 @@ export function StockPage() {
         <Section title={t("stock.topBuyers")} hint={t("stock.lastPeriod")}><ChangeTable rows={d.top_buyers} market={market} /></Section>
         <Section title={t("stock.topSellers")} hint={t("stock.lastPeriod")}><ChangeTable rows={d.top_sellers} market={market} /></Section>
       </div>
+
+      {/* Who holds it now (latest reports, the crowding score) follows the flows: still fund data, the product. */}
+      <Ownership symbol={d.symbol} market={market} />
 
       {/* Flows first (that is the product); the reported numbers sit below them as context, ahead of the signal evidence. */}
       <Fundamentals symbol={d.symbol} market={market} />

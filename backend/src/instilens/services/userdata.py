@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import math
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,7 +19,10 @@ from instilens.domain.models import (
     Watchlist,
     WatchlistItem,
 )
-from instilens.services.alerts import RULE_TYPES
+from instilens.services.alerts import PRICE_RULES, RULE_TYPES
+from instilens.services.analytics import last_closes
+
+MAX_PRICE = 1e9  # a price threshold above this is not a price; it would also render as hundreds of digits in a notification title
 
 
 class UserDataError(Exception):
@@ -88,12 +93,17 @@ def remove_watchlist_item(session: Session, owner: str, item_id: int) -> bool:
 
 
 def list_rules(session: Session, owner: str) -> list[dict]:
+    """Every rule of the owner across markets, newest first; `market` is the subject's (a price threshold reads in
+    that market's currency, whichever market the page is on)."""
     out = []
     for r in session.scalars(select(AlertRule).where(AlertRule.owner_id == owner).order_by(AlertRule.id.desc())):
+        inst = session.get(Instrument, r.instrument_id) if r.instrument_id else None
+        fund = session.get(Fund, r.fund_id) if r.fund_id else None
         out.append({
             "id": r.id, "rule_type": r.rule_type, "params": r.params, "is_active": r.is_active,
-            "symbol": session.get(Instrument, r.instrument_id).symbol if r.instrument_id else None,
-            "fund_code": session.get(Fund, r.fund_id).code if r.fund_id else None,
+            "symbol": inst.symbol if inst else None,
+            "fund_code": fund.code if fund else None,
+            "market": inst.market_code if inst else fund.institution.market_code if fund else None,
         })
     return out
 
@@ -104,10 +114,33 @@ def create_rule(session: Session, owner: str, market: str, rule_type: str, symbo
     inst, fund = resolve_subject(session, market, symbol, fund_code)
     if rule_type == "INSIDER_BUY_CLUSTER" and (inst is None or inst.market_code != "US"):
         raise UserDataError("INSIDER_BUY_CLUSTER needs a US symbol (SEC Form 4 data exists for US issuers only)")
+    if rule_type in PRICE_RULES:
+        if inst is None:
+            raise UserDataError(f"{rule_type} needs a symbol (daily closes exist for stocks only)")
+        price = _positive_number((params or {}).get("price"))
+        if price is None:
+            raise UserDataError(f"params.price must be a number above 0 and at most {MAX_PRICE:.0f}")
+        # `since`: the latest close known today — closes before it never fire this rule (alerts.PRICE_RULES); a
+        # stock without a close yet starts today, so a later history backfill cannot fire it for past crossings.
+        closes = last_closes(session, inst.id, date.today(), 1)
+        params = {**(params or {}), "price": price, "since": (closes[0][0] if closes else date.today()).isoformat()}
     rule = AlertRule(owner_id=owner, instrument_id=inst.id if inst else None, fund_id=fund.id if fund else None, rule_type=rule_type, params=params or {})
     session.add(rule)
     session.flush()
     return {"id": rule.id}
+
+
+def _positive_number(value) -> float | None:
+    """A finite number above zero and at most MAX_PRICE, as the JSON body carries it (a numeric string is accepted
+    too), rounded to six decimals — finer than any tick size, and a threshold like 1e-300 rounds to 0 and is refused
+    instead of printing 300 digits; None otherwise."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = round(float(Decimal(str(value).strip())) if isinstance(value, str) else float(value), 6)
+    except (TypeError, ValueError, ArithmeticError):
+        return None
+    return number if math.isfinite(number) and 0 < number <= MAX_PRICE else None
 
 
 def delete_rule(session: Session, owner: str, rule_id: int) -> bool:

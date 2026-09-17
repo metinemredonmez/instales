@@ -1,7 +1,41 @@
 import { cn } from "@/lib/utils"
-import type { Activity, Confidence, SignalType } from "@/lib/api"
+import type { Activity, Confidence, CrowdingLevel, SignalType } from "@/lib/api"
 import { useI18n, type T } from "@/lib/i18n"
 import { useCountUp, useFlash } from "@/lib/motion"
+
+/** Score types the API stores (Score.score_type); the stock page keys its cards and chips by these names. */
+export type ScoreType = "SMART_MONEY" | "CONSENSUS" | "CROWDING"
+const SCORE_LABEL: Record<ScoreType, "scores.smartMoney" | "scores.consensus" | "scores.crowding"> = {
+  SMART_MONEY: "scores.smartMoney",
+  CONSENSUS: "scores.consensus",
+  CROWDING: "scores.crowding",
+}
+export const scoreLabel = (t: T, type: ScoreType) => t(SCORE_LABEL[type])
+
+/** Level thresholds of the crowding score as documented in docs/04-confidence-and-scoring.md: low < 35, medium 35..65, high > 65. */
+export const crowdingLevel = (score: number): CrowdingLevel => (score < 35 ? "low" : score > 65 ? "high" : "medium")
+/** Crowding is a level, not a verdict: high is amber (many funds, concentrated), low is muted, medium the plain foreground. */
+const CROWDING_TONE: Record<CrowdingLevel, string> = {
+  low: "text-muted-foreground border-border",
+  medium: "text-foreground border-border bg-muted/40",
+  high: "text-grouped border-grouped/40 bg-grouped/10",
+}
+
+/**
+ * "72 · yüksek kalabalıklaşma" — the crowding score with its level's label and tone; `level` from the API wins over
+ * the thresholds. `label` prefixes the pill for the header chip row ("Kalabalıklaşma 72 · …").
+ */
+export function CrowdingPill({ score, level, label, title, size = "md", className }: { score: number; level?: CrowdingLevel | null; label?: string; title?: string; size?: "sm" | "md"; className?: string }) {
+  const { t } = useI18n()
+  const lvl = level ?? crowdingLevel(score)
+  return (
+    <span title={title} className={cn("inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 font-medium", size === "sm" ? "gap-1 text-[11px]" : "text-xs", CROWDING_TONE[lvl], className)}>
+      {label && <span className="font-normal text-muted-foreground">{label}</span>}
+      <span className="num font-semibold">{Math.round(score)}</span>
+      <span>· {t(`own.level.${lvl}`)}</span>
+    </span>
+  )
+}
 
 const CONF: Record<Confidence, { cls: string; key: "conf.exact" | "conf.grouped" | "conf.inferred" }> = {
   EXACT: { cls: "text-exact border-exact/40 bg-exact/10", key: "conf.exact" },
