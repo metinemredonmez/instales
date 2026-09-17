@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     matriks_api_key: str | None = None
     matriks_base_url: str | None = None
     matriks_ws_url: str | None = None
+    # Fundamentals (reported statements + trailing metrics, services/fundamentals). Only "yahoo" exists; the weekly
+    # scheduler job (Sunday 06:00) is gated by fundamentals_enabled and asks for at most fundamentals_max_instruments
+    # per market and run, stalest first — both editable from the admin UI.
+    fundamentals_provider: str = "yahoo"
+    fundamentals_enabled: bool = True
+    fundamentals_max_instruments: int = 300
 
     # SEC EDGAR (Global). Free; SEC requires an identifying User-Agent "AppName contact@email".
     sec_adapter: str = "edgar"  # live EDGAR (free); "fixture" only for tests

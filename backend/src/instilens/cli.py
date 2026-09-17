@@ -79,6 +79,16 @@ def prices(market: str = "TR", days: int = 400, symbols: str = typer.Option("", 
         typer.echo(f"{market}: {n} bars written")
 
 
+@app.command()
+def fundamentals(market: str = "TR", symbols: str = typer.Option("", help="comma-separated subset; default: instruments seen in flows or on a watchlist")) -> None:
+    """Pull reported statements (annual + quarterly) and the trailing metrics snapshot from the fundamentals provider."""
+    from instilens.services.fundamentals import refresh
+
+    with session_scope() as s:
+        n = refresh(s, market, [x for x in symbols.split(",") if x] or None)
+        typer.echo(f"{market}: {n} fundamentals rows written")
+
+
 @app.command("load-cusips")
 def load_cusips(path: str) -> None:
     """Load a CUSIP→ticker CSV (cusip,symbol,name) so 13F rows resolve to tickers."""

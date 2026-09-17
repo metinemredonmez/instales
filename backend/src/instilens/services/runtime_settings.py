@@ -52,6 +52,8 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "market_holidays_tr": {"type": "list", "group": "data", "item": "date"},  # ISO dates BIST is closed
     "price_provider": {"type": "choice:yahoo|matriks", "group": "data"},  # an unconfigured choice falls back to yahoo
     "quotes_interval_s": {"type": "int", "group": "data", "min": 15, "max": 600},
+    "fundamentals_enabled": {"type": "bool", "group": "data"},  # gates the weekly statements/metrics job (services/fundamentals)
+    "fundamentals_max_instruments": {"type": "int", "group": "data", "min": 10, "max": 5000},  # per market and run, stalest first
 }
 _DEFAULTS: dict[str, Any] = {}
 

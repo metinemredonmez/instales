@@ -52,6 +52,7 @@ should carry `"engines": { "node": ">=22" }` so an older local Node fails loudly
 
 Real KAP (prototype, polite): `INSTILENS_KAP_ADAPTER=public uv run instilens ingest && uv run instilens parse && uv run instilens compute` — transactions + weekly fund portfolio PDFs.
 Prices (prototype, Yahoo): `uv run instilens prices --market TR` / `--market US`.
+Fundamentals (Yahoo, weekly): `uv run instilens fundamentals --market TR` / `--market US` (`--symbols ASELS,THYAO` for a subset).
 Live SEC pull: `INSTILENS_SEC_ADAPTER=edgar uv run instilens ingest --market US` then `uv run instilens compute`. Refresh fixtures + CUSIP map: `uv run python scripts/build_sec_fixtures.py`.
 ```bash
 ANTHROPIC_API_KEY=... uv run instilens ask "Son 30 günde fiyatı düşerken fonların topladığı hisseler?"

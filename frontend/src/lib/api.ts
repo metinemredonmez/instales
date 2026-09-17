@@ -171,6 +171,93 @@ export interface StockDetail {
   top_sellers: PositionChange[]
   signals: Signal[]
   events: TxEvent[]
+  /** Valuation summary for the header chips; null until the fundamentals job has run for this symbol. */
+  fundamentals: FundamentalsSummary | null
+}
+
+/**
+ * /stocks/{symbol}/fundamentals — Yahoo-sourced valuation snapshot, reported statements and ratios derived from them.
+ * Money is absolute (never scaled) in one of two currencies: statement lines and the snapshot's TTM revenue / EBITDA /
+ * net income are in `currency`, the filer's reporting currency; the snapshot's market cap, EV, 52-week range and EPS
+ * are priced off the listing and are in `snapshot.quote_currency` (THYAO: statements in USD, market cap in TRY).
+ * Percentages are already ×100, and anything Yahoo did not report is null: the UI prints a dash, never a zero.
+ * `forward_pe` is the one figure based on consensus estimates rather than reported numbers — labelled as such.
+ * Analyst recommendation fields are not part of the contract (SPK rule).
+ */
+export type FundamentalsPeriod = "annual" | "quarterly"
+export interface FundamentalsSnapshot {
+  as_of: string
+  /** Listing currency of market_cap, enterprise_value, week52_* and eps_ttm. */
+  quote_currency: string | null
+  market_cap: number | null
+  enterprise_value: number | null
+  pe: number | null
+  forward_pe: number | null
+  price_to_book: number | null
+  price_to_sales: number | null
+  ev_to_ebitda: number | null
+  profit_margin: number | null
+  operating_margin: number | null
+  return_on_assets: number | null
+  return_on_equity: number | null
+  revenue_ttm: number | null
+  ebitda_ttm: number | null
+  net_income_ttm: number | null
+  eps_ttm: number | null
+  dividend_yield: number | null
+  payout_ratio: number | null
+  beta: number | null
+  week52_high: number | null
+  week52_low: number | null
+  shares_outstanding: number | null
+  float_shares: number | null
+  short_percent_of_float: number | null
+}
+export type IncomeKey = "revenue" | "cost_of_revenue" | "gross_profit" | "operating_income" | "ebitda" | "pretax_income" | "net_income" | "eps_diluted" | "interest_expense"
+export type BalanceKey = "total_assets" | "total_liabilities" | "equity" | "total_debt" | "cash" | "current_assets" | "current_liabilities"
+export type CashflowKey = "operating_cf" | "capex" | "free_cf" | "dividends_paid" | "share_repurchase"
+export type StatementKey = IncomeKey | BalanceKey | CashflowKey
+export type StatementKind = "income" | "balance" | "cashflow"
+/** One reported period; `items` holds the canonical keys of its statement, null where the filing had no such line. */
+export interface Statement { period_end: string; items: Partial<Record<StatementKey, number | null>> }
+/** Newest statement vs the same period a year earlier; ratios as percentages (12.3 = 12.3 %). */
+export interface Derived {
+  gross_margin: number | null
+  operating_margin: number | null
+  net_margin: number | null
+  fcf_margin: number | null
+  debt_to_equity: number | null
+  revenue_growth_yoy: number | null
+  net_income_growth_yoy: number | null
+  period_end: string | null
+}
+export interface Fundamentals {
+  symbol: string
+  name: string
+  market: Market
+  currency: string
+  source: "yahoo"
+  fetched_at: string | null
+  snapshot: FundamentalsSnapshot | null
+  period: FundamentalsPeriod
+  /** Newest first, at most 8 per statement. */
+  statements: Record<StatementKind, Statement[]>
+  derived: Derived
+}
+export interface FundamentalsSummary {
+  as_of: string
+  market_cap: number | null
+  pe: number | null
+  price_to_book: number | null
+  net_margin: number | null
+  revenue_growth_yoy: number | null
+  dividend_yield: number | null
+  shares_outstanding: number | null
+  /** Reporting currency (statements, net margin's basis). */
+  currency: string
+  /** Listing currency of market_cap; null when there is no snapshot yet. */
+  quote_currency: string | null
+  source: "yahoo"
 }
 
 export interface Holding {
@@ -438,6 +525,7 @@ export const api = {
   moves: (market: Market, kind: MoveKind, window: number | null = null, fund: string | null = null, limit = 25) => get<Moves>("/moves", { market, kind, window, fund, limit }),
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),
+  fundamentals: (market: Market, symbol: string, period: FundamentalsPeriod = "annual") => get<Fundamentals>(`/stocks/${symbol}/fundamentals`, { market, period }),
   watchlist: () => get<WatchItem[]>("/watchlist"),
   addWatch: (body: { symbol?: string; fund_code?: string; market: Market }) => send<{ id: number; created: boolean }>("POST", "/watchlist", body),
   removeWatch: (id: number) => send<void>("DELETE", `/watchlist/${id}`),

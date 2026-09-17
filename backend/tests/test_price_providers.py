@@ -514,7 +514,7 @@ def test_migration_adds_ohlc_and_source_on_scratch_sqlite(tmp_path, monkeypatch)
     monkeypatch.setattr(settings, "database_url", url)  # migrations/env.py reads the URL from settings
     cfg = Config()  # no alembic.ini: keeps its logging config away from the test process
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "c9d0e1f2a3b4")  # this revision, not head: later ones (fundamentals) have their own test
     engine = create_engine(url)
     cols = {c["name"]: c for c in inspect(engine).get_columns("market_prices")}
     assert {"open", "high", "low", "close", "volume", "source"} <= set(cols)

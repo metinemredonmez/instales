@@ -63,6 +63,9 @@ class Instrument(Base):
     cusip: Mapped[str | None] = mapped_column(String(9), index=True)  # US: 13F rows are keyed by CUSIP
     # False when auto-created by the resolver from an unknown symbol; needs human review.
     is_verified: Mapped[bool] = mapped_column(Boolean, default=True)
+    # From the latest fundamentals snapshot (services/fundamentals); lets a holding be read as a share of the company.
+    shares_outstanding: Mapped[int | None] = mapped_column(BigInteger)
+    shares_as_of: Mapped[date | None] = mapped_column(Date)
 
 
 class Institution(Base):
@@ -241,6 +244,49 @@ class MarketPrice(Base):
     close: Mapped[Decimal] = mapped_column(Money)
     volume: Mapped[int | None] = mapped_column(BigInteger)
     source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="yahoo")  # provider name (ingestion/prices/provider.PROVIDERS) or "csv"
+
+
+# --------------------------------------------------------------------------- fundamentals (reported figures)
+
+
+class Fundamental(Base):
+    """One reported financial statement (income / balance / cashflow) of one instrument for one period, as the
+    provider printed it. `items` holds the canonical keys of its kind (ingestion/fundamentals/provider.CANONICAL_KEYS);
+    a line the filing did not carry is null, never computed. `currency` is the reporting currency; `source` and
+    `fetched_at` are the provenance of every number in the row."""
+
+    __tablename__ = "fundamentals"
+    __table_args__ = (UniqueConstraint("instrument_id", "kind", "period_kind", "period_end"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # income / balance / cashflow
+    period_kind: Mapped[str] = mapped_column(String(9))  # annual / quarterly
+    period_end: Mapped[date] = mapped_column(Date)
+    currency: Mapped[str | None] = mapped_column(String(3))
+    items: Mapped[dict] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(16))  # provider name (ingestion/fundamentals/provider.PROVIDERS)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class FundamentalSnapshot(Base):
+    """Trailing valuation / profitability metrics of one instrument as the provider stated them on `as_of` (the
+    fetch date). `metrics` holds the contract's snapshot keys (provider.SNAPSHOT_KEYS), percentages already ×100;
+    market cap, EV, the 52-week range and EPS are in `quote_currency` (the listing currency), the TTM revenue /
+    EBITDA / net income in `currency` (the reporting currency, as the statements); what the provider did not state
+    is null."""
+
+    __tablename__ = "fundamental_snapshots"
+    __table_args__ = (UniqueConstraint("instrument_id", "as_of"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
+    as_of: Mapped[date] = mapped_column(Date)
+    metrics: Mapped[dict] = mapped_column(JSON)
+    currency: Mapped[str | None] = mapped_column(String(3))
+    quote_currency: Mapped[str | None] = mapped_column(String(3))
+    source: Mapped[str] = mapped_column(String(16))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 # --------------------------------------------------------------------------- intelligence layer

@@ -23,6 +23,7 @@ from instilens.domain.models import (
     SnapshotHolding,
     TransactionEvent,
 )
+from instilens.services import fundamentals
 
 
 def close_on_or_before(session: Session, instrument_id: int, on: date):
@@ -133,6 +134,7 @@ def stock_detail(session: Session, market: str, symbol: str) -> dict | None:
         "top_sellers": [_change_json(c, code) for c, code in sorted(recent, key=lambda x: x[0].delta_qty) if c.delta_qty < 0][:10],
         "signals": [_signal_json(s, instrument.symbol) for s in signals],
         "events": events,
+        "fundamentals": fundamentals.summary(session, instrument.id),  # null until the weekly job has run for the symbol
     }
 
 

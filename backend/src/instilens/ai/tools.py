@@ -12,7 +12,9 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from instilens.services import analytics
+from instilens.services import analytics, fundamentals
+
+PeriodName = Literal["annual", "quarterly"]
 
 SignalName = Literal[
     "ACCUMULATION",
@@ -201,5 +203,82 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
         """
         return _moves(kind, window_days, 25, code)
 
+    def _statements(symbol: str, kind: str, period: str, limit: int) -> str:
+        data = fundamentals.stock_fundamentals(session, market, symbol, period)  # type: ignore[arg-type]  # PeriodName is validated by the tool schema
+        if data is None:
+            return _dump({"error": f"unknown symbol {symbol}"})
+        return _dump({"symbol": data["symbol"], "name": data["name"], "currency": data["currency"], "source": data["source"],
+                      "fetched_at": data["fetched_at"], "period": data["period"],
+                      "statements": data["statements"][kind][: max(1, min(limit, fundamentals.MAX_STATEMENTS))]})
+
+    def get_income_statements(symbol: str, period: PeriodName = "annual", limit: int = 4) -> str:
+        """A company's reported income statements — revenue, cost of revenue, gross profit, operating income,
+        EBITDA, pretax income, net income, diluted EPS, interest expense — one per reporting period, newest
+        first; useful for describing profitability and operating efficiency over time. Reported figures from
+        the fundamentals provider, not estimates: the payload carries currency, source and fetched_at, each
+        statement its period_end (cite it with every number), and a line the filing did not report is null.
+        Descriptive only — never turn these into a rating or a recommendation.
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+            period: annual | quarterly (default annual).
+            limit: Max statements, newest first (default 4, at most 8).
+        """
+        return _statements(symbol, "income", period, limit)
+
+    def get_balance_sheets(symbol: str, period: PeriodName = "annual", limit: int = 4) -> str:
+        """A company's reported balance sheets — total assets, total liabilities, equity, total debt, cash,
+        current assets, current liabilities — each a snapshot of its financial position at a period end,
+        newest first. Reported figures from the fundamentals provider: the payload carries currency, source and
+        fetched_at, each sheet its period_end (cite it with every number), and a line the filing did not report
+        is null. Descriptive only — never turn these into a rating or a recommendation.
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+            period: annual | quarterly (default annual).
+            limit: Max sheets, newest first (default 4, at most 8).
+        """
+        return _statements(symbol, "balance", period, limit)
+
+    def get_cash_flow_statements(symbol: str, period: PeriodName = "annual", limit: int = 4) -> str:
+        """A company's reported cash flow statements — operating cash flow, capital expenditure (negative),
+        free cash flow, dividends paid, share repurchases — showing how cash was generated and used per
+        reporting period, newest first; useful for describing liquidity. Reported figures from the
+        fundamentals provider: the payload carries currency, source and fetched_at, each statement its
+        period_end (cite it with every number), and a line the filing did not report is null (free cash flow
+        is operating cash flow + capex when the provider prints both but not the total). Descriptive only —
+        never turn these into a rating or a recommendation.
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+            period: annual | quarterly (default annual).
+            limit: Max statements, newest first (default 4, at most 8).
+        """
+        return _statements(symbol, "cashflow", period, limit)
+
+    def get_financial_metrics(symbol: str) -> str:
+        """The current financial metrics snapshot of a company — market cap, enterprise value, trailing and
+        forward P/E, price/book, price/sales, EV/EBITDA, margins, ROA/ROE, trailing revenue / EBITDA / net
+        income / EPS, dividend yield, payout ratio, beta, 52-week range, shares outstanding, float, short
+        interest — plus ratios derived from its newest annual statements (gross / operating / net / FCF
+        margin, debt-to-equity, revenue and net income growth year over year, with the period_end they come
+        from). Figures as the fundamentals provider states them on `snapshot.as_of` (cite it), with source and
+        fetched_at. Two currencies: market_cap, enterprise_value, the 52-week range and eps_ttm are in
+        `snapshot.quote_currency` (the listing currency); revenue_ttm / ebitda_ttm / net_income_ttm and the
+        derived ratios' statements are in `currency` (the reporting currency) — THYAO trades in TRY and reports
+        in USD, so never state its market cap in dollars. Percentages are already ×100; forward_pe is the one
+        figure based on consensus estimates rather than reported numbers, say so when citing it; anything not
+        stated is null, and `snapshot` itself is null until the symbol has been fetched. Descriptive only —
+        never turn a ratio into a verdict or a recommendation.
+
+        Args:
+            symbol: Ticker symbol, e.g. ASELS.
+        """
+        data = fundamentals.stock_fundamentals(session, market, symbol, "annual")
+        if data is None:
+            return _dump({"error": f"unknown symbol {symbol}"})
+        return _dump({k: data[k] for k in ("symbol", "name", "currency", "source", "fetched_at", "snapshot", "derived")})
+
     return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news,
-            get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes]
+            get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes,
+            get_income_statements, get_balance_sheets, get_cash_flow_statements, get_financial_metrics]

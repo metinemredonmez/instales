@@ -52,6 +52,7 @@ def _ai_budget(request: Request, user: User) -> None:
 
 MarketParam = Query("TR", pattern="^(TR|US)$")
 LangParam = Query("tr", pattern="^(tr|en)$")
+PeriodParam = Query("annual", pattern="^(annual|quarterly)$")
 
 
 @router.get("/radar")
@@ -120,6 +121,22 @@ def get_fund_compare(code: str, other: str, session: Session = Depends(get_sessi
 @router.get("/stocks/{symbol}")
 def get_stock(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
     data = analytics.stock_detail(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/fundamentals")
+def get_stock_fundamentals(symbol: str, market: str = MarketParam, period: str = PeriodParam, session: Session = Depends(get_session)):
+    """Reported fundamentals of a stock: the provider's latest metrics snapshot, its income / balance / cashflow
+    statements for `period` (newest first, at most 8 each) and the ratios derived from them. Statement lines and
+    the snapshot's TTM figures are absolute in `currency` (the reporting currency); the snapshot's market cap, EV,
+    52-week range and EPS are in `snapshot.quote_currency` (the listing currency). Percentages already ×100,
+    anything the provider did not report is null. A known symbol nothing has been fetched for yet answers with
+    `snapshot: null` and empty statements, never invented numbers."""
+    from instilens.services import fundamentals
+
+    data = fundamentals.stock_fundamentals(session, market, symbol, period)  # type: ignore[arg-type]  # PeriodParam validates the literal
     if data is None:
         raise HTTPException(404, "instrument not found")
     return data

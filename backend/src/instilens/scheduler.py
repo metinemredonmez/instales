@@ -5,6 +5,7 @@ Cadence (Europe/Istanbul):
   SEC ingest         daily 08:00
   prices             daily 19:30 (TR close) and 00:30 (US close)
   compute            after every ingest that stored something, and nightly 02:00 regardless
+  fundamentals       weekly, Sunday 06:00 (TR then US; gated by the fundamentals_enabled setting)
 """
 
 from __future__ import annotations
@@ -106,6 +107,19 @@ def prices(market: str) -> None:
         log.info("%s prices %s", market, load_prices(s, market, days=30))
 
 
+def fundamentals() -> None:
+    """Reported statements + metrics for every instrument in flows or on a watchlist. Markets run one after the
+    other in their own transactions: a Yahoo outage during TR leaves what TR wrote and still tries US."""
+    from instilens.config import settings
+    from instilens.services.fundamentals import refresh
+
+    if not settings.fundamentals_enabled:
+        return
+    for market in ("TR", "US"):
+        with session_scope() as s:
+            log.info("%s fundamentals %s rows", market, refresh(s, market))
+
+
 def _fresh(job):
     """Run a job with the latest admin overrides applied (settings can change between runs)."""
     from functools import wraps
@@ -136,6 +150,7 @@ def main() -> None:
     sched.add_job(_fresh(compute), CronTrigger(hour=2, minute=0, timezone=TZ), id="nightly_compute")
     sched.add_job(_fresh(news_pull), CronTrigger(minute="*/10", timezone=TZ), id="news")
     sched.add_job(_fresh(briefs), CronTrigger(hour=8, minute=30, timezone=TZ), id="briefs")
+    sched.add_job(_fresh(fundamentals), CronTrigger(day_of_week="sun", hour=6, minute=0, timezone=TZ), id="fundamentals_weekly")
     log.info("scheduler up: %s", [j.id for j in sched.get_jobs()])
     sched.start()
 
