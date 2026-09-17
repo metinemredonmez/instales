@@ -10,6 +10,7 @@ import { ProfileMenu } from "@/components/layout/ProfileMenu"
 import { CommandPalette } from "@/components/layout/CommandPalette"
 import { ADMIN, MINE, NAV, type NavItem } from "@/components/layout/nav"
 import { useMarket } from "@/lib/market"
+import { useLiveStream } from "@/lib/live"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
 import type { Key } from "@/i18n/tr"
@@ -28,6 +29,7 @@ const PALETTE_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(n
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { market, setMarket } = useMarket()
   const { user } = useAuth()
+  useLiveStream(market, !!user)  // one stream per tab; pages react through query invalidation (lib/live)
   const { lang, setLang, t } = useI18n()
   // One push path per deployment: OneSignal (its own worker + identity) when configured, else our /sw.js for VAPID.
   useEffect(() => {

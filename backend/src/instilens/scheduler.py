@@ -20,7 +20,7 @@ from instilens.db.session import get_engine, init_db, session_scope
 from instilens.ingestion.kap import build_kap_adapter
 from instilens.ingestion.prices.yahoo import load_prices
 from instilens.ingestion.sec import build_sec_adapter
-from instilens.services import pipeline
+from instilens.services import live, pipeline
 from instilens.services.alerts import evaluate
 from instilens.services.notify import deliver_brief, deliver_pending
 from instilens.services.outcomes import compute_outcomes
@@ -32,10 +32,13 @@ TZ = "Europe/Istanbul"
 def compute() -> None:
     with session_scope() as s:
         log.info("positions %s", pipeline.rebuild_positions(s))
-        log.info("scored %s", pipeline.compute_intelligence(s, date.today()))
+        scored = pipeline.compute_intelligence(s, date.today())
+        log.info("scored %s", scored)
         log.info("notifications %s", evaluate(s, date.today()))
         log.info("delivered %s", deliver_pending(s))
         log.info("outcomes %s", compute_outcomes(s))
+        live.publish(s, "compute", payload={"scored": scored})  # open tabs refetch radar/stock/screener/watchlist
+        live.prune(s)
 
 
 def ingest_kap() -> None:
@@ -66,7 +69,10 @@ def news_pull() -> None:
 
     with session_scope() as s:
         for market in ("TR", "US"):
-            log.info("%s news +%s", market, fetch_feeds(s, market, newsapi_key=settings.newsapi_key))
+            added = fetch_feeds(s, market, newsapi_key=settings.newsapi_key)
+            log.info("%s news +%s", market, added)
+            if added:
+                live.publish(s, "news", market=market, payload={"added": added})
             if settings.ai_news_enabled and settings.anthropic_api_key:
                 try:
                     log.info("%s news ai-tagged %s", market, enrich(s, market))
@@ -87,6 +93,8 @@ def briefs() -> None:
                 note_en = daily_brief(s, market, force=True, lang="en")  # English, so EN users don't wait on first open
                 # users receive the brief of the markets in their brief_markets; brief_deliveries makes a re-run send nothing twice
                 log.info("%s brief %s, delivered %s", market, "ok" if note else "skipped", deliver_brief(s, note) if note else 0)
+                if note:
+                    live.publish(s, "brief", market=market)
                 s.flush()
                 log.info("%s tts warmed: %s files", market, warm(note, s) + warm(note_en, s))
             except Exception as exc:

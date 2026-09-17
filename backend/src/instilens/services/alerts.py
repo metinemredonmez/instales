@@ -30,6 +30,7 @@ from instilens.domain.models import (
     TransactionEventFund,
     User,
 )
+from instilens.services import live
 
 RULE_TYPES = {"NEW_FUND_POSITION", "FUND_EXIT", "KAP_TRANSACTION", "SCORE_ABOVE", "SIGNAL", "FUND_ACTIVITY"}
 
@@ -72,6 +73,7 @@ def _notify(session: Session, rule: AlertRule, key: str, title: str, body: str, 
     if exists:
         return False
     session.add(Notification(owner_id=rule.owner_id, alert_rule_id=rule.id if (rule.id or 0) > 0 else None, dedup_key=dedup, title=title, body=body, link=link))
+    live.publish(session, "notification", owner_id=rule.owner_id, payload={"title": title, "link": link})
     return True
 
 

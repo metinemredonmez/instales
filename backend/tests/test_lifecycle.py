@@ -526,3 +526,77 @@ def test_push_test_lands_in_the_bell(client, session, monkeypatch):
     rows = session.query(Notification).filter(Notification.dedup_key.like("push-test:%")).all()
     assert len(rows) == 1 and rows[0].link == "/settings"
     assert any(n["title"] == "InstiLens" and n["link"] == "/settings" for n in client.get("/api/v1/alerts/notifications", headers=h).json())
+
+
+# ---------------------------------------------------------------- live events (one stream per tab)
+def test_live_events_are_scoped_by_market_and_owner(session):
+    from instilens.services import live
+
+    a = live.publish(session, "compute")
+    live.publish(session, "news", market="US")
+    b = live.publish(session, "notification", owner_id="7", payload={"title": "x"})
+    live.publish(session, "notification", owner_id="8", payload={"title": "y"})
+    mine = live.since(session, 0, market="TR", owner_id="7")
+    assert [e.id for e in mine] == [a.id, b.id]  # global + own; US news and the other user's alert stay out
+    assert [e.id for e in live.since(session, a.id, market="US", owner_id="7")] == [a.id + 1, b.id]
+    with pytest.raises(ValueError):
+        live.publish(session, "quotes")
+    old = live.publish(session, "compute")
+    old.created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2)
+    session.flush()
+    assert live.prune(session) == 1
+    assert live.latest_id(session) == b.id + 1
+
+
+def test_fired_alert_publishes_a_private_live_event(session):
+    from instilens.domain.models import AlertRule, LiveEvent
+    from instilens.services import alerts
+
+    rule = AlertRule(owner_id="7", rule_type="SCORE_ABOVE", params={"threshold": 0}, is_active=True)
+    session.add(rule)
+    session.flush()
+    assert alerts._notify(session, rule, "k", "Title", "Body", "/stocks/ASELS") is True
+    assert alerts._notify(session, rule, "k", "Title", "Body", "/stocks/ASELS") is False  # dedup: no second event either
+    evs = session.query(LiveEvent).filter(LiveEvent.kind == "notification").all()
+    assert len(evs) == 1 and evs[0].owner_id == "7" and evs[0].payload["link"] == "/stocks/ASELS"
+
+
+def test_stream_replays_change_events_after_cursor(client, session, monkeypatch):
+    """A tab that reconnects with `after=<last id>` gets what it missed; other users' alerts never leak in."""
+    import asyncio
+    from contextlib import contextmanager
+
+    from instilens.api.routes import v1
+    from instilens.services import live
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    monkeypatch.setattr(v1, "session_scope", _scope)
+    tok = _register(client, "live@example.com")
+    uid = str(client.get("/api/v1/auth/me", headers={"authorization": f"Bearer {tok}"}).json()["id"])
+    user = session.get(User, int(uid))
+    first = live.publish(session, "compute", payload={"scored": 3})
+    live.publish(session, "notification", owner_id="999", payload={"title": "not mine"})
+    mine = live.publish(session, "notification", owner_id=uid, payload={"title": "mine", "link": "/alerts"})
+
+    class _Req:
+        headers = {"last-event-id": str(first.id - 1)}  # what the browser sends on its own reconnect
+
+        async def is_disconnected(self):
+            return False
+
+    async def _run():
+        resp = await v1.stream_events(_Req(), market="TR", poll_seconds=2.0, after=None, user=user)
+        out: list[dict] = []
+        async for chunk in resp.body_iterator:  # the raw {event, id, data} dicts sse-starlette encodes on the wire
+            out.append(chunk)
+            if chunk.get("id") == str(mine.id):
+                break
+        return out
+
+    out = asyncio.run(_run())
+    assert [c["event"] for c in out] == ["ready", "compute", "notification"]
+    assert '"scored": 3' in out[1]["data"] and out[1]["id"] == str(first.id)
+    assert '"title": "mine"' in out[2]["data"] and not any("not mine" in c["data"] for c in out)

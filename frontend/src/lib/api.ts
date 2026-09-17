@@ -397,5 +397,5 @@ export const api = {
   saveSettings: (body: Partial<{ notify_email: boolean; notify_telegram_chat_id: string | null; notify_brief: boolean; brief_markets: Market[]; lang: "tr" | "en" }>) => send<{ ok: boolean }>("PUT", "/me/settings", body),
   testNotification: () => send<{ telegram: boolean | null; email: boolean | null }>("POST", "/me/settings/test"),
   evaluateAlerts: () => send<{ created: number }>("POST", "/alerts/evaluate"),
-  eventStreamUrl: (market: Market, ticket: string) => `${BASE}/events/stream?market=${market}&ticket=${encodeURIComponent(ticket)}`,
+  eventStreamUrl: (market: Market, ticket: string, after?: number | null) => `${BASE}/events/stream?market=${market}&ticket=${encodeURIComponent(ticket)}${after != null ? `&after=${after}` : ""}`,
 }

@@ -13,7 +13,7 @@ from instilens.api.hardening import client_ip, hit
 from instilens.config import settings
 from instilens.db.session import session_scope
 from instilens.domain.models import User
-from instilens.services import analytics
+from instilens.services import analytics, live
 
 log = logging.getLogger("instilens.api")
 
@@ -252,21 +252,38 @@ def get_events(market: str = MarketParam, limit: int = Query(50, ge=1, le=200), 
 
 
 @ticket_router.get("/events/stream")
-async def stream_events(market: str = MarketParam, poll_seconds: float = Query(5.0, ge=2.0, le=60.0), user: User = Depends(ticket_user)):
-    """Live KAP Radar feed. SSE + DB polling is enough for the MVP; no websockets needed."""
+async def stream_events(request: Request, market: str = MarketParam, poll_seconds: float = Query(3.0, ge=2.0, le=60.0), after: int | None = Query(None, ge=0), user: User = Depends(ticket_user)):
+    """One live stream per tab. Two things ride on it: KAP/SEC transactions as full rows (`transaction`, the Live page)
+    and small "something changed" events the SPA turns into query refetches (`notification`, `compute`, `news`,
+    `brief`, `pipeline` — see services/live). Tailing the database every few seconds *is* the fan-out: the scheduler,
+    the admin worker thread and both API workers only ever append rows, so no broker is involved. `after` (or the
+    Last-Event-ID header on a browser-initiated reconnect) replays change events missed while disconnected."""
+    owner = str(user.id)
+    header = request.headers.get("last-event-id", "")
+    replay_from = after if after is not None else (int(header) if header.isdigit() else None)
+
+    def opening() -> tuple[int, int]:
+        with session_scope() as s:
+            latest = analytics.events(s, market, limit=1)
+            return (latest[0]["id"] if latest else 0), (replay_from if replay_from is not None else live.latest_id(s))
+
+    def tick(last_tx: int, last_live: int) -> tuple[list[dict], list[dict]]:
+        with session_scope() as s:
+            fresh = analytics.events(s, market, limit=100, after_id=last_tx)
+            changes = [{"id": ev.id, "kind": ev.kind, "market": ev.market_code, **(ev.payload or {})} for ev in live.since(s, last_live, market=market, owner_id=owner)]
+            return fresh, changes
 
     async def generator():
-        last_id = 0
-        with session_scope() as session:
-            latest = analytics.events(session, market, limit=1)
-            last_id = latest[0]["id"] if latest else 0
-        yield {"event": "ready", "data": json.dumps({"last_id": last_id})}  # flushes headers through proxies
-        while True:
-            with session_scope() as session:
-                fresh = analytics.events(session, market, limit=100, after_id=last_id)
+        last_tx, last_live = await asyncio.to_thread(opening)
+        yield {"event": "ready", "data": json.dumps({"last_id": last_tx, "live_id": last_live})}  # flushes headers through proxies
+        while not await request.is_disconnected():
+            fresh, changes = await asyncio.to_thread(tick, last_tx, last_live)  # DB work off the event loop
             for ev in fresh:
-                last_id = max(last_id, ev["id"])
+                last_tx = max(last_tx, ev["id"])
                 yield {"event": "transaction", "data": json.dumps(ev)}
+            for ch in changes:
+                last_live = max(last_live, ch["id"])
+                yield {"event": ch["kind"], "id": str(ch["id"]), "data": json.dumps(ch)}
             await asyncio.sleep(poll_seconds)
 
     return EventSourceResponse(generator())

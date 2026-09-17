@@ -191,12 +191,14 @@ def _run_pipeline_bg(run_id: int) -> None:
     from instilens.ingestion.kap import build_kap_adapter
     from instilens.ingestion.prices.yahoo import load_prices
     from instilens.ingestion.sec import build_sec_adapter
-    from instilens.services import pipeline
+    from instilens.services import live, pipeline
     from instilens.services.alerts import evaluate
     from instilens.services.outcomes import compute_outcomes
 
     try:
         out: dict = {}
+        with session_scope() as s:
+            live.publish(s, "pipeline", payload={"status": "running", "run_id": run_id})
         with session_scope() as s:
             out["kap_ingested"] = pipeline.ingest(s, build_kap_adapter())
             out["sec_ingested"] = pipeline.ingest(s, build_sec_adapter())
@@ -214,9 +216,18 @@ def _run_pipeline_bg(run_id: int) -> None:
 
             out["delivered"] = deliver_pending(s)
             out["outcomes"] = compute_outcomes(s)
+            live.publish(s, "compute", payload={"scored": out["scored"]})
+            for m in ("TR", "US"):
+                if out.get(f"news_{m}"):
+                    live.publish(s, "news", market=m, payload={"added": out[f"news_{m}"]})
+            live.prune(s)
         finish_pipeline_run(run_id, result=out)
+        with session_scope() as s:
+            live.publish(s, "pipeline", payload={"status": "done", "run_id": run_id})
     except Exception:
         finish_pipeline_run(run_id, error=traceback.format_exc()[-2000:])
+        with session_scope() as s:
+            live.publish(s, "pipeline", payload={"status": "failed", "run_id": run_id})
 
 
 @router.post("/pipeline/run")

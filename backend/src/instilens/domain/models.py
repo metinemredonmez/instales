@@ -333,6 +333,22 @@ class RateHit(Base):
     ts: Mapped[datetime] = mapped_column(DateTime)
 
 
+class LiveEvent(Base):
+    """One row per thing an open tab should react to (see services/live). Any process — scheduler, admin worker
+    thread, either API worker — appends; every /events/stream tails the table, so fan-out needs no broker.
+    `owner_id` set = private to that user (a fired alert); `market_code` set = only tabs on that market care."""
+
+    __tablename__ = "live_events"
+    __table_args__ = (Index("ix_live_events_created", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24))  # services.live.KINDS
+    market_code: Mapped[str | None] = mapped_column(String(2))
+    owner_id: Mapped[str | None] = mapped_column(String(64))
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class PipelineRun(Base):
     """One admin-triggered pipeline run. `lock_key` is PIPELINE_LOCK while it is in progress and NULL afterwards; the
     unique constraint is the cross-process lock, so two admins (or two workers) cannot start two runs at once."""
