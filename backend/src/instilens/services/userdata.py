@@ -64,7 +64,7 @@ def list_watchlist(session: Session, owner: str) -> list[dict]:
                 select(Score).where(Score.instrument_id == inst.id, Score.score_type == ScoreType.SMART_MONEY, Score.fund_id.is_(None)).order_by(Score.as_of.desc()).limit(1)
             )
             act = (score.components.get("activity", {}) if score else {})
-            out.append({"id": item.id, "kind": "stock", "ref": inst.symbol, "name": inst.name, "smart_money_score": float(score.adjusted_score) if score else None,
+            out.append({"id": item.id, "kind": "stock", "ref": inst.symbol, "name": inst.name, "market": inst.market_code, "smart_money_score": float(score.adjusted_score) if score else None,
                         "funds_increasing": act.get("funds_increasing"), "funds_reducing": act.get("funds_reducing"), "net_flow_value": float(act.get("net_flow_value", 0) or 0)})
         elif item.fund_id:
             fund = session.get(Fund, item.fund_id)

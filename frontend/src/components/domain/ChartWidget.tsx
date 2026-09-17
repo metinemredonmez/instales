@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
 import { CandlestickChart, Minus, X } from "lucide-react"
 import type { IChartApi, ISeriesApi, Time, UTCTimestamp } from "lightweight-charts"
-import { ApiError, api, type CandleInterval, type Market } from "@/lib/api"
+import { ApiError, api, type CandleInterval, type Market, type WatchItem } from "@/lib/api"
 import { INTERVALS, candleSource, closeChange, cssToRgba, loadChart, onOpenChart, openChart, saveChart, sessionDate, themeColor, themeColorAlpha, zonedTime } from "@/lib/chart"
 import { fmtNum, fmtPrice, locale } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
@@ -228,46 +228,72 @@ function SymbolPicker({ value, onPick }: { value: string | null; onPick: (symbol
   const [active, setActive] = useState(0)
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
-  const stocks = rows.filter((h) => h.kind === "stock")
-  useEffect(() => { setActive(0) }, [stocks.length, debounced])
+  // Nobody knows every ticker: before a letter is typed the list already offers the watchlist and the Radar's movers of
+  // this market (one query each, only while the field is open), so a stock is one click away; typing switches to search.
+  const quick = useQuery({
+    queryKey: ["chart-quick", market],
+    queryFn: async () => {
+      const [wl, rd] = await Promise.all([api.watchlist().catch(() => [] as WatchItem[]), api.radar(market, 12, 30).catch(() => null)])
+      const seen = new Set<string>()
+      const take = (items: { symbol: string; name: string }[]) => items.filter((i) => !seen.has(i.symbol) && seen.add(i.symbol))
+      return {
+        watch: take(wl.filter((w) => w.kind === "stock" && w.market === market).map((w) => ({ symbol: w.ref, name: w.name }))),
+        movers: take([...(rd?.accumulated ?? []), ...(rd?.distributed ?? [])].map((r) => ({ symbol: r.symbol, name: r.name }))),
+      }
+    },
+    enabled: editing, staleTime: 60_000,
+  })
+  const typed = q.trim().length > 0  // from the first letter the quick list gives way to the search (its results follow the debounce)
+  const options: { symbol: string; name: string; group?: string }[] = typed
+    ? rows.filter((h) => h.kind === "stock").map((h) => ({ symbol: h.label, name: h.name }))
+    : [...(quick.data?.watch ?? []).map((o) => ({ ...o, group: t("chartw.quick.watch") })), ...(quick.data?.movers ?? []).map((o) => ({ ...o, group: t("chartw.quick.movers") }))]
+  useEffect(() => { setActive(0) }, [options.length, debounced])
   // A pick leaves the field (the mouse path too, whose mousedown kept focus): what is typed next never drives a query nobody can see.
   const pick = (symbol: string) => { onPick(symbol.toUpperCase(), market); reset(); setOpen(false); setEditing(false); inputRef.current?.blur() }
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, stocks.length - 1)) }
+    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, options.length - 1)) }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
-    else if (e.key === "Enter") { e.preventDefault(); const h = stocks[active]; if (h) pick(h.label); else if (/^[A-Z0-9.-]{1,12}$/i.test(q.trim())) pick(q.trim()); (e.target as HTMLInputElement).blur() }
-    else if (e.key === "Escape") { if (open && stocks.length > 0) { e.stopPropagation(); setOpen(false) } else (e.target as HTMLInputElement).blur() }
+    else if (e.key === "Enter") { e.preventDefault(); const h = options[active]; if (h) pick(h.symbol); else if (/^[A-Z0-9.-]{1,12}$/i.test(q.trim())) pick(q.trim()); (e.target as HTMLInputElement).blur() }
+    else if (e.key === "Escape") { if (open && typed && options.length > 0) { e.stopPropagation(); setOpen(false) } else (e.target as HTMLInputElement).blur() }
   }
-  const showList = editing && open && debounced.length > 0
+  const showList = editing && open
+  let lastGroup: string | undefined
   return (
     <span className="relative">
       <input
         ref={inputRef}
         value={editing ? q : value ?? ""}
         onChange={(e) => { setQ(e.target.value); setOpen(true) }}
-        onFocus={(e) => { setEditing(true); setQ(value ?? ""); e.target.select() }}
+        onFocus={(e) => { setEditing(true); setOpen(true); setQ(""); e.target.select() }}
         onBlur={() => { setEditing(false); setOpen(false); reset() }}
         onKeyDown={onKey}
         role="combobox"
         aria-expanded={showList}
         aria-controls={listId}
-        aria-activedescendant={showList && stocks[active] ? `${listId}-${active}` : undefined}
+        aria-activedescendant={showList && options[active] ? `${listId}-${active}` : undefined}
         aria-autocomplete="list"
         aria-label={t("common.stock")}
-        placeholder={t("chartw.symbolPh")}
+        placeholder={value ?? t("chartw.symbolPh")}
         autoComplete="off"
         spellCheck={false}
-        className="h-6 w-24 rounded border border-border bg-background px-1.5 font-mono text-[11px] font-semibold uppercase outline-none placeholder:font-sans placeholder:font-normal placeholder:normal-case focus:ring-2 focus:ring-ring/40"
+        className="h-6 w-28 rounded border border-border bg-background px-1.5 font-mono text-[11px] font-semibold uppercase outline-none placeholder:font-sans placeholder:font-normal placeholder:normal-case focus:ring-2 focus:ring-ring/40"
       />
       {showList && (
-        <ul id={listId} role="listbox" className="absolute left-0 top-full z-20 mt-1 max-h-56 w-64 overflow-auto rounded-md border border-border bg-popover p-1 text-xs shadow-lg">
-          {stocks.length === 0 && <li className="px-2.5 py-1.5 text-muted-foreground">{fetching ? t("search.searching") : t("search.noResults")}</li>}
-          {stocks.map((h, i) => (
-            <li key={h.key} id={`${listId}-${i}`} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(h.label) }} className={cn("flex cursor-pointer items-center gap-2 rounded-[5px] px-2.5 py-1.5", i === active ? "bg-accent text-foreground" : "text-foreground")}>
-              <span className="font-medium">{h.label}</span>
-              <span className="truncate text-muted-foreground">{h.name}</span>
-            </li>
-          ))}
+        <ul id={listId} role="listbox" className="absolute left-0 top-full z-20 mt-1 max-h-64 w-72 overflow-auto rounded-md border border-border bg-popover p-1 text-xs shadow-lg">
+          {options.length === 0 && <li className="px-2.5 py-1.5 text-muted-foreground">{typed ? (fetching ? t("search.searching") : t("search.noResults")) : quick.isFetching ? t("search.searching") : t("chartw.quick.empty")}</li>}
+          {options.map((h, i) => {
+            const header = h.group && h.group !== lastGroup ? h.group : null
+            lastGroup = h.group
+            return (
+              <Fragment key={`${h.group ?? "s"}:${h.symbol}`}>
+                {header && <li role="presentation" className="px-2.5 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">{header}</li>}
+                <li id={`${listId}-${i}`} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(h.symbol) }} className={cn("flex cursor-pointer items-center gap-2 rounded-[5px] px-2.5 py-1.5", i === active ? "bg-accent text-foreground" : "text-foreground")}>
+                  <span className="font-medium">{h.symbol}</span>
+                  <span className="truncate text-muted-foreground">{h.name}</span>
+                </li>
+              </Fragment>
+            )
+          })}
         </ul>
       )}
     </span>

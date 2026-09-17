@@ -25,10 +25,11 @@ vi.mock("lightweight-charts", () => ({
 
 const candles = vi.fn<(market: string, symbol: string, interval: string) => Promise<Candles>>()
 const search = vi.fn<(market: string, q: string) => Promise<SearchHit[]>>()
-const radar = vi.fn<(market: string) => Promise<{ accumulated: { symbol: string }[] }>>()
+const radar = vi.fn<(market: string) => Promise<{ accumulated: { symbol: string; name?: string }[]; distributed?: { symbol: string; name?: string }[] }>>()
+const WATCH = [{ id: 1, kind: "stock", ref: "TUPRS", name: "Tüpraş", market: "TR" }, { id: 2, kind: "fund", ref: "TMV", name: "Fon", market: undefined }]
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>()
-  return { ...actual, api: { candles: (m: string, s: string, i: string) => candles(m, s, i), search: (m: string, q: string) => search(m, q), quotes: async () => QUOTES, radar: (m: string) => radar(m) } }
+  return { ...actual, api: { candles: (m: string, s: string, i: string) => candles(m, s, i), search: (m: string, q: string) => search(m, q), quotes: async () => QUOTES, radar: (m: string) => radar(m), watchlist: async () => WATCH } }
 })
 
 import { ApiError } from "@/lib/api"
@@ -261,5 +262,21 @@ describe("ChartWidget", () => {
     await waitFor(() => expect(candles).toHaveBeenCalledWith("TR", "THYAO", "1d"))
     expect(saved().symbol).toBe("THYAO")
     expect(screen.queryByText("Bir hisse seçin.")).toBeNull()
+  })
+
+  it("offers the watchlist and the Radar's movers as soon as the symbol field is focused, before anything is typed", async () => {
+    radar.mockResolvedValue({ accumulated: [{ symbol: "THYAO", name: "Türk Hava Yolları" }], distributed: [{ symbol: "SOKE", name: "Şok" }] })
+    candles.mockImplementation(async (_m, s, i) => ({ ...ASELS, symbol: s, name: s, interval: i as Candles["interval"] }))
+    const { user } = setup()
+    await user.click(screen.getByText("toggle"))
+    await waitFor(() => expect(candles).toHaveBeenCalled())
+    await user.click(screen.getByRole("combobox"))
+    await waitFor(() => expect(screen.getByText("TUPRS")).toBeInTheDocument())
+    expect(screen.getByText("Takip listesi")).toBeInTheDocument()
+    expect(screen.getByText("Radar · son 30 gün")).toBeInTheDocument()
+    expect(screen.getByText("SOKE")).toBeInTheDocument()
+    expect(screen.queryByText("TMV")).toBeNull()  // funds have no candles
+    await user.click(screen.getByText("TUPRS"))
+    await waitFor(() => expect(candles).toHaveBeenCalledWith("TR", "TUPRS", "1d"))
   })
 })

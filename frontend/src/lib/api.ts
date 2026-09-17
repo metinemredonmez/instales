@@ -648,6 +648,7 @@ export interface WatchItem {
   kind: "stock" | "fund"
   ref: string
   name: string
+  market?: Market  // stocks only
   institution?: string
   smart_money_score?: number | null
   funds_increasing?: number | null
