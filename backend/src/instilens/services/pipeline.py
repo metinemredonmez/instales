@@ -731,9 +731,9 @@ def load_prices_csv(session: Session, path, market: Market = Market.TR) -> int:
             existing = session.get(MarketPrice, (instrument.id, trade_date))
             close = Decimal(row["close"])
             if existing:
-                existing.close = close
+                existing.close, existing.source = close, "csv"
             else:
-                session.add(MarketPrice(instrument_id=instrument.id, trade_date=trade_date, close=close))
+                session.add(MarketPrice(instrument_id=instrument.id, trade_date=trade_date, close=close, source="csv"))
             n += 1
     session.flush()
     return n

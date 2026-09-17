@@ -2,15 +2,16 @@ import type { Quote } from "@/lib/api"
 import { fmtDateTime } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
 import { useCountUp, useFlash } from "@/lib/motion"
-import { fmtQuoteChange, fmtQuotePrice, fmtSessionDate, quoteTone, useQuotes } from "@/lib/quotes"
+import { fmtQuoteChange, fmtQuotePrice, fmtSessionDate, quoteSourceLabel, quoteTone, useQuotes } from "@/lib/quotes"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
- * USD/TRY · EUR/TRY · BIST 100 · S&P 500 from /quotes (60 s). Renders nothing until the first answer arrives and
- * only the quotes the API actually returned — a source that failed leaves a gap, never a placeholder number. Each
- * quote's tooltip names the session its print belongs to (`bar_date`), so a weekend read of Friday's close says
- * Friday, not the time the server happened to be asked.
+ * USD/TRY · EUR/TRY · BIST 100 · S&P 500 from /quotes (60 s poll; the live `quotes` event replaces the cache in
+ * between). Renders nothing until the first answer arrives and only the quotes the API actually returned — a source
+ * that failed leaves a gap, never a placeholder number. Each quote's tooltip names the session its print belongs to
+ * (`bar_date`), so a weekend read of Friday's close says Friday, not the time the server happened to be asked; the
+ * strip's own title names the provider and its delay.
  * Row mode is a flex row that wraps into 2×2 at lg–xl (the header is too narrow for one line there) and runs as a
  * single line from 2xl up; `stack` lays the rows vertically (used inside the account menu on small screens).
  */
@@ -21,7 +22,7 @@ export function QuoteStrip({ className, stack = false }: { className?: string; s
   if (quotes.length === 0) return null
   return (
     <TooltipProvider>
-      <div role="list" aria-label={t("quotes.label")} title={t("quotes.source")} className={cn("flex", stack ? "flex-col gap-1" : "w-[300px] shrink-0 flex-wrap items-center 2xl:w-auto 2xl:flex-nowrap 2xl:gap-0.5", className)}>
+      <div role="list" aria-label={t("quotes.label")} title={t("quotes.source", { src: quoteSourceLabel(quotes, t) })} className={cn("flex", stack ? "flex-col gap-1" : "w-[300px] shrink-0 flex-wrap items-center 2xl:w-auto 2xl:flex-nowrap 2xl:gap-0.5", className)}>
         {quotes.map((x) => <QuoteItem key={x.key} quote={x} stack={stack} />)}
       </div>
     </TooltipProvider>

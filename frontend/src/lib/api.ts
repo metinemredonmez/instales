@@ -212,6 +212,20 @@ export interface AdminConfig {
   channels: { telegram: boolean; email: boolean; web_push: boolean; onesignal: boolean }
 }
 
+/**
+ * /admin/providers: the active price provider's status plus the feed process heartbeat (written to app_settings under
+ * `_feed_status`; `running` is the server's verdict — last_run_at younger than 3 × interval_s). Every process has its
+ * own provider instance, so `status` is the feed's view of it while the feed is alive (`status_from: "feed"` — that
+ * process drives the strip) and the answering API worker's own instance otherwise (`"api"`). `selected` is the runtime
+ * setting as chosen, `active` what actually answers (an unconfigured choice falls back to yahoo); `feed.error` is the
+ * last iteration's failure, which may be the provider's own error or a publish/heartbeat problem of the feed.
+ */
+export interface ProviderStatus { name: string; configured: boolean; connected: boolean; delay: "realtime" | "delayed" | "eod"; last_tick_at: string | null; error: string | null; note: string | null }
+export interface ProvidersStatus {
+  price: { active: PriceSource; selected?: PriceSource; available: PriceSource[]; status: ProviderStatus; status_from?: "feed" | "api" }
+  feed: { running: boolean; last_run_at: string | null; interval_s: number; published: number; provider?: string | null; error?: string | null }
+}
+
 export interface SearchHit {
   kind: "stock" | "fund" | "institution"
   key: string
@@ -290,8 +304,10 @@ export interface StockSeries {
   holdings: { date: string; quantity: number; funds: number }[]
 }
 
-/** Header quote (Yahoo Finance via the backend, 60 s cache). Absent from the list when the source failed; `stale` marks a cached value. */
-export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; bar_date: string | null; stale?: boolean }
+/** Which price provider a quote came from; Yahoo prints are ~15 min delayed, so `delayed` travels with every quote. */
+export type PriceSource = "yahoo" | "matriks"
+/** Header quote (the active price provider via the backend/feed). Absent from the list when the source failed; `stale` marks a cached value. */
+export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; bar_date: string | null; stale?: boolean; source: PriceSource; delayed: boolean }
 export type MarketState = "open" | "closed" | "pre" | "post"
 export interface MarketStatus { state: MarketState; next_change_at: string; tz: string }
 export interface QuotesResponse { as_of: string; quotes: Quote[]; markets: Partial<Record<Market, MarketStatus>> }
@@ -408,6 +424,7 @@ export const api = {
   adminNewsReapply: () => send<{ TR: number; US: number }>("POST", "/admin/news/reapply"),
   adminNewsEnrich: (market: Market) => send<{ tagged: number }>("POST", `/admin/news/enrich?market=${market}`),
   adminConfig: () => get<AdminConfig>("/admin/config"),
+  adminProviders: () => get<ProvidersStatus>("/admin/providers"),
   adminWaitlist: () => get<WaitlistRow[]>("/admin/waitlist"),
   adminPipelineRun: () => send<PipelineState & { started: boolean }>("POST", "/admin/pipeline/run"),
   adminPipelineStatus: () => get<PipelineState>("/admin/pipeline/status"),

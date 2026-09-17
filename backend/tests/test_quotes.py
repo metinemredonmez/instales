@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from instilens.config import settings
+from instilens.ingestion.prices import provider, yahoo
 from instilens.services import auth, quotes, runtime_settings
 
 IST = ZoneInfo("Europe/Istanbul")
@@ -18,10 +19,12 @@ def _at(y, m, d, hh, mm, tz):
 
 @pytest.fixture(autouse=True)
 def _clean_quote_cache():
-    """The module-level cache and last-good memory must not leak between tests, even when one fails mid-way."""
+    """The module-level cache, last-good memory and provider instances must not leak between tests, even when one fails mid-way."""
     quotes.reset()
+    provider.reset()
     yield
     quotes.reset()
+    provider.reset()
 
 
 # --- market hours (pure functions, fixed clock) ---------------------------------------------
@@ -113,7 +116,7 @@ def test_holiday_setting_parsing_and_coercion(monkeypatch):
     raise AssertionError("non-date accepted")
 
 
-# --- quotes (Yahoo monkeypatched) ------------------------------------------------------------
+# --- quotes (Yahoo monkeypatched behind the provider) -----------------------------------------
 
 
 def _frame(closes: dict[str, list[float]]) -> pd.DataFrame:
@@ -138,13 +141,14 @@ def test_snapshot_parses_frame_caches_and_marks_stale(monkeypatch):
         calls.append(list(tickers))
         return _frame(KNOWN)
 
-    monkeypatch.setattr(quotes, "fetch_frame", fake)
+    monkeypatch.setattr(yahoo, "fetch_frame", fake)
     t0 = _at(2026, 9, 16, 12, 0, UTC)
     out = quotes.snapshot(now=t0)
     assert calls == [["USDTRY=X", "EURTRY=X", "XU100.IS", "^GSPC"]]
     by_key = {q["key"]: q for q in out["quotes"]}
     assert [q["key"] for q in out["quotes"]] == ["USDTRY", "EURTRY", "XU100", "SPX"]
-    assert by_key["USDTRY"] == {"key": "USDTRY", "label": "USD/TRY", "price": 41.41, "change_pct": 1.0, "currency": "TRY", "updated_at": t0.isoformat(), "decimals": 4, "bar_date": "2026-09-11"}
+    assert by_key["USDTRY"] == {"key": "USDTRY", "label": "USD/TRY", "price": 41.41, "change_pct": 1.0, "currency": "TRY", "updated_at": t0.isoformat(), "decimals": 4, "bar_date": "2026-09-11",
+                                "source": "yahoo", "delayed": True}
     assert by_key["XU100"]["price"] == 10150 and by_key["XU100"]["change_pct"] == 1.5 and by_key["XU100"]["currency"] == "TRY"
     assert by_key["SPX"]["price"] == 6435 and by_key["SPX"]["change_pct"] == -1.0 and by_key["SPX"]["currency"] == "USD"
     assert all("stale" not in q for q in out["quotes"])
@@ -158,45 +162,48 @@ def test_snapshot_parses_frame_caches_and_marks_stale(monkeypatch):
     assert len(calls) == 2
 
     # Yahoo down: values are carried over flagged stale with the OLD updated_at, never re-dated.
-    monkeypatch.setattr(quotes, "fetch_frame", lambda tickers: (_ for _ in ()).throw(OSError("yahoo down")))
+    monkeypatch.setattr(yahoo, "fetch_frame", lambda tickers: (_ for _ in ()).throw(OSError("yahoo down")))
     t1 = t0 + timedelta(seconds=200)
     stale = {q["key"]: q for q in quotes.snapshot(now=t1)["quotes"]}
     assert len(stale) == 4 and all(q["stale"] is True for q in stale.values())
     assert stale["USDTRY"]["updated_at"] == (t0 + timedelta(seconds=60)).isoformat() and stale["USDTRY"]["price"] == 41.41
+    assert stale["USDTRY"]["source"] == "yahoo" and stale["USDTRY"]["delayed"] is True
+    st = provider.resolve_provider().status()
+    assert st.connected is False and "yahoo down" in st.error and st.last_tick_at is not None  # the outage is reported, the earlier success remembered
 
 
 def test_snapshot_omits_unknown_tickers_and_single_close_has_no_change(monkeypatch):
-    monkeypatch.setattr(quotes, "fetch_frame", lambda tickers: _frame({"USDTRY=X": [41.41], "XU100.IS": [10000.0, 10150.4]}))
+    monkeypatch.setattr(yahoo, "fetch_frame", lambda tickers: _frame({"USDTRY=X": [41.41], "XU100.IS": [10000.0, 10150.4]}))
     out = quotes.snapshot(now=_at(2026, 9, 16, 12, 0, UTC))
     assert [q["key"] for q in out["quotes"]] == ["USDTRY", "XU100"]  # EUR/TRY and S&P never seen → omitted
     assert out["quotes"][0]["change_pct"] is None and out["quotes"][0]["price"] == 41.41
 
     # Total outage with no history → an empty list, not invented numbers.
     quotes.reset()
-    monkeypatch.setattr(quotes, "fetch_frame", lambda tickers: None)
+    monkeypatch.setattr(yahoo, "fetch_frame", lambda tickers: None)
     assert quotes.snapshot(now=_at(2026, 9, 16, 12, 5, UTC))["quotes"] == []
 
 
 def test_missing_ticker_in_grouped_frame_is_omitted_not_a_frame():
     frame = _frame({"USDTRY=X": [41.0, 41.41]})
-    assert quotes._closes(frame, "^GSPC") is None  # never the whole "Close" sub-frame
-    assert quotes.parse_quote(frame, "^GSPC") is None
-    assert quotes.parse_quote(frame, "USDTRY=X").bar_date == date(2026, 9, 11)
+    assert yahoo._closes(frame, "^GSPC") is None  # never the whole "Close" sub-frame
+    assert yahoo.parse_quote(frame, "^GSPC") is None
+    assert yahoo.parse_quote(frame, "USDTRY=X").bar_date == date(2026, 9, 11)
     # A flat single-ticker frame (no column grouping) still resolves its plain Close column.
     flat = pd.DataFrame({"Open": [1.0, 1.0], "Close": [40.0, 42.0]}, index=pd.date_range("2026-09-10", periods=2, freq="D"))
-    assert quotes.parse_quote(flat, "USDTRY=X").price == 42.0
+    assert yahoo.parse_quote(flat, "USDTRY=X").price == 42.0
 
 
 def test_parse_failure_drops_one_ticker_not_the_payload(monkeypatch):
-    monkeypatch.setattr(quotes, "fetch_frame", lambda tickers: _frame(KNOWN))
-    real = quotes.parse_quote
+    monkeypatch.setattr(yahoo, "fetch_frame", lambda tickers: _frame(KNOWN))
+    real = yahoo.parse_quote
 
     def flaky(frame, ticker):
         if ticker == "^GSPC":
             raise TypeError("float() argument must be a string or a real number, not 'DataFrame'")
         return real(frame, ticker)
 
-    monkeypatch.setattr(quotes, "parse_quote", flaky)
+    monkeypatch.setattr(yahoo, "parse_quote", flaky)
     out = quotes.snapshot(now=_at(2026, 9, 16, 12, 0, UTC))
     assert [q["key"] for q in out["quotes"]] == ["USDTRY", "EURTRY", "XU100"]
 
@@ -205,7 +212,7 @@ def test_quotes_route_requires_auth_and_serves_snapshot(session, monkeypatch):
     from instilens.api import deps
     from instilens.api.main import app
 
-    monkeypatch.setattr(quotes, "fetch_frame", lambda tickers: _frame(KNOWN))
+    monkeypatch.setattr(yahoo, "fetch_frame", lambda tickers: _frame(KNOWN))
     app.dependency_overrides[deps.get_session] = lambda: session
     c = TestClient(app)
     assert c.get("/api/v1/quotes").status_code == 401
@@ -214,6 +221,7 @@ def test_quotes_route_requires_auth_and_serves_snapshot(session, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert {q["key"]: q["price"] for q in body["quotes"]} == {"USDTRY": 41.41, "EURTRY": 48.24, "XU100": 10150, "SPX": 6435}
+    assert all(q["source"] == "yahoo" and q["delayed"] is True for q in body["quotes"])
     assert body["markets"]["TR"]["tz"] == "Europe/Istanbul" and body["markets"]["US"]["state"] in ("open", "closed", "pre", "post")
     datetime.fromisoformat(body["as_of"])
     app.dependency_overrides.clear()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fmtCountdown, fmtInZone, fmtOpensAt, fmtQuoteChange, fmtQuotePrice, fmtSessionDate, marketStateDetail, marketStateLabel, minutesUntil, quoteTone, trTimeSuffix } from "./quotes"
+import { fmtCountdown, fmtInZone, fmtOpensAt, fmtQuoteChange, fmtQuotePrice, fmtSessionDate, marketStateDetail, marketStateLabel, minutesUntil, quoteSourceLabel, quoteTone, trTimeSuffix } from "./quotes"
 import { translate, type T } from "./i18n"
 import { setLocale } from "./format"
 import type { MarketStatus } from "./api"
@@ -51,6 +51,30 @@ describe("quote formatting", () => {
     setLocale("en")
     expect(fmtSessionDate("2026-9-1")).toBe("—")
     expect(fmtSessionDate("")).toBe("—")
+  })
+
+  it("names the provider and its delay from the quote itself, in both languages", () => {
+    expect(quoteSourceLabel([{ source: "yahoo", delayed: true }], tTr)).toBe("Yahoo Finance · ~15 dk gecikmeli")
+    expect(quoteSourceLabel([{ source: "yahoo", delayed: true }], tEn)).toBe("Yahoo Finance · ~15 min delayed")
+    expect(quoteSourceLabel([{ source: "matriks", delayed: false }], tTr)).toBe("Matriks · canlı")
+    expect(quoteSourceLabel([{ source: "matriks", delayed: false }], tEn)).toBe("Matriks · live")
+  })
+
+  it("lists each distinct provider once when a payload mixes sources", () => {
+    const mixed = [{ source: "yahoo" as const, delayed: true }, { source: "matriks" as const, delayed: false }, { source: "yahoo" as const, delayed: true }]
+    expect(quoteSourceLabel(mixed, tTr)).toBe("Yahoo Finance · ~15 dk gecikmeli / Matriks · canlı")
+    expect(quoteSourceLabel([], tTr)).toBe("")
+  })
+
+  it("never says live unless the quote says delayed: false outright", () => {
+    // An older API (or a cached answer) without the field: a delayed feed must not be titled live during a version skew.
+    expect(quoteSourceLabel([{ source: "yahoo" }], tTr)).toBe("Yahoo Finance · ~15 dk gecikmeli")
+    expect(quoteSourceLabel([{ source: "matriks" }], tEn)).toBe("Matriks · delayed")
+  })
+
+  it("keeps the 15-minute figure for Yahoo only; another delayed source gets the plain word", () => {
+    expect(quoteSourceLabel([{ source: "matriks", delayed: true }], tTr)).toBe("Matriks · gecikmeli")
+    expect(quoteSourceLabel([{ source: "matriks", delayed: true }], tEn)).toBe("Matriks · delayed")
   })
 })
 

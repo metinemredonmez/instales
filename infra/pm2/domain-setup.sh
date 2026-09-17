@@ -37,5 +37,5 @@ if ! grep -q '^INSTILENS_VAPID_PUBLIC_KEY=' "$ENV"; then
   "$ROOT/backend/.venv/bin/instilens" vapid-keys | grep -v alembic >> "$ENV"
   sed -i "s|^INSTILENS_VAPID_SUBJECT=.*||" "$ENV"; echo "INSTILENS_VAPID_SUBJECT=mailto:$EMAIL" >> "$ENV"
 fi
-pm2 restart instilens-api instilens-scheduler --update-env >/dev/null
+pm2 restart instilens-api instilens-scheduler instilens-feed --update-env >/dev/null
 echo "✓ https://$DOMAIN  (push enabled; 8088 site can be removed later: rm /etc/nginx/sites-enabled/instilens-8088 if you kept one)"

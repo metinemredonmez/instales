@@ -540,12 +540,29 @@ def test_live_events_are_scoped_by_market_and_owner(session):
     assert [e.id for e in mine] == [a.id, b.id]  # global + own; US news and the other user's alert stay out
     assert [e.id for e in live.since(session, a.id, market="US", owner_id="7")] == [a.id + 1, b.id]
     with pytest.raises(ValueError):
-        live.publish(session, "quotes")
+        live.publish(session, "bogus")
     old = live.publish(session, "compute")
     old.created_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2)
     session.flush()
     assert live.prune(session) == 1
     assert live.latest_id(session) == b.id + 1
+
+
+def test_since_replays_only_the_newest_quotes_snapshot(session):
+    """A reconnecting tab gets every missed change event but only the last header snapshot: each `quotes` row is the
+    whole payload, and the intermediate ones have no reader. The page's last id survives, so the cursor is unchanged."""
+    from instilens.services import live
+
+    q1 = live.publish(session, "quotes", payload={"as_of": "1"})
+    c = live.publish(session, "compute")
+    q2 = live.publish(session, "quotes", payload={"as_of": "2"})
+    q3 = live.publish(session, "quotes", payload={"as_of": "3"})
+    n = live.publish(session, "news", market="TR")
+    got = live.since(session, 0, market="TR", owner_id="7")
+    assert [e.id for e in got] == [c.id, q3.id, n.id] and q1.id < q2.id < q3.id
+    # Only the older page is asked for: its newest quotes row is the one that survives there.
+    assert [e.id for e in live.since(session, 0, market="TR", owner_id="7", limit=3)] == [c.id, q2.id]
+    assert [e.id for e in live.since(session, q3.id, market="TR", owner_id="7")] == [n.id]
 
 
 def test_fired_alert_publishes_a_private_live_event(session):

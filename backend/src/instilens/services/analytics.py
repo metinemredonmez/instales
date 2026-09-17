@@ -753,20 +753,23 @@ def _f(v):
 def data_freshness(session: Session, market: str) -> list[dict]:
     """What the user must know before trusting a number: how old each source is."""
     from instilens.domain.models import MarketPrice, TransactionEvent
+    from instilens.ingestion.prices.provider import resolve_provider
 
     def last(stmt):
         v = session.scalar(stmt)
         return v.isoformat() if v else None
 
+    prices = resolve_provider().status()  # the cadence names whoever actually prints the bars
+    prices_row = {"source": "Market prices", "cadence": f"Daily ({prices.name}, {prices.delay})", "last": last(select(func.max(MarketPrice.trade_date)).join(Instrument).where(Instrument.market_code == market)), "delayed": False}
     if market == "US":
         return [
             {"source": "SEC 13F", "cadence": "Quarterly, up to 45 days after quarter end", "last": last(select(func.max(PortfolioSnapshot.as_of)).join(Fund).join(Institution).where(Institution.market_code == "US")), "delayed": True},
-            {"source": "Market prices", "cadence": "Daily", "last": last(select(func.max(MarketPrice.trade_date)).join(Instrument).where(Instrument.market_code == "US")), "delayed": False},
+            prices_row,
         ]
     return [
         {"source": "KAP transaction disclosures", "cadence": "Same-day", "last": last(select(func.max(TransactionEvent.published_at)).where(TransactionEvent.market_code == "TR")), "delayed": False},
         {"source": "KAP portfolio reports", "cadence": "Monthly snapshot", "last": last(select(func.max(PortfolioSnapshot.as_of)).join(Fund).join(Institution).where(Institution.market_code == "TR")), "delayed": True},
-        {"source": "Market prices", "cadence": "Daily (Yahoo, delayed)", "last": last(select(func.max(MarketPrice.trade_date)).join(Instrument).where(Instrument.market_code == "TR")), "delayed": False},
+        prices_row,
     ]
 
 

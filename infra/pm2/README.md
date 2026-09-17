@@ -72,7 +72,7 @@ then `certbot --nginx -d app.instilens.com`, and add `https://app.instilens.com`
 
 ## Ops
 - `pm2 logs instilens-scheduler` — ingest cadence and errors
-- `pm2 restart instilens-api instilens-scheduler --update-env` after changing `.env`
+- `pm2 restart instilens-api instilens-scheduler instilens-feed --update-env` after changing `.env` (all three read it; the feed keeps the old provider/credentials otherwise)
 - Ports used: 8010 (api, localhost only), 8088 (nginx). Change both files if they collide.
 
 ## Notifications (optional)

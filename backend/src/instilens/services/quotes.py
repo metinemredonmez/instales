@@ -1,10 +1,11 @@
 """Header quotes (USD/TRY, EUR/TRY, BIST 100, S&P 500) and market-hours state.
 
-Prices come from Yahoo Finance through the existing yfinance dependency — delayed and unofficial, the same
-feed `ingestion/prices/yahoo.py` uses. One in-process cache (60 s) shields Yahoo from a page-load storm; the
-last good value per ticker is remembered so an outage shows *stale* numbers flagged as such, never a made-up
-one and never an old number presented as fresh. A ticker Yahoo cannot answer and we have never seen is
-simply omitted.
+Prices come from the active price provider (`ingestion/prices/provider.resolve_provider` — Yahoo unless a
+licensed vendor is configured); every quote says which one (`source`) and whether it is `delayed`. One
+in-process cache (60 s) shields the provider from a page-load storm; the last good value per ticker is
+remembered so an outage shows *stale* numbers flagged as such, never a made-up one and never an old number
+presented as fresh. A ticker the provider cannot answer and we have never seen is simply omitted. The
+`instilens feed` process bypasses the cache (`force=True`) and pushes the payload to open tabs.
 
 Market hours are pure functions of a clock passed in explicitly (`now`), so tests can pin any instant.
 Exchange holidays are not modelled; INSTILENS_MARKET_HOLIDAYS_TR (admin-editable) is the escape hatch.
@@ -21,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from instilens.config import settings
+from instilens.ingestion.prices.provider import PriceProvider, resolve_provider
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ CACHE_SECONDS = 60
 @dataclass(frozen=True)
 class QuoteSpec:
     key: str
-    ticker: str  # Yahoo symbol
+    ticker: str  # provider symbol (Yahoo convention; a vendor adapter maps it)
     label: str
     currency: str
     decimals: int
@@ -120,100 +122,51 @@ def markets(now: datetime) -> dict[str, dict[str, Any]]:
 # ---------------------------------------------------------------------------------------------
 # Quotes
 
-
-def fetch_frame(tickers: list[str]):
-    """Daily bars for the last month (the current, partial session included while trading). A month rather
-    than a handful of days so a multi-day exchange holiday still leaves two bars to compute the change from.
-    Tests monkeypatch this; it is the only place that talks to Yahoo."""
-    import yfinance as yf
-
-    return yf.download(tickers, period="1mo", interval="1d", auto_adjust=False, progress=False, group_by="ticker", threads=True)
-
-
-def _closes(frame, ticker: str):
-    """Close series for one ticker: the (ticker, field) / (field, ticker) column of a grouped multi-ticker
-    frame, or the plain "Close" column of a single-ticker frame. Only a one-dimensional series qualifies —
-    a grouped frame that lacks the ticker yields None rather than a whole sub-frame."""
-    grouped = getattr(getattr(frame, "columns", None), "nlevels", 1) > 1
-    getters = (lambda: frame[ticker]["Close"], lambda: frame["Close"][ticker]) if grouped else (lambda: frame["Close"],)
-    for getter in getters:
-        try:
-            series = getter()
-        except (KeyError, TypeError, AttributeError):
-            continue
-        if getattr(series, "ndim", 0) == 1:
-            return series.dropna()
-    return None
-
-
-@dataclass(frozen=True)
-class ParsedQuote:
-    price: float
-    change_pct: float | None  # versus the previous bar's close; None with a single bar
-    bar_date: date | None  # session the price belongs to (the last bar's index), when the index is datetime-like
-
-
-def parse_quote(frame, ticker: str) -> ParsedQuote | None:
-    """Last price, % change versus the previous close and the bar's date; None when the frame has no usable close."""
-    closes = _closes(frame, ticker)
-    if closes is None or closes.empty:
-        return None
-    price = float(closes.iloc[-1])
-    if price <= 0:
-        return None
-    last = closes.index[-1]
-    bar_date = last.date() if hasattr(last, "date") and callable(last.date) else None
-    if len(closes) >= 2 and float(closes.iloc[-2]) > 0:
-        prev = float(closes.iloc[-2])
-        return ParsedQuote(price, round((price / prev - 1.0) * 100.0, 2), bar_date)
-    return ParsedQuote(price, None, bar_date)
-
-
 _lock = threading.Lock()
-_cache: dict[str, Any] = {"fetched_at": None, "quotes": {}}  # fetched_at: datetime | None
+_cache: dict[str, Any] = {"fetched_at": None, "provider": None, "quotes": {}}  # fetched_at: datetime | None
 _last_good: dict[str, dict[str, Any]] = {}
 
 
 def reset() -> None:
     with _lock:
-        _cache["fetched_at"], _cache["quotes"] = None, {}
+        _cache["fetched_at"], _cache["provider"], _cache["quotes"] = None, None, {}
         _last_good.clear()
 
 
-def _refresh(now: datetime) -> None:
+def _refresh(now: datetime, provider: PriceProvider) -> None:
     tickers = [q.ticker for q in QUOTES]
     try:
-        frame = fetch_frame(tickers)
-    except Exception as exc:  # noqa: BLE001 — Yahoo outage: keep last-good, mark stale below
-        log.warning("quotes: yahoo fetch failed: %s", exc)
-        frame = None
+        ticks = provider.quotes(tickers)
+    except Exception as exc:  # noqa: BLE001 — provider outage: keep last-good, mark stale below
+        log.warning("quotes: %s fetch failed: %s", provider.name, exc)
+        ticks = {}
+    delayed = provider.status().delay != "realtime"
     fresh: dict[str, dict[str, Any]] = {}
     for spec in QUOTES:
-        if frame is None:
+        tick = ticks.get(spec.ticker)
+        if tick is None:
             continue
-        try:
-            parsed = parse_quote(frame, spec.ticker)
-        except Exception as exc:  # noqa: BLE001 — an unexpected frame shape drops this ticker, not the payload
-            log.warning("quotes: cannot parse %s: %s", spec.ticker, exc)
-            continue
-        if parsed is None:
-            continue
-        # updated_at is when Yahoo last confirmed the price; bar_date is the session it was printed in, so a
-        # weekend read of Friday's close is not mistaken for a Saturday print.
-        fresh[spec.key] = {"key": spec.key, "label": spec.label, "price": round(parsed.price, spec.decimals), "change_pct": parsed.change_pct,
-                           "currency": spec.currency, "updated_at": now.isoformat(), "decimals": spec.decimals,
-                           "bar_date": parsed.bar_date.isoformat() if parsed.bar_date else None}
+        # updated_at is when the provider last confirmed the price (its own timestamp when it has one, else the
+        # fetch instant); bar_date is the session it was printed in, so a weekend read of Friday's close is not
+        # mistaken for a Saturday print.
+        fresh[spec.key] = {"key": spec.key, "label": spec.label, "price": round(tick.price, spec.decimals), "change_pct": tick.change_pct,
+                           "currency": spec.currency, "updated_at": (tick.at or now).isoformat(), "decimals": spec.decimals,
+                           "bar_date": tick.bar_date.isoformat() if tick.bar_date else None, "source": provider.name, "delayed": delayed}
     _last_good.update(fresh)
-    _cache["fetched_at"], _cache["quotes"] = now, fresh
+    _cache["fetched_at"], _cache["provider"], _cache["quotes"] = now, provider.name, fresh
 
 
-def snapshot(now: datetime | None = None) -> dict[str, Any]:
-    """The /quotes payload. Refreshes from Yahoo at most once per CACHE_SECONDS; concurrent callers share one fetch."""
+def snapshot(now: datetime | None = None, *, force: bool = False) -> dict[str, Any]:
+    """The /quotes payload. Refreshes at most once per CACHE_SECONDS (concurrent callers share one fetch), or
+    immediately when the active provider changed since the cached fetch; `force` skips the cache altogether
+    (the feed process, which is the only caller that should)."""
     now = now or datetime.now(UTC)
+    provider = resolve_provider()
     with _lock:
         fetched_at = _cache["fetched_at"]
-        if fetched_at is None or (now - fetched_at).total_seconds() >= CACHE_SECONDS:
-            _refresh(now)
+        expired = fetched_at is None or (now - fetched_at).total_seconds() >= CACHE_SECONDS
+        if force or expired or _cache["provider"] != provider.name:
+            _refresh(now, provider)
         fresh = _cache["quotes"]
         quotes = []
         for spec in QUOTES:

@@ -174,6 +174,30 @@ def config_status():
     }
 
 
+@router.get("/providers")
+def providers(session: Session = Depends(get_session)):
+    """Price provider in use (after the unconfigured-choice fallback) with its honest status, plus the quote
+    feed's heartbeat. `selected` is the runtime setting as chosen, `active` what actually answers. The overrides
+    are re-applied first: with two uvicorn workers the PUT that switched the provider landed on only one of them.
+    `status` is the provider as the feed process saw it on its last run while the feed is alive (`status_from:
+    "feed"` — that process drives the strip; this worker's own instance may never have fetched), otherwise this
+    worker's instance (`"api"`)."""
+    from instilens.config import settings
+    from instilens.ingestion.prices.provider import PROVIDERS, resolve_provider
+    from instilens.services import feed, runtime_settings
+
+    runtime_settings.apply(session)
+    provider = resolve_provider()
+    fb = feed.status(session)
+    seen_by_feed = fb.pop("provider_status", None)
+    from_feed = bool(fb["running"] and seen_by_feed and seen_by_feed.get("name") == provider.name)
+    return {
+        "price": {"active": provider.name, "selected": settings.price_provider, "available": list(PROVIDERS),
+                  "status": seen_by_feed if from_feed else provider.status().as_dict(), "status_from": "feed" if from_feed else "api"},
+        "feed": fb,
+    }
+
+
 @router.post("/outcomes/compute")
 def compute_outcomes(session: Session = Depends(get_session)):
     from instilens.services.outcomes import compute_outcomes as run
@@ -189,7 +213,7 @@ def _run_pipeline_bg(run_id: int) -> None:
     from instilens.api.hardening import finish_pipeline_run
     from instilens.db.session import session_scope
     from instilens.ingestion.kap import build_kap_adapter
-    from instilens.ingestion.prices.yahoo import load_prices
+    from instilens.ingestion.prices import load_prices
     from instilens.ingestion.sec import build_sec_adapter
     from instilens.services import live, pipeline
     from instilens.services.alerts import evaluate

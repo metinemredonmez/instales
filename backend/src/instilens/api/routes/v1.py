@@ -215,12 +215,14 @@ def live_tv():
 
 
 @router.get("/quotes")
-def get_quotes():
-    """Header quotes (USD/TRY, EUR/TRY, BIST 100, S&P 500) from Yahoo Finance, cached 60 s server-side,
-    plus the open/closed state of BIST and NYSE. A quote Yahoo cannot answer is omitted, or carried
-    over from the last good fetch with `stale: true`."""
-    from instilens.services import quotes
+def get_quotes(session: Session = Depends(get_session)):
+    """Header quotes (USD/TRY, EUR/TRY, BIST 100, S&P 500) from the active price provider (each quote names its
+    `source` and says whether it is `delayed`), cached 60 s server-side, plus the open/closed state of BIST and
+    NYSE. A quote the provider cannot answer is omitted, or carried over from the last good fetch with
+    `stale: true`. While `instilens feed` runs, the same payload also arrives as a `quotes` live event."""
+    from instilens.services import quotes, runtime_settings
 
+    runtime_settings.apply(session)  # a provider switch may have landed on the other uvicorn worker; one small-table read
     return quotes.snapshot()
 
 
@@ -272,9 +274,10 @@ def get_events(market: str = MarketParam, limit: int = Query(50, ge=1, le=200), 
 async def stream_events(request: Request, market: str = MarketParam, poll_seconds: float = Query(3.0, ge=2.0, le=60.0), after: int | None = Query(None, ge=0), user: User = Depends(ticket_user)):
     """One live stream per tab. Two things ride on it: KAP/SEC transactions as full rows (`transaction`, the Live page)
     and small "something changed" events the SPA turns into query refetches (`notification`, `compute`, `news`,
-    `brief`, `pipeline` — see services/live). Tailing the database every few seconds *is* the fan-out: the scheduler,
-    the admin worker thread and both API workers only ever append rows, so no broker is involved. `after` (or the
-    Last-Event-ID header on a browser-initiated reconnect) replays change events missed while disconnected."""
+    `brief`, `pipeline` — see services/live), plus `quotes`, which carries the whole /quotes payload so the header
+    strip is replaced without a refetch. Tailing the database every few seconds *is* the fan-out: the scheduler, the
+    feed, the admin worker thread and both API workers only ever append rows, so no broker is involved. `after` (or
+    the Last-Event-ID header on a browser-initiated reconnect) replays change events missed while disconnected."""
     owner = str(user.id)
     header = request.headers.get("last-event-id", "")
     replay_from = after if after is not None else (int(header) if header.isdigit() else None)

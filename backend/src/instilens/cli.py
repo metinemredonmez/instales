@@ -71,12 +71,12 @@ def ingest(market: str = "TR") -> None:
 
 @app.command()
 def prices(market: str = "TR", days: int = 400, symbols: str = typer.Option("", help="comma-separated subset")) -> None:
-    """Pull daily closes from Yahoo Finance (prototype feed) for every instrument in the market."""
-    from instilens.ingestion.prices.yahoo import load_prices
+    """Pull daily OHLCV bars from the active price provider (Yahoo unless a vendor is configured) for every instrument in the market."""
+    from instilens.ingestion.prices import load_prices
 
     with session_scope() as s:
         n = load_prices(s, market, days, [x for x in symbols.split(",") if x] or None)
-        typer.echo(f"{market}: {n} closes written")
+        typer.echo(f"{market}: {n} bars written")
 
 
 @app.command("load-cusips")
@@ -113,8 +113,8 @@ def compute(as_of: str | None = typer.Option(None, help="YYYY-MM-DD, default tod
 
 @app.command()
 def run(as_of: str | None = typer.Option(None), skip_prices: bool = False) -> None:
-    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (Yahoo) → positions → intelligence → alerts → outcomes."""
-    from instilens.ingestion.prices.yahoo import load_prices
+    """Full chain on REAL sources: migrate → ingest (KAP, SEC) → parse → prices (active provider) → positions → intelligence → alerts → outcomes."""
+    from instilens.ingestion.prices import load_prices
     from instilens.services.alerts import evaluate
     from instilens.services.notify import deliver_pending
     from instilens.services.outcomes import compute_outcomes
@@ -182,6 +182,14 @@ def ask(question: str, market: str = "TR") -> None:
 def scheduler() -> None:
     """Run the background worker (ingest/parse/prices/compute on a cron cadence)."""
     from instilens.scheduler import main
+
+    main()
+
+
+@app.command()
+def feed() -> None:
+    """Run the quote feed: header quotes refreshed while a market is open and pushed to open tabs (see services/feed)."""
+    from instilens.services.feed import main
 
     main()
 

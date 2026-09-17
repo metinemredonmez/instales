@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     default_market: str = "TR"
     # Header quotes / market-hours badge: BIST closes on these ISO dates (exchange holidays are not modelled otherwise).
     market_holidays_tr: list[str] = []
+    # Prices (header strip + daily market_prices). "yahoo" is delayed/unofficial (dev + beta); "matriks" is a slot
+    # that stays "not configured" until the vendor documentation arrives (docs/08-price-providers.md) — an
+    # unconfigured choice falls back to Yahoo. quotes_interval_s: how often `instilens feed` refreshes while a market is open.
+    price_provider: str = "yahoo"
+    quotes_interval_s: int = 60
+    matriks_api_key: str | None = None
+    matriks_base_url: str | None = None
+    matriks_ws_url: str | None = None
 
     # SEC EDGAR (Global). Free; SEC requires an identifying User-Agent "AppName contact@email".
     sec_adapter: str = "edgar"  # live EDGAR (free); "fixture" only for tests

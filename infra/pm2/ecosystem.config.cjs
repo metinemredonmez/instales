@@ -23,5 +23,17 @@ module.exports = {
       max_memory_restart: "900M",
       autorestart: true,
     },
+    {
+      // Header quotes: polls the price provider while a market is open and pushes `quotes` live events
+      // (services/feed). Its heartbeat shows up in Admin → /admin/providers.
+      name: "instilens-feed",
+      cwd: `${ROOT}/backend`,
+      script: ".venv/bin/instilens",
+      args: "feed",
+      interpreter: "none",
+      env: { INSTILENS_ENVIRONMENT: "production" },
+      max_memory_restart: "300M",
+      autorestart: true,
+    },
   ],
 };

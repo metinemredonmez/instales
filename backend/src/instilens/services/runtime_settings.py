@@ -1,9 +1,11 @@
 """Admin-editable runtime settings.
 
 A small allow-list of NON-secret settings can be overridden from the admin UI; overrides live in `app_settings`
-and are applied onto the process-wide `settings` object. Both the API and the scheduler call `apply()` — the API
-at startup and after every change, the scheduler at the start of every job — so a change takes effect within
-one job cycle without a restart. Everything else (keys, hosts, database) stays in `.env`.
+and are applied onto the process-wide `settings` object. Every process calls `apply()` — the API at startup, after
+every change and on the provider-facing routes (/quotes, /admin/providers: with two uvicorn workers the PUT lands
+on only one of them), the scheduler at the start of every job, the feed on every iteration — so a change takes
+effect within one cycle without a restart. Everything else (keys, hosts, database, the Matriks credentials)
+stays in `.env` and needs `pm2 restart instilens-api instilens-scheduler instilens-feed --update-env`.
 """
 
 from __future__ import annotations
@@ -48,8 +50,14 @@ EDITABLE: dict[str, dict[str, Any]] = {
     "kap_public_fund_codes": {"type": "list", "group": "data"},
     "sec_ciks": {"type": "list", "group": "data"},
     "market_holidays_tr": {"type": "list", "group": "data", "item": "date"},  # ISO dates BIST is closed
+    "price_provider": {"type": "choice:yahoo|matriks", "group": "data"},  # an unconfigured choice falls back to yahoo
+    "quotes_interval_s": {"type": "int", "group": "data", "min": 15, "max": 600},
 }
 _DEFAULTS: dict[str, Any] = {}
+
+# Rows under these keys are process state, not settings: never listed, never editable, never applied onto
+# `settings`. `_feed_status` is the quote feed's heartbeat (services/feed).
+RESERVED_PREFIX = "_"
 
 
 class SettingError(ValueError):
@@ -142,6 +150,26 @@ def snapshot(session: Session) -> list[dict]:
          "overridden": k in rows, "updated_at": rows[k].updated_at.isoformat() if k in rows else None, "updated_by": rows[k].updated_by if k in rows else None}
         for k, m in EDITABLE.items()
     ]
+
+
+def load_json(session: Session, key: str) -> Any:
+    """The stored value of a reserved key (None when absent). Editable keys go through snapshot()/apply()."""
+    if not key.startswith(RESERVED_PREFIX):
+        raise SettingError(f"{key} is not a reserved key")
+    row = session.get(AppSetting, key)
+    return None if row is None else row.value.get("v")
+
+
+def store_json(session: Session, key: str, value: Any, actor: str) -> None:
+    """Upsert a reserved key. Same `{"v": ...}` envelope as overrides so scalars round-trip through the JSON column."""
+    if not key.startswith(RESERVED_PREFIX):
+        raise SettingError(f"{key} is not a reserved key")
+    row = session.get(AppSetting, key)
+    if row is None:
+        session.add(AppSetting(key=key, value={"v": value}, updated_by=actor))
+    else:
+        row.value, row.updated_at, row.updated_by = {"v": value}, datetime.now(UTC), actor
+    session.flush()
 
 
 def set_many(session: Session, values: dict[str, Any], actor: str) -> list[str]:

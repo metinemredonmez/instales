@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
-import { api, type Market, type MarketState, type MarketStatus } from "@/lib/api"
+import { api, type Market, type MarketState, type MarketStatus, type Quote } from "@/lib/api"
 import { locale } from "@/lib/format"
 import type { T } from "@/lib/i18n"
 
 /**
- * Header quotes + market clocks. The numbers come from /quotes (Yahoo via the backend, 60 s server cache); nothing
- * here invents a value — a quote the API omitted is simply not shown, and the countdown is arithmetic on the
- * `next_change_at` the server sent.
+ * Header quotes + market clocks. The numbers come from /quotes (the active price provider via the backend feed; the
+ * 60 s poll is the fallback behind the live `quotes` event); nothing here invents a value — a quote the API omitted
+ * is simply not shown, and the countdown is arithmetic on the `next_change_at` the server sent.
  */
 export const useQuotes = () =>
   useQuery({ queryKey: ["quotes"], queryFn: api.quotes, refetchInterval: 60_000, staleTime: 55_000, placeholderData: (prev) => prev })
@@ -21,6 +21,29 @@ export function fmtQuoteChange(pct: number | null | undefined): string {
   if (pct === null || pct === undefined || !Number.isFinite(pct)) return "—"
   const n = new Intl.NumberFormat(locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pct)
   return `${pct > 0 ? "+" : ""}${n}%`
+}
+
+/** Human name of a provider key ("Yahoo Finance", "Matriks") — the same strings the strip's title and the admin card use. */
+export function providerLabel(name: string | null | undefined, t: T): string {
+  return t(name === "matriks" ? "quotes.src.matriks" : "quotes.src.yahoo")
+}
+
+/**
+ * "Yahoo Finance · ~15 dk gecikmeli" / "Matriks · canlı" — the provider each quote names and whether its prints are
+ * delayed. One label per distinct (source, delay) pair, so a payload that mixes a cached Yahoo print with live
+ * Matriks ticks lists both; the strip's title says exactly what the reader is looking at, never a blanket claim.
+ * "live" is said only when the quote says `delayed: false` outright — a missing field (an older API answering a
+ * newer bundle) reads as delayed. The 15-minute figure is Yahoo's; any other delayed source gets the plain word.
+ */
+export function quoteSourceLabel(quotes: (Pick<Quote, "source"> & Partial<Pick<Quote, "delayed">>)[], t: T): string {
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const q of quotes) {
+    const delay = q.delayed === false ? "quotes.realtime" : q.source === "yahoo" ? "quotes.delayed" : "quotes.delayedGeneric"
+    const label = `${providerLabel(q.source, t)} · ${t(delay)}`
+    if (!seen.has(label)) { seen.add(label); parts.push(label) }
+  }
+  return parts.join(" / ")
 }
 
 export type QuoteTone = "pos" | "neg" | "flat"

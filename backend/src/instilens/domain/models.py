@@ -235,8 +235,12 @@ class MarketPrice(Base):
 
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
     trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[Decimal | None] = mapped_column(Money)
+    high: Mapped[Decimal | None] = mapped_column(Money)
+    low: Mapped[Decimal | None] = mapped_column(Money)
     close: Mapped[Decimal] = mapped_column(Money)
     volume: Mapped[int | None] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="yahoo")  # provider name (ingestion/prices/provider.PROVIDERS) or "csv"
 
 
 # --------------------------------------------------------------------------- intelligence layer

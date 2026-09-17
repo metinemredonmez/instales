@@ -18,7 +18,7 @@ from apscheduler.triggers.cron import CronTrigger
 from instilens.ai.tts import warm
 from instilens.db.session import get_engine, init_db, session_scope
 from instilens.ingestion.kap import build_kap_adapter
-from instilens.ingestion.prices.yahoo import load_prices
+from instilens.ingestion.prices import load_prices
 from instilens.ingestion.sec import build_sec_adapter
 from instilens.services import live, pipeline
 from instilens.services.alerts import evaluate

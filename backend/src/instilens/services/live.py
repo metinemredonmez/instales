@@ -20,7 +20,8 @@ from instilens.domain.models import LiveEvent
 #   news          new headlines for a market
 #   brief         morning brief (re)generated for a market
 #   pipeline      admin pipeline started/finished
-KINDS = ("notification", "compute", "news", "brief", "pipeline")
+#   quotes        the full /quotes payload (services/feed) — the SPA replaces its query data, no refetch
+KINDS = ("notification", "compute", "news", "brief", "pipeline", "quotes")
 KEEP = timedelta(hours=24)
 
 
@@ -38,7 +39,9 @@ def latest_id(session: Session) -> int:
 
 
 def since(session: Session, after_id: int, *, market: str, owner_id: str, limit: int = 200) -> list[LiveEvent]:
-    """Events newer than `after_id` that this tab cares about: global ones, this market's, and this user's private ones."""
+    """Events newer than `after_id` that this tab cares about: global ones, this market's, and this user's private ones.
+    Of the `quotes` rows on the page only the newest is returned — each one is a whole header snapshot, and a tab
+    replaying a long gap has no use for the intermediate ones (the page's last id is unchanged, so the cursor is not)."""
     stmt = (
         select(LiveEvent)
         .where(LiveEvent.id > after_id)
@@ -47,7 +50,9 @@ def since(session: Session, after_id: int, *, market: str, owner_id: str, limit:
         .order_by(LiveEvent.id)
         .limit(limit)
     )
-    return list(session.scalars(stmt))
+    rows = list(session.scalars(stmt))
+    newest_quotes = max((ev.id for ev in rows if ev.kind == "quotes"), default=None)
+    return [ev for ev in rows if ev.kind != "quotes" or ev.id == newest_quotes]
 
 
 def prune(session: Session, keep: timedelta = KEEP) -> int:

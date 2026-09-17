@@ -4,8 +4,9 @@ import { useI18n } from "@/lib/i18n"
 import { Section } from "@/components/layout/Section"
 import { cn } from "@/lib/utils"
 import { RuntimeSettingsForm } from "@/components/domain/RuntimeSettingsForm"
+import { ProviderStatusCard } from "@/components/domain/ProviderStatusCard"
 
-/** Read-only view of what the server has configured (booleans only — secrets never leave the server). */
+/** Live price-provider status, the editable runtime settings, then a read-only view of what the server has configured (booleans only — secrets never leave the server). */
 export function AdminSettingsPage() {
   const { t } = useI18n()
   const q = useQuery({ queryKey: ["admin", "config"], queryFn: api.adminConfig })
@@ -25,6 +26,7 @@ export function AdminSettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{t("admin.settings.title")}</h1>
         <p className="text-sm text-muted-foreground">{t("admin.settings.sub")}</p>
       </div>
+      <ProviderStatusCard />
       <RuntimeSettingsForm />
       <div className="grid gap-5 lg:grid-cols-2">
         <Section title={t("admin.settings.server")}>

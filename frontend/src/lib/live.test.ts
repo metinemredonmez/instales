@@ -36,6 +36,44 @@ describe("live change events", () => {
     expect(spy.mock.calls.map((c) => c[0]?.queryKey)).toEqual([["events"]])
   })
 
+  const quote = { key: "USDTRY", label: "USD/TRY", price: 41.2, change_pct: 0.1, currency: "TRY", updated_at: "2026-09-17T09:00:00Z", decimals: 4, bar_date: "2026-09-17", source: "yahoo", delayed: true }
+  const markets = { TR: { state: "open", next_change_at: "2026-09-17T15:00:00Z", tz: "Europe/Istanbul" } }
+
+  it("drops a quotes event straight into the cache (envelope stripped) instead of refetching", () => {
+    const qc = new QueryClient()
+    const invalidate = vi.spyOn(qc, "invalidateQueries")
+    // Exactly what /events/stream sends: the /quotes payload under the change-event envelope (id, kind, market: null).
+    applyLiveEvent(qc, "quotes", { id: 7, kind: "quotes", market: null, as_of: "2026-09-17T09:00:05Z", quotes: [quote], markets })
+    expect(qc.getQueryData(["quotes"])).toStrictEqual({ as_of: "2026-09-17T09:00:05Z", quotes: [quote], markets })
+    expect(invalidate).not.toHaveBeenCalled()
+  })
+
+  it("keeps the newer numbers when a replayed quotes event is older than what the tab holds", () => {
+    const qc = new QueryClient()
+    const t1 = { as_of: "2026-09-17T09:00:05+00:00", quotes: [{ ...quote, price: 41.1 }], markets }
+    const t2 = { as_of: "2026-09-17T09:01:05+00:00", quotes: [{ ...quote, price: 41.2 }], markets }
+    applyLiveEvent(qc, "quotes", { id: 8, kind: "quotes", market: null, ...t2 })
+    // A reconnect replays what was missed, in id order; the 60 s poll (or a later event) may already be ahead of it.
+    applyLiveEvent(qc, "quotes", { id: 7, kind: "quotes", market: null, ...t1 })
+    expect(qc.getQueryData(["quotes"])).toStrictEqual(t2)
+    applyLiveEvent(qc, "quotes", { id: 9, kind: "quotes", market: null, ...t2 })   // the same instant again: not newer
+    expect(qc.getQueryData(["quotes"])).toStrictEqual(t2)
+    const t3 = { as_of: "2026-09-17T09:02:05.250000+00:00", quotes: [{ ...quote, price: 41.3 }], markets }
+    applyLiveEvent(qc, "quotes", { id: 10, kind: "quotes", market: null, ...t3 })
+    expect(qc.getQueryData(["quotes"])).toStrictEqual(t3)
+  })
+
+  it("ignores an empty quotes payload so the strip is never blanked", () => {
+    const qc = new QueryClient()
+    const held = { as_of: "2026-09-17T09:00:05+00:00", quotes: [quote], markets }
+    qc.setQueryData(["quotes"], held)
+    applyLiveEvent(qc, "quotes", { id: 11, kind: "quotes", market: null, as_of: "2026-09-17T09:03:05+00:00", quotes: [], markets })
+    expect(qc.getQueryData(["quotes"])).toStrictEqual(held)
+    const empty = new QueryClient()
+    applyLiveEvent(empty, "quotes", { id: 11, kind: "quotes", market: null, as_of: "2026-09-17T09:03:05+00:00", quotes: [], markets })
+    expect(empty.getQueryData(["quotes"])).toBeUndefined()
+  })
+
   it("connects with a ticket, fans events out to subscribers and reconnects from the last id", async () => {
     vi.useFakeTimers()
     const qc = new QueryClient()
