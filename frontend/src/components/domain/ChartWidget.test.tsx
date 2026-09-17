@@ -25,9 +25,10 @@ vi.mock("lightweight-charts", () => ({
 
 const candles = vi.fn<(market: string, symbol: string, interval: string) => Promise<Candles>>()
 const search = vi.fn<(market: string, q: string) => Promise<SearchHit[]>>()
+const radar = vi.fn<(market: string) => Promise<{ accumulated: { symbol: string }[] }>>()
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>()
-  return { ...actual, api: { candles: (m: string, s: string, i: string) => candles(m, s, i), search: (m: string, q: string) => search(m, q), quotes: async () => QUOTES } }
+  return { ...actual, api: { candles: (m: string, s: string, i: string) => candles(m, s, i), search: (m: string, q: string) => search(m, q), quotes: async () => QUOTES, radar: (m: string) => radar(m) } }
 })
 
 import { ApiError } from "@/lib/api"
@@ -67,6 +68,7 @@ describe("ChartWidget", () => {
     localStorage.clear()
     candles.mockReset(); candles.mockResolvedValue(ASELS)
     search.mockReset(); search.mockResolvedValue([])
+    radar.mockReset(); radar.mockResolvedValue({ accumulated: [] })
     for (const fn of Object.values(lw)) fn.mockClear()
   })
 
@@ -249,5 +251,15 @@ describe("ChartWidget", () => {
     await user.click(await screen.findByRole("option", { name: /EREGL/ }))   // not the previous hit the list keeps while the search is in flight
     await waitFor(() => expect(candles).toHaveBeenLastCalledWith("TR", "EREGL", "1d"))
     expect(box).not.toHaveFocus()
+  })
+
+  it("opens on the Radar's most-accumulated stock when nothing is remembered, and on the page's stock on a stock page", async () => {
+    radar.mockResolvedValue({ accumulated: [{ symbol: "THYAO" }, { symbol: "ASELS" }] })
+    candles.mockImplementation(async (_m, s, i) => ({ ...ASELS, symbol: s, name: s, interval: i as Candles["interval"] }))
+    const { user } = setup()
+    await user.click(screen.getByText("toggle"))
+    await waitFor(() => expect(candles).toHaveBeenCalledWith("TR", "THYAO", "1d"))
+    expect(saved().symbol).toBe("THYAO")
+    expect(screen.queryByText("Bir hisse seçin.")).toBeNull()
   })
 })

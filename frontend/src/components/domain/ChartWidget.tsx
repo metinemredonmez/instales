@@ -6,6 +6,7 @@ import { ApiError, api, type CandleInterval, type Market } from "@/lib/api"
 import { INTERVALS, candleSource, closeChange, cssToRgba, loadChart, onOpenChart, openChart, saveChart, sessionDate, themeColor, themeColorAlpha, zonedTime } from "@/lib/chart"
 import { fmtNum, fmtPrice, locale } from "@/lib/format"
 import { useI18n } from "@/lib/i18n"
+import { useMatch } from "react-router-dom"
 import { useMarket } from "@/lib/market"
 import { fmtInZone, fmtSessionDate, providerLabel, quoteSourceLabel, useQuotes } from "@/lib/quotes"
 import { useTheme } from "@/lib/theme"
@@ -60,6 +61,18 @@ export function ChartWidget({ open, onClose }: { open: boolean; onClose: () => v
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [visible])
+
+  // Opened with nothing remembered (first use, or a cleared browser): default to the stock the page is about, else the
+  // most-accumulated stock of the active market's Radar — a chart window should never open on "pick a stock".
+  const onStock = useMatch("/stocks/:symbol")
+  const radar = useQuery({ queryKey: ["radar", activeMarket, 30], queryFn: () => api.radar(activeMarket, 15, 30), enabled: visible && !symbol && !onStock, staleTime: 60_000 })
+  useEffect(() => {
+    if (!visible || symbol) return
+    const fromPage = onStock?.params.symbol?.toUpperCase()
+    const fromRadar = radar.data?.accumulated[0]?.symbol
+    const pick = fromPage ?? fromRadar
+    if (pick) setSym({ symbol: pick, market: activeMarket })
+  }, [visible, symbol, onStock, radar.data, activeMarket])
 
   const quotes = useQuotes()
   const state = market ? quotes.data?.markets[market]?.state : undefined
