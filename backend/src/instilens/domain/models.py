@@ -219,6 +219,15 @@ class PositionChange(Base):
     delta_value: Mapped[Decimal | None] = mapped_column(Money)
     activity: Mapped[str] = mapped_column(String(8), index=True)
     confidence: Mapped[str] = mapped_column(String(16), default="INFERRED")
+    # v2 (engine/positions): position value on each side, weight change, relative quantity change.
+    from_value: Mapped[Decimal | None] = mapped_column(Money)
+    to_value: Mapped[Decimal | None] = mapped_column(Money)
+    delta_weight_pct: Mapped[Decimal | None] = mapped_column(Pct)
+    # Wider than Pct: a 1-share odd lot that becomes a real position is a ten-digit percentage, and Postgres
+    # aborts the whole rebuild on a numeric overflow.
+    pct_change_qty: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    # Reporting periods the diff spans (TR month-ends, US quarters): 1 = consecutive, 2 = one report was missed.
+    gap_periods: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class MarketPrice(Base):

@@ -64,6 +64,23 @@ def get_radar(market: str = MarketParam, limit: int = Query(20, ge=1, le=100), w
     return data
 
 
+@router.get("/moves")
+def get_moves(
+    kind: analytics.MoveKind = Query(...),
+    market: str = MarketParam,
+    window: int | None = Query(None, ge=1, le=730),
+    fund: str | None = Query(None, max_length=16),
+    limit: int = Query(25, ge=1, le=100),
+    session: Session = Depends(get_session),
+):
+    """Top buys / sells / new positions / exits of the window with the parties behind each row. Default window =
+    the market's score window (TR 30D, US 100D); `fund` narrows the rows to that fund's own moves."""
+    data = analytics.moves(session, market, kind=kind, window_days=window, fund_code=fund, limit=limit)
+    if data is None:
+        raise HTTPException(404, "fund not found")
+    return data
+
+
 @router.get("/news")
 def get_news(market: str = MarketParam, symbol: str | None = Query(None, max_length=16), limit: int = Query(40, ge=1, le=200), session: Session = Depends(get_session)):
     return analytics.news(session, market, symbol, limit)

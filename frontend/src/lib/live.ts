@@ -26,7 +26,7 @@ const emit = (kind: LiveKind, data: Record<string, unknown>) => handlers.get(kin
 /** Which cached queries each change event makes stale. Keys are prefixes — TanStack matches every longer key. */
 export const INVALIDATIONS: Record<Exclude<LiveKind, "transaction">, unknown[][]> = {
   notification: [["notifications"]],
-  compute: [["radar"], ["stock"], ["screener"], ["watchlist"], ["freshness"], ["signal-perf"], ["timeline"], ["series"], ["fund"], ["institution"], ["institutions"], ["compare"], ["events"]],
+  compute: [["radar"], ["stock"], ["screener"], ["moves"], ["watchlist"], ["freshness"], ["signal-perf"], ["timeline"], ["series"], ["fund"], ["institution"], ["institutions"], ["compare"], ["events"]],
   news: [["news"]],
   brief: [["ai-note"]],
   pipeline: [["pipeline-status"], ["freshness"], ["admin"]],

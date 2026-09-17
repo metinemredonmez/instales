@@ -1,4 +1,4 @@
-import { Activity, Bell, Building2, GitCompare, Monitor, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star } from "lucide-react"
+import { Activity, ArrowLeftRight, Bell, Building2, GitCompare, Monitor, Radar, Settings, Shield, SlidersHorizontal, Sparkles, Star } from "lucide-react"
 import type { Key } from "@/i18n/tr"
 
 export type NavItem = { to: string; key: Key; icon: React.ComponentType<{ className?: string }>; end?: boolean; mobile?: boolean }
@@ -7,6 +7,8 @@ export type NavItem = { to: string; key: Key; icon: React.ComponentType<{ classN
 export const NAV: NavItem[] = [
   { to: "/", key: "nav.radar", icon: Radar, end: true, mobile: true },
   { to: "/live", key: "nav.live", icon: Activity, mobile: true },
+  // Not on the phone bar (full at five + admin, like /institutions and /compare); phones reach it from a fund page's "Moves" link and ⌘K.
+  { to: "/moves", key: "nav.moves", icon: ArrowLeftRight },
   { to: "/screener", key: "nav.screener", icon: SlidersHorizontal, mobile: true },
   { to: "/institutions", key: "nav.institutions", icon: Building2 },
   { to: "/compare", key: "nav.compare", icon: GitCompare },

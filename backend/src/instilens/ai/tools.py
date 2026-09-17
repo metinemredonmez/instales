@@ -117,4 +117,89 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
         """
         return _dump(analytics.news(session, market, symbol, limit))
 
-    return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news]
+    def _moves(kind: str, window_days: int | None, limit: int, code: str | None = None) -> str:
+        try:
+            data = analytics.moves(session, market, kind=kind, window_days=window_days, fund_code=code, limit=limit)
+        except ValueError as exc:
+            return _dump({"error": str(exc)})
+        return _dump(data if data is not None else {"error": f"unknown fund {code}"})
+
+    def get_top_buys(window_days: int | None = None, limit: int = 10) -> str:
+        """Stocks with the largest positive net institutional flow in the window, largest first. The payload
+        carries as_of, window_days, window_start, total (rows before the limit) and rows. Each row:
+        net_flow_value (market currency), net_qty, how many funds increased / reduced / opened / closed,
+        party_count, and the top 5 parties behind it (fund or institution, activity NEW/ADD/REDUCE/EXIT,
+        delta_qty, delta_value, weight change, period_end, confidence). These are observed, descriptive
+        flows from portfolio reports and disclosed transactions — not recommendations. Use it for
+        "who bought the most / what did funds buy most".
+
+        Args:
+            window_days: Lookback in days; omit for the market's own window (TR 30, US 100).
+            limit: Max rows (default 10).
+        """
+        return _moves("buys", window_days, limit)
+
+    def get_top_sells(window_days: int | None = None, limit: int = 10) -> str:
+        """Stocks with the most negative net institutional flow in the window, most sold first. Same row
+        shape as get_top_buys (net flow, fund counts, top 5 parties with activity and confidence). Observed,
+        descriptive flows — not recommendations. Use it for "what did funds sell the most".
+
+        Args:
+            window_days: Lookback in days; omit for the market's own window (TR 30, US 100).
+            limit: Max rows (default 10).
+        """
+        return _moves("sells", window_days, limit)
+
+    def get_new_positions(window_days: int | None = None, limit: int = 10) -> str:
+        """Stocks that at least one fund/institution newly entered in the window (held nothing before),
+        ordered by the number of entering parties, then net flow. Parties are only the entrants (activity
+        NEW). Observed, descriptive flows — not recommendations. Use it for "which funds opened new positions".
+
+        Args:
+            window_days: Lookback in days; omit for the market's own window (TR 30, US 100).
+            limit: Max rows (default 10).
+        """
+        return _moves("new", window_days, limit)
+
+    def get_sold_out_positions(window_days: int | None = None, limit: int = 10) -> str:
+        """Stocks that at least one fund/institution fully exited in the window (holds nothing now), ordered
+        by the number of exiting parties, then net flow. Parties are only the leavers (activity EXIT).
+        Observed, descriptive flows — not recommendations. Use it for "which funds closed positions".
+
+        Args:
+            window_days: Lookback in days; omit for the market's own window (TR 30, US 100).
+            limit: Max rows (default 10).
+        """
+        return _moves("exits", window_days, limit)
+
+    def get_fund_holdings(code: str) -> str:
+        """A fund's latest reported portfolio: as_of (report date), total_value, and every holding with
+        symbol, quantity, market_value and weight_pct, largest first. A snapshot, not activity — pair it
+        with get_fund_holding_changes for what changed. Reported figures, not recommendations.
+
+        Args:
+            code: Fund code, e.g. TMV (US: CIK<number>).
+        """
+        data = analytics.fund_detail(session, code)
+        if data is None:
+            return _dump({"error": f"unknown fund {code}"})
+        return _dump({"code": data["code"], "name": data["name"], "as_of": data["snapshot_as_of"],
+                      "total_value": data["total_value"], "holdings": data["holdings"]})
+
+    def get_fund_holding_changes(code: str, window_days: int | None = None, kind: analytics.MoveKind = "buys") -> str:
+        """One fund's own moves in the window (payload: fund, as_of, window_start, total, rows), one row per
+        stock with net_flow_value / net_qty and the fund as the row's single party: kind "buys" = stocks it
+        added to or entered (largest net flow first), "sells" = reduced or exited, "new" = entered, "exits" =
+        fully sold. That party entry (rows[i].parties[0]) carries delta_qty, delta_value, to_weight_pct,
+        delta_weight_pct, period_end and confidence (INFERRED from two reports, EXACT from a disclosed
+        transaction). Observed, descriptive flows — not recommendations.
+
+        Args:
+            code: Fund code, e.g. TMV (US: CIK<number>).
+            window_days: Lookback in days; omit for the market's own window (TR 30, US 100).
+            kind: buys | sells | new | exits (default buys).
+        """
+        return _moves(kind, window_days, 25, code)
+
+    return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news,
+            get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes]

@@ -19,7 +19,8 @@ export function ConfidenceBadge({ value, className }: { value: Confidence; class
   )
 }
 
-const ACT: Record<Activity, string> = {
+/** Activity tone classes; exported so compact chips (Moves parties) share the badge colours. */
+export const ACT: Record<Activity, string> = {
   NEW: "text-positive border-positive/50 bg-positive/10",
   ADD: "text-positive border-positive/30",
   REDUCE: "text-negative border-negative/30",

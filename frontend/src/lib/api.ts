@@ -238,6 +238,44 @@ export interface ScreenerFilters {
   limit?: number
 }
 
+export type MoveKind = "buys" | "sells" | "new" | "exits"
+/** One fund (or, for a GROUPED event, its institution) behind a move; at most 5 per row, largest |delta_value| first. */
+export interface MoveParty {
+  kind: "fund" | "institution"
+  code: string
+  name: string
+  activity: Exclude<Activity, "HOLD">
+  delta_qty: number
+  delta_value: number | null
+  to_weight_pct: number | null
+  delta_weight_pct: number | null
+  period_end: string
+  confidence: Confidence
+}
+export interface MoveRow {
+  symbol: string
+  name: string
+  net_flow_value: number
+  net_qty: number
+  funds_increasing: number
+  funds_reducing: number
+  funds_new: number
+  funds_exited: number
+  party_count: number
+  parties: MoveParty[]
+}
+export interface Moves {
+  as_of: string
+  window_days: number
+  window_start: string
+  kind: MoveKind
+  market: Market
+  fund: { code: string; name: string } | null
+  /** Rows before the `limit` cut; the hint states this, not the page size. */
+  total: number
+  rows: MoveRow[]
+}
+
 export interface ResearchAnswer {
   question: string
   answer: string
@@ -379,6 +417,8 @@ export const api = {
   search: (market: Market, q: string) => get<SearchHit[]>("/search", { market, q }),
   quotes: () => get<QuotesResponse>("/quotes"),
   screener: (market: Market, f: ScreenerFilters) => get<ScreenerRow[]>("/screener", { market, ...f }),
+  /** window null = the market's own window; fund narrows the rows to that fund's own position changes (404 if unknown). */
+  moves: (market: Market, kind: MoveKind, window: number | null = null, fund: string | null = null, limit = 25) => get<Moves>("/moves", { market, kind, window, fund, limit }),
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),
   watchlist: () => get<WatchItem[]>("/watchlist"),

@@ -43,6 +43,12 @@ class PositionDelta:
     to_weight_pct: Decimal | None
     delta_value: Decimal | None
     activity: ActivityType
+    # v2: what the position was worth on each side (reported value, else qty × close), how much of the
+    # book it is, and the quantity change relative to the starting position.
+    from_value: Decimal | None = None
+    to_value: Decimal | None = None
+    delta_weight_pct: Decimal | None = None
+    pct_change_qty: Decimal | None = None
     confidence: Confidence = Confidence.INFERRED
 
 
@@ -62,12 +68,15 @@ def diff_snapshots(
     previous: SnapshotView | None,
     current: SnapshotView,
     prices: dict[str, Decimal] | None = None,
+    from_prices: dict[str, Decimal] | None = None,
 ) -> list[PositionDelta]:
     """Diff two snapshots of the same fund.
 
     With no previous snapshot every holding is NEW (first observation) — callers should treat
     the very first snapshot of a fund as a baseline, not as buying activity (see pipeline).
-    `prices` (symbol → close at period_end) lets us value the delta when the report has no value.
+    `prices` (symbol → close at period_end) lets us value the delta when the report has no value;
+    `from_prices` (closes at period_start) values the previous side the same way, so `from_value`
+    means the same thing whether the report carried a value or not; None falls back to `prices`.
     """
     if previous is not None and previous.fund_code != current.fund_code:
         raise ValueError("snapshots belong to different funds")
@@ -81,6 +90,8 @@ def diff_snapshots(
         delta_qty = to_qty - from_qty
         if delta_qty == 0 and to_qty == 0:
             continue  # absent on both sides (can't happen) or zero-zero
+        from_weight = p.weight_pct if p else None
+        to_weight = c.weight_pct if c else None
         deltas.append(
             PositionDelta(
                 fund_code=current.fund_code,
@@ -90,13 +101,29 @@ def diff_snapshots(
                 from_qty=from_qty,
                 to_qty=to_qty,
                 delta_qty=delta_qty,
-                from_weight_pct=p.weight_pct if p else None,
-                to_weight_pct=c.weight_pct if c else None,
+                from_weight_pct=from_weight,
+                to_weight_pct=to_weight,
                 delta_value=_value_delta(delta_qty, symbol, p, c, prices),
                 activity=classify(from_qty, to_qty),
+                from_value=_holding_value(p, symbol, prices if from_prices is None else from_prices),
+                to_value=_holding_value(c, symbol, prices),
+                delta_weight_pct=to_weight - from_weight if from_weight is not None and to_weight is not None else None,
+                pct_change_qty=(Decimal(delta_qty) / Decimal(from_qty) * 100).quantize(Decimal("0.0001")) if from_qty else None,
             )
         )
     return deltas
+
+
+def _holding_value(h: HoldingView | None, symbol: str, prices: dict[str, Decimal] | None) -> Decimal | None:
+    """What the position was worth: the report's own figure when it has one, else quantity × close.
+    A side the fund does not hold is worth 0 (NEW starts from 0, EXIT ends at 0)."""
+    if h is None:
+        return Decimal(0)
+    if h.market_value is not None:
+        return h.market_value
+    if prices and symbol in prices:
+        return Decimal(h.quantity) * prices[symbol]
+    return None
 
 
 def _value_delta(

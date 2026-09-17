@@ -312,9 +312,12 @@ def rebuild_positions(session: Session) -> int:
             for s in snaps
         ]
         # The first snapshot is a baseline: it tells us what the fund holds, not what it bought.
+        # Closes at the previous report date price the from-side; each pair's end closes are the next pair's start.
+        prev_prices = _closes_at(session, views[0].as_of) if len(views) > 1 else {}
         for prev, curr, prev_row, curr_row in zip(views, views[1:], snaps, snaps[1:], strict=False):
             prices = _closes_at(session, curr.as_of)
-            for d in diff_snapshots(prev, curr, prices):
+            gap = _gap_periods(prev.as_of, curr.as_of, fund.institution.market_code)
+            for d in diff_snapshots(prev, curr, prices, from_prices=prev_prices):
                 session.add(
                     PositionChange(
                         fund_id=fund.id,
@@ -331,11 +334,28 @@ def rebuild_positions(session: Session) -> int:
                         delta_value=d.delta_value,
                         activity=d.activity,
                         confidence=d.confidence,
+                        from_value=d.from_value,
+                        to_value=d.to_value,
+                        delta_weight_pct=d.delta_weight_pct,
+                        pct_change_qty=d.pct_change_qty,
+                        gap_periods=gap,
                     )
                 )
                 written += 1
+            prev_prices = prices
     session.flush()
     return written
+
+
+# Length of one reporting period per market: KAP portfolio reports are monthly, 13F is quarterly.
+PERIOD_DAYS: dict[str, int] = {"TR": 30, "US": 91}
+
+
+def _gap_periods(start: date, end: date, market: str) -> int:
+    """How many reporting periods a snapshot diff spans (rounded half up, never below 1). A diff over two
+    periods is still one INFERRED move, but readers should know the fund skipped a report in between."""
+    unit = PERIOD_DAYS.get(market, 30)
+    return max(1, ((end - start).days + unit // 2) // unit)
 
 
 def _closes_at(session: Session, on: date) -> dict[str, Decimal]:
@@ -516,7 +536,7 @@ def _instrument_activity(
         if value is not None:
             net_flow += value
             flow_by_conf[Confidence(e.confidence)] += abs(value)
-        party = f"fund:{e.funds[0].fund_id}" if e.confidence == Confidence.EXACT else f"inst:{e.institution_id}"
+        party = event_party(e)
         if e.net_nominal > 0:
             inc.add(party)
         elif e.net_nominal < 0:
@@ -602,6 +622,15 @@ def _party_moves(changes: list[PositionChange], events: list[TransactionEvent]) 
 
 
 def _event_moves(events: list[TransactionEvent], snapshot_moves: list[FundMove]) -> list[FundMove]:
+    return [FundMove(event_party(e), kind, e.effective_date) for e, kind in event_entries_exits(events, snapshot_moves)]
+
+
+def event_party(e: TransactionEvent) -> str:
+    """Breadth-law party key of an event: the fund it names when EXACT, else its institution."""
+    return f"fund:{e.funds[0].fund_id}" if e.confidence == Confidence.EXACT and e.funds else f"inst:{e.institution_id}"
+
+
+def event_entries_exits(events: list[TransactionEvent], snapshot_moves: list[FundMove]) -> list[tuple[TransactionEvent, ActivityType]]:
     """Entries and exits disclosed by transaction events: ownership 0 %/unknown → >0 % on a buy is a first-time
     entry, → 0 % on a sell is a full exit. A GROUPED event is its institution; it is dropped when one of its
     funds is already counted for that move (snapshot diff or EXACT event), so a fund is never counted twice."""
@@ -615,17 +644,16 @@ def _event_moves(events: list[TransactionEvent], snapshot_moves: list[FundMove])
         elif e.net_nominal < 0 and after == 0:
             kinds[e.id] = ActivityType.EXIT
     counted: dict[ActivityType, set[str]] = {k: {m.fund_code for m in snapshot_moves if m.activity is k} for k in (ActivityType.NEW, ActivityType.EXIT)}
-    out: list[FundMove] = []
+    out: list[tuple[TransactionEvent, ActivityType]] = []
     exact = [e for e in events if e.id in kinds and e.confidence == Confidence.EXACT and e.funds]
     grouped = [e for e in events if e.id in kinds and not (e.confidence == Confidence.EXACT and e.funds)]
     for e in exact:  # EXACT first: a fund named explicitly must never be hidden behind an institution party
-        party = f"fund:{e.funds[0].fund_id}"
-        counted[kinds[e.id]].add(party)
-        out.append(FundMove(party, kinds[e.id], e.effective_date))
+        counted[kinds[e.id]].add(event_party(e))
+        out.append((e, kinds[e.id]))
     for e in grouped:
         if any(f"fund:{f.fund_id}" in counted[kinds[e.id]] for f in e.funds):
             continue
-        out.append(FundMove(f"inst:{e.institution_id}", kinds[e.id], e.effective_date))
+        out.append((e, kinds[e.id]))
     return out
 
 

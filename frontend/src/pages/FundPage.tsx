@@ -29,7 +29,7 @@ export function FundPage() {
       <div>
         <div className="text-xs text-muted-foreground"><Link to={`/institutions/${f.institution.code}`} className="hover:underline">{f.institution.name}</Link> · {t("fund.portfolioDate")} {fmtDate(f.snapshot_as_of)} · {t("fund.activityPeriod")} {fmtDate(f.activity_period_end)}</div>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight"><span className="font-mono">{f.code}</span> <span className="text-lg font-normal text-muted-foreground">{f.name}</span></h1>
-        <div className="mt-2 flex items-center gap-3 text-sm">{t("fund.portfolioValue")} <Flow value={f.total_value} market={market} className="text-foreground" /> <WatchButton fundCode={f.code} market={market} /><Link to={`/compare?a=${f.code}`} className="text-xs text-primary hover:underline">{t("fund.compareLink")} →</Link></div>
+        <div className="mt-2 flex items-center gap-3 text-sm">{t("fund.portfolioValue")} <Flow value={f.total_value} market={market} className="text-foreground" /> <WatchButton fundCode={f.code} market={market} /><Link to={`/moves?fund=${f.code}`} className="text-xs text-primary hover:underline">{t("fund.movesLink")} →</Link><Link to={`/compare?a=${f.code}`} className="text-xs text-primary hover:underline">{t("fund.compareLink")} →</Link></div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">

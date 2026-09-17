@@ -5,6 +5,7 @@ import { RadarPage } from "@/pages/RadarPage"
 import { StockPage } from "@/pages/StockPage"
 import { FundPage } from "@/pages/FundPage"
 import { LivePage } from "@/pages/LivePage"
+import { MovesPage } from "@/pages/MovesPage"
 import { ScreenerPage } from "@/pages/ScreenerPage"
 import { ResearchPage } from "@/pages/ResearchPage"
 import { LoginPage } from "@/pages/LoginPage"
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/stocks/:symbol" element={<StockPage />} />
         <Route path="/funds/:code" element={<FundPage />} />
         <Route path="/live" element={<LivePage />} />
+        <Route path="/moves" element={<MovesPage />} />
         <Route path="/screener" element={<ScreenerPage />} />
         <Route path="/research" element={<ResearchPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />

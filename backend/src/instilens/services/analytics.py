@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Literal, get_args
 
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from instilens.domain.enums import ActivityType, ScoreType
+from instilens.domain.enums import ActivityType, Confidence, ScoreType
 from instilens.domain.models import (
     Disclosure,
     Fund,
@@ -242,6 +245,11 @@ def _change_json(c: PositionChange, label: str) -> dict:
         "delta_value": float(c.delta_value) if c.delta_value is not None else None,
         "from_weight_pct": float(c.from_weight_pct) if c.from_weight_pct is not None else None,
         "to_weight_pct": float(c.to_weight_pct) if c.to_weight_pct is not None else None,
+        "delta_weight_pct": float(c.delta_weight_pct) if c.delta_weight_pct is not None else None,
+        "from_value": float(c.from_value) if c.from_value is not None else None,
+        "to_value": float(c.to_value) if c.to_value is not None else None,
+        "pct_change_qty": float(c.pct_change_qty) if c.pct_change_qty is not None else None,
+        "gap_periods": c.gap_periods,
         "confidence": c.confidence,
     }
 
@@ -379,53 +387,214 @@ def window_flows(session: Session, market: str, window_days: int, as_of: date | 
     `funds_new` / `funds_exited` count the same parties the score engine counts — a snapshot diff's NEW/EXIT plus
     the first-time entries and full exits disclosed by uncovered events.
     """
-    from collections import defaultdict
-    from datetime import timedelta
-
-    from instilens.domain.enums import ActivityType
-    from instilens.domain.models import PositionChange, TransactionEvent, TransactionEventFund
-    from instilens.services.pipeline import _event_is_uncovered, _party_moves, latest_snapshot_as_of
-
     as_of = as_of or latest_score_date(session) or date.today()
     start = as_of - timedelta(days=window_days)
-    agg: dict[int, dict] = defaultdict(lambda: {"net_flow_value": 0.0, "net_qty": 0, "inc": set(), "red": set(), "changes": [], "events": []})
-    for c in session.scalars(
+    rows = [_flow_row(a) for a in _window_activity(session, market, start, as_of).values()]
+    return {"as_of": as_of.isoformat(), "window_days": window_days, "window_start": start.isoformat(),
+            "accumulated": sorted((r for r in rows if r["net_flow_value"] > 0), key=lambda r: (-r["net_flow_value"], r["symbol"])),
+            "distributed": sorted((r for r in rows if r["net_flow_value"] < 0), key=lambda r: (r["net_flow_value"], r["symbol"]))}
+
+
+MoveKind = Literal["buys", "sells", "new", "exits"]
+MOVE_KINDS: tuple[str, ...] = get_args(MoveKind)
+# Which rows a kind keeps and how it ranks them: by net flow at market scope, by the fund's own activity at fund scope.
+# Every order ends on the symbol so ties (unpriced rows, equal party counts) cut the same way on every request.
+_MARKET_SCOPE_KEEP = {
+    "buys": lambda r: r["net_flow_value"] > 0,
+    "sells": lambda r: r["net_flow_value"] < 0,
+    "new": lambda r: r["funds_new"] > 0,
+    "exits": lambda r: r["funds_exited"] > 0,
+}
+_FUND_SCOPE_ACTIVITIES = {"buys": {"ADD", "NEW"}, "sells": {"REDUCE", "EXIT"}, "new": {"NEW"}, "exits": {"EXIT"}}
+_MOVE_ORDER = {
+    "buys": lambda r: (-r["net_flow_value"], r["symbol"]),
+    "sells": lambda r: (r["net_flow_value"], r["symbol"]),
+    "new": lambda r: (-r["funds_new"], -r["net_flow_value"], r["symbol"]),
+    "exits": lambda r: (-r["funds_exited"], r["net_flow_value"], r["symbol"]),
+}
+
+
+def moves(session: Session, market: str, *, kind: str, window_days: int | None = None, fund_code: str | None = None, limit: int = 25) -> dict | None:
+    """The window's biggest moves, one row per instrument with the parties behind it (`/moves`, the AI tools).
+
+    Same aggregation as `window_flows`, plus who moved: one party entry per breadth-law party, at most five per
+    row, largest |delta_value| first. buys / sells rank by net flow; new / exits rank by how many parties entered
+    or left (their party lists keep only the NEW / EXIT parties; a row whose only entrant left again in the same
+    window folds to an EXIT party and is dropped from `new`, so every row names at least one party). `total` is
+    the row count before the `limit` cut. With `fund_code` the rows are that fund's own moves — its snapshot
+    diffs and its EXACT events — so every row has exactly that fund as its single party; None when the fund is
+    unknown in this market (the route answers 404). Values are in the market currency.
+    """
+    if kind not in MOVE_KINDS:
+        raise ValueError(f"unknown move kind {kind!r}")
+    from instilens.services.pipeline import MARKET_WINDOW_DAYS
+
+    fund = None
+    if fund_code is not None:
+        fund = session.scalar(select(Fund).join(Institution).where(Fund.code == fund_code.upper(), Institution.market_code == market))
+        if fund is None:
+            return None
+    window_days = window_days or MARKET_WINDOW_DAYS.get(market, 30)
+    as_of = latest_score_date(session) or date.today()
+    start = as_of - timedelta(days=window_days)
+    rows = []
+    for a in _window_activity(session, market, start, as_of, fund=fund).values():
+        row = _flow_row(a)
+        parties = _parties(a)
+        if fund is not None:  # the fund is the single party: its own move decides whether the row belongs to the kind
+            if not parties or parties[0]["activity"] not in _FUND_SCOPE_ACTIVITIES[kind]:
+                continue
+        elif not _MARKET_SCOPE_KEEP[kind](row):
+            continue
+        if kind in ("new", "exits"):
+            parties = [p for p in parties if p["activity"] == ("NEW" if kind == "new" else "EXIT")]
+            if not parties:
+                continue
+        row["party_count"] = len(parties)
+        row["parties"] = sorted(parties, key=lambda p: (-abs(p["delta_value"] or 0), p["kind"], p["ref"]))[:5]
+        rows.append(row)
+    rows.sort(key=_MOVE_ORDER[kind])
+    total = len(rows)
+    rows = rows[:limit]
+    _name_parties(session, rows)
+    return {
+        "as_of": as_of.isoformat(), "window_days": window_days, "window_start": start.isoformat(), "kind": kind, "market": market,
+        "fund": {"code": fund.code, "name": fund.name} if fund is not None else None,
+        "total": total, "rows": rows,
+    }
+
+
+def _window_activity(session: Session, market: str, start: date, as_of: date, *, fund: Fund | None = None) -> dict[int, dict]:
+    """The window's moves per instrument: snapshot diffs whose `period_end` falls in (start, as_of] and the
+    transaction events the de-dup law lets through (an event counts only after the latest snapshot known on
+    `as_of`). With `fund`: only that fund's diffs and its EXACT events — a GROUPED amount cannot be attributed
+    to one fund. Each entry carries the Instrument row and every event's value (`event_value`, priced once here)
+    too, so callers need no further queries. Rows come in id order so folding is repeatable across requests."""
+    from instilens.services.pipeline import _event_is_uncovered, latest_snapshot_as_of
+
+    changes = (
         select(PositionChange).join(Instrument, Instrument.id == PositionChange.instrument_id)
         .where(Instrument.market_code == market, PositionChange.period_end > start, PositionChange.period_end <= as_of)
-    ):
-        a = agg[c.instrument_id]
-        a["net_flow_value"] += float(c.delta_value or 0)
-        a["net_qty"] += c.delta_qty
-        if c.activity in ("ADD", "NEW"):
-            a["inc"].add(f"fund:{c.fund_id}")
-        elif c.activity in ("REDUCE", "EXIT"):
-            a["red"].add(f"fund:{c.fund_id}")
-        a["changes"].append(c)
+        .order_by(PositionChange.id)
+    )
+    events = (
+        select(TransactionEvent).options(selectinload(TransactionEvent.funds))  # the de-dup law reads every event's funds
+        .where(
+            TransactionEvent.market_code == market, TransactionEvent.is_superseded.is_(False),
+            TransactionEvent.effective_date > start, TransactionEvent.effective_date <= as_of,
+        )
+        .order_by(TransactionEvent.id)
+    )
+    if fund is not None:
+        changes = changes.where(PositionChange.fund_id == fund.id)
+        events = events.where(TransactionEvent.confidence == Confidence.EXACT, TransactionEvent.funds.any(fund_id=fund.id))
+    out: dict[int, dict] = defaultdict(lambda: {"changes": [], "events": [], "values": {}})
+    for c in session.scalars(changes):
+        out[c.instrument_id]["changes"].append(c)
     latest_snap = latest_snapshot_as_of(session, as_of)
-    for e in session.scalars(
-        select(TransactionEvent).where(TransactionEvent.market_code == market, TransactionEvent.is_superseded.is_(False), TransactionEvent.effective_date > start, TransactionEvent.effective_date <= as_of)
-    ):
-        if not _event_is_uncovered(e, latest_snap):
-            continue
-        a = agg[e.instrument_id]
-        a["net_flow_value"] += float(event_value(session, e) or 0)
-        a["net_qty"] += e.net_nominal
-        party = f"fund:{e.funds[0].fund_id}" if e.confidence == "EXACT" and e.funds else f"inst:{e.institution_id}"
-        (a["inc"] if e.net_nominal > 0 else a["red"]).add(party)
-        a["events"].append(e)
-    _ = TransactionEventFund  # imported for relationship resolution
-    rows = []
-    for iid, a in agg.items():
-        inst = session.get(Instrument, iid)
-        snapshot_moves, event_moves = _party_moves(a["changes"], a["events"])
-        moves = snapshot_moves + event_moves
-        rows.append({"symbol": inst.symbol, "name": inst.name, "net_flow_value": a["net_flow_value"], "net_qty": a["net_qty"],
-                     "funds_increasing": len(a["inc"]), "funds_reducing": len(a["red"]),
-                     "funds_new": len({m.fund_code for m in moves if m.activity is ActivityType.NEW}),
-                     "funds_exited": len({m.fund_code for m in moves if m.activity is ActivityType.EXIT})})
-    return {"as_of": as_of.isoformat(), "window_days": window_days, "window_start": start.isoformat(),
-            "accumulated": sorted((r for r in rows if r["net_flow_value"] > 0), key=lambda r: -r["net_flow_value"]),
-            "distributed": sorted((r for r in rows if r["net_flow_value"] < 0), key=lambda r: r["net_flow_value"])}
+    for e in session.scalars(events):
+        if _event_is_uncovered(e, latest_snap):
+            out[e.instrument_id]["events"].append(e)
+            out[e.instrument_id]["values"][e.id] = event_value(session, e)
+    instruments = {i.id: i for i in session.scalars(select(Instrument).where(Instrument.id.in_(out.keys())))} if out else {}
+    for iid, a in out.items():
+        a["instrument"] = instruments[iid]
+    return out
+
+
+def _flow_row(a: dict) -> dict:
+    """One leaderboard row from an instrument's window moves: net flow, net quantity and the breadth-law party
+    counts (`window_flows` documents the laws). Flow is summed as Decimal like the score engine does, so a window
+    that nets to exactly zero lands in neither leaderboard; a zero-net (MIXED) event moves no party either."""
+    from instilens.services.pipeline import _party_moves, event_party
+
+    net_flow, net_qty, inc, red = Decimal(0), 0, set(), set()
+    for c in a["changes"]:
+        if c.delta_value is not None:
+            net_flow += c.delta_value
+        net_qty += c.delta_qty
+        if c.activity in ("ADD", "NEW"):
+            inc.add(f"fund:{c.fund_id}")
+        elif c.activity in ("REDUCE", "EXIT"):
+            red.add(f"fund:{c.fund_id}")
+    for e in a["events"]:
+        value = a["values"][e.id]
+        if value is not None:
+            net_flow += value
+        net_qty += e.net_nominal
+        if e.net_nominal > 0:
+            inc.add(event_party(e))
+        elif e.net_nominal < 0:
+            red.add(event_party(e))
+    snapshot_moves, event_moves = _party_moves(a["changes"], a["events"])
+    all_moves = snapshot_moves + event_moves
+    inst = a["instrument"]
+    return {"symbol": inst.symbol, "name": inst.name, "net_flow_value": float(net_flow), "net_qty": net_qty,
+            "funds_increasing": len(inc), "funds_reducing": len(red),
+            "funds_new": len({m.fund_code for m in all_moves if m.activity is ActivityType.NEW}),
+            "funds_exited": len({m.fund_code for m in all_moves if m.activity is ActivityType.EXIT})}
+
+
+_WEAKER = {Confidence.EXACT: 0, Confidence.GROUPED: 1, Confidence.INFERRED: 2}
+
+
+def _parties(a: dict) -> list[dict]:
+    """Who moved: one entry per breadth-law party with its window moves folded together. Quantities and values add
+    up; a NEW / EXIT move labels the party (the later one when it both entered and left — these are what
+    `funds_new` / `funds_exited` count), otherwise the net quantity does. Weights come from the snapshot diffs
+    (events carry none); confidence is the weakest source behind the entry. HOLD diffs and zero-net (MIXED)
+    events are not moves, as in the score engine. Codes and names are filled in by `_name_parties` once the rows
+    are cut to `limit`."""
+    from instilens.services.pipeline import _party_moves, event_entries_exits, event_party
+
+    snapshot_moves, _ = _party_moves(a["changes"], a["events"])
+    entries_exits = {e.id: kind for e, kind in event_entries_exits(a["events"], snapshot_moves)}
+    by_party: dict[str, list[dict]] = defaultdict(list)
+    for c in a["changes"]:
+        if c.activity != ActivityType.HOLD:
+            by_party[f"fund:{c.fund_id}"].append({"on": c.period_end, "activity": ActivityType(c.activity), "delta_qty": c.delta_qty, "delta_value": c.delta_value,
+                                                  "confidence": Confidence.INFERRED, "from_weight_pct": c.from_weight_pct, "to_weight_pct": c.to_weight_pct})
+    for e in a["events"]:
+        activity = entries_exits.get(e.id)
+        if activity is None:
+            if e.net_nominal == 0:
+                continue
+            activity = ActivityType.ADD if e.net_nominal > 0 else ActivityType.REDUCE
+        by_party[event_party(e)].append({"on": e.effective_date, "activity": activity, "delta_qty": e.net_nominal, "delta_value": a["values"][e.id],
+                                         "confidence": Confidence(e.confidence)})
+    out = []
+    for key, moves_ in by_party.items():
+        moves_.sort(key=lambda m: m["on"])
+        delta_qty = sum(m["delta_qty"] for m in moves_)
+        values = [m["delta_value"] for m in moves_ if m["delta_value"] is not None]
+        entries_exits_ = [m["activity"] for m in moves_ if m["activity"] in (ActivityType.NEW, ActivityType.EXIT)]
+        activity = entries_exits_[-1] if entries_exits_ else ActivityType.ADD if delta_qty > 0 else ActivityType.REDUCE if delta_qty < 0 else moves_[-1]["activity"]
+        diffs = [m for m in moves_ if "to_weight_pct" in m]
+        from_w, to_w = (diffs[0]["from_weight_pct"], diffs[-1]["to_weight_pct"]) if diffs else (None, None)
+        prefix, ref = key.split(":")
+        out.append({
+            "kind": "fund" if prefix == "fund" else "institution", "ref": int(ref), "activity": activity.value,
+            "delta_qty": delta_qty, "delta_value": float(sum(values)) if values else None,
+            "to_weight_pct": float(to_w) if to_w is not None else None,
+            "delta_weight_pct": float(to_w - from_w) if to_w is not None and from_w is not None else None,
+            "period_end": moves_[-1]["on"].isoformat(),
+            "confidence": max((m["confidence"] for m in moves_), key=_WEAKER.__getitem__).value,
+        })
+    return out
+
+
+def _name_parties(session: Session, rows: list[dict]) -> None:
+    """Replace each party's `ref` (fund / institution id) with its code and name — one query per kind."""
+    fund_ids = {p["ref"] for r in rows for p in r["parties"] if p["kind"] == "fund"}
+    inst_ids = {p["ref"] for r in rows for p in r["parties"] if p["kind"] == "institution"}
+    names = {}
+    if fund_ids:
+        names.update({("fund", f.id): (f.code, f.name) for f in session.scalars(select(Fund).where(Fund.id.in_(fund_ids)))})
+    if inst_ids:
+        names.update({("institution", i.id): (i.code, i.name) for i in session.scalars(select(Institution).where(Institution.id.in_(inst_ids)))})
+    for r in rows:
+        for p in r["parties"]:
+            p["code"], p["name"] = names[(p["kind"], p.pop("ref"))]
 
 
 def stock_timeline(session: Session, market: str, symbol: str) -> list[dict] | None:
