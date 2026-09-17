@@ -1,19 +1,26 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
-import { Search } from "lucide-react"
+import { Search, TextSearch } from "lucide-react"
 import type { SearchHit } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n"
-import { useSearch } from "./useSearch"
+import { TEXT_MIN, useSearch } from "./useSearch"
 
-/** Header typeahead: queries /search (stocks, funds, institutions of the active market); Enter opens the highlighted hit. */
+/**
+ * Header typeahead: queries /search (stocks, funds, institutions of the active market); Enter opens the highlighted
+ * row. From TEXT_MIN characters on, the last row is "search the texts" → /search?q= — so a query that names no
+ * instrument (a topic, a word from a disclosure) still leads somewhere.
+ */
 export function SearchBox({ className, shortcutHint }: { className?: string; shortcutHint?: string }) {
   const { t } = useI18n()
   const KIND_LABEL: Record<SearchHit["kind"], string> = { stock: t("common.stock"), fund: t("common.fund"), institution: t("inst.institution") }
-  const { q, setQ, debounced, rows, fetching, go: open_, market } = useSearch()
+  const { q, setQ, debounced, rows, fetching, go: open_, goText, market } = useSearch()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
   const listId = useId()
+  // Options are the hits plus, when the query is long enough, the text-search row at index rows.length.
+  const textRow = debounced.length >= TEXT_MIN
+  const count = rows.length + (textRow ? 1 : 0)
 
   useEffect(() => { setActive(0) }, [rows.length, debounced])
 
@@ -25,11 +32,13 @@ export function SearchBox({ className, shortcutHint }: { className?: string; sho
   }, [])
 
   const go = (hit: SearchHit | undefined) => { if (open_(hit)) setOpen(false) }
+  /** Open option i: a hit, the text-search row, or (no rows at all) the shape-guessed route. */
+  const pick = (i: number) => { if (textRow && i === rows.length) { if (goText()) setOpen(false) } else go(rows[i]) }
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, rows.length - 1)) }
+    if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, count - 1)) }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
-    else if (e.key === "Enter") { e.preventDefault(); go(rows[active]) }
+    else if (e.key === "Enter") { e.preventDefault(); pick(active) }
     else if (e.key === "Escape") { setOpen(false); (e.target as HTMLInputElement).blur() }
   }
 
@@ -74,6 +83,18 @@ export function SearchBox({ className, shortcutHint }: { className?: string; sho
               <span className="truncate text-muted-foreground">{h.name}</span>
             </li>
           ))}
+          {textRow && (
+            <li
+              role="option"
+              aria-selected={active === rows.length}
+              onMouseEnter={() => setActive(rows.length)}
+              onMouseDown={(e) => { e.preventDefault(); pick(rows.length) }}
+              className={cn("flex cursor-pointer items-center gap-2 rounded-[5px] px-2.5 py-1.5", rows.length > 0 && "mt-1 border-t border-border/60 pt-2", active === rows.length ? "bg-accent text-foreground" : "text-foreground")}
+            >
+              <TextSearch className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{t("search.inTexts", { q: debounced })}</span>
+            </li>
+          )}
         </ul>
       )}
     </div>

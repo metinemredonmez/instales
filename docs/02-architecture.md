@@ -97,6 +97,29 @@ An admin list of unverified rows is part of phase 7 ops tooling.
 delayed/unofficial) or a CSV; a licensed feed in production behind the same loader. Needed for flow
 valuation, divergence and signal outcomes.
 
+## Search & the local research engine
+Full text lives in Postgres, not in a search service: `searchable_texts` holds one plain-text row per document —
+KAP/SEC disclosure (title + the parsed payload's textual fields, never HTML), EDGAR filing index entry (form, 8-K
+item titles), headline (+ AI summary) and AI note — with a generated `tsvector` (`'simple'` config, so Turkish words
+match as typed; title weighted A, body D, so the document about the query outranks the report that mentions it)
+and a GIN index, added by the migration only when the dialect is Postgres; SQLite (dev, tests) gets the plain table
+and a LIKE fallback with the same output shape and order (title hits weigh three body hits). A disclosure a later
+correction replaced stays indexed, titled "Düzeltildi — / Superseded —", flagged `superseded` and ranked after every
+live hit. `services/search_index.reindex()` is incremental (per-market watermark in `app_settings._search_index`,
+read back two hours so an ingest transaction still open when a run started is picked up later; a row whose text
+did not change is not rewritten) and runs at the tail of the scheduler's compute, news_pull and briefs jobs, after
+the admin's news-rule reapply, or by hand with `instilens reindex [--full]`; `GET /api/v1/search/text` and the
+`search_texts` AI tool query it (`websearch_to_tsquery`, `ts_rank_cd`, `ts_headline` snippets with the matched
+terms in «»). The AI layer's second engine, `ai/local_engine.LocalResearchEngine` (`INSTILENS_AI_PROVIDER=local`),
+speaks the OpenAI-compatible `/v1/chat/completions` tool-calling protocol of Ollama, vLLM or LM Studio with the
+same tools (`ai/openai_tools` derives the function schemas from the callables' signatures and docstrings) and the
+same system prompt; it runs at most 8 tool rounds inside a 300 s deadline (`ai_local_deadline_s`), clips each tool
+result to 12 000 characters and stops calling tools once the prompt passes `ai_local_prompt_chars` (Ollama must be
+run with `OLLAMA_CONTEXT_LENGTH` large enough — it truncates silently from the head), retries only connect failures
+and 429/5xx, and checks every figure of the answer against the tool results — an unverified figure is named in a
+leading sentence (in the user's language), in `ResearchAnswer.unverified_numbers` and in a warning band on the
+Research page, never dropped silently.
+
 ## Auth & hardening
 - argon2id password hashes, HS256 JWT (7-day TTL) issued by `/auth/login|register`; `GET /auth/me` validates.
 - Every `/api/v1/*` data route requires `Authorization: Bearer`; the SSE stream accepts `?token=` (EventSource cannot set headers).
@@ -113,7 +136,7 @@ backend/            Python package `instilens` (uv)
     parsing/        disclosure → normalized objects
     engine/         positions, signals, scoring (pure functions)
     services/       entities, pipeline (stages), analytics (read models)
-    ai/             research engine: tools, Claude engine, local stub
+    ai/             research engine: tools, Claude engine, local (OpenAI-compatible) engine
     api/            FastAPI
   fixtures/         synthetic disclosures + prices
   tests/

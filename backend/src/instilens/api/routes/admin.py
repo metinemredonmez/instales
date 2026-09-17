@@ -167,7 +167,8 @@ def config_status():
         "kap_api_base_url": settings.kap_api_base_url if settings.kap_adapter == "api" else None,
         "sec_adapter": settings.sec_adapter,
         "sec_ciks": settings.sec_ciks,
-        "ai": {"provider": settings.ai_provider, "model": settings.ai_model, "configured": bool(settings.anthropic_api_key), "news_enrich": settings.ai_news_enabled},
+        "ai": {"provider": settings.ai_provider, "model": settings.ai_local_model if settings.ai_provider == "local" else settings.ai_model,
+               "configured": bool(settings.ai_local_model) if settings.ai_provider == "local" else bool(settings.anthropic_api_key), "news_enrich": settings.ai_news_enabled},
         "tts": {"provider": tts_provider(), "voices": {k: bool(getattr(settings, f"elevenlabs_voice_{k}", "")) for k in ("tr_female", "tr_male", "en_female", "en_male")}},
         "news": {"enabled": settings.news_enabled, "newsapi": bool(settings.newsapi_key)},
         "channels": {"telegram": bool(settings.telegram_bot_token), "email": bool(settings.smtp_host), "web_push": bool(settings.vapid_public_key), "onesignal": bool(settings.onesignal_app_id)},
@@ -353,9 +354,16 @@ def seed_news_rules(session: Session = Depends(get_session)):
 
 @router.post("/news/reapply")
 def reapply_news_rules(session: Session = Depends(get_session)):
+    from datetime import UTC, datetime, timedelta
+
+    from instilens.services import search_index
     from instilens.services.news_rules import reapply_all
 
-    return {"TR": reapply_all(session, "TR"), "US": reapply_all(session, "US")}
+    counts = {"TR": reapply_all(session, "TR"), "US": reapply_all(session, "US")}
+    # The rules rewrote symbols/tags and deleted non-finance headlines without touching fetched_at: re-read the window
+    # they covered (reapply_all's default, 7 days) so the search index follows; the news pass drops the orphans.
+    search_index.reindex(session, since=datetime.now(UTC) - timedelta(days=7))
+    return counts
 
 
 @router.post("/news/enrich")

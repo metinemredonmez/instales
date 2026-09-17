@@ -13,7 +13,7 @@ from instilens.api.hardening import client_ip, hit
 from instilens.config import settings
 from instilens.db.session import session_scope
 from instilens.domain.models import User
-from instilens.services import analytics, live
+from instilens.services import analytics, live, search
 
 log = logging.getLogger("instilens.api")
 
@@ -392,6 +392,23 @@ def get_search(q: str = Query("", max_length=64), market: str = MarketParam, ses
     return analytics.search(session, market, q)
 
 
+@router.get("/search/text")
+def get_text_search(
+    q: str = Query(..., min_length=search.Q_MIN, max_length=search.Q_MAX),
+    market: str = MarketParam,
+    kinds: str | None = Query(None, max_length=64, description="comma-separated subset of disclosure,filing,news,note; omit for every kind"),
+    limit: int = Query(20, ge=1, le=50),
+    session: Session = Depends(get_session),
+):
+    """Full text over the market's documents — KAP/SEC disclosures, the EDGAR filing index, headlines (with their AI
+    summary) and AI notes — ranked by relevance then date; the snippet marks the matched terms with «» (services/search)."""
+    try:
+        wanted = search.parse_kinds(kinds)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return search.text_search(session, market, q, wanted, limit)
+
+
 @router.get("/screener")
 def get_screener(
     market: str = MarketParam,
@@ -435,4 +452,5 @@ def post_research(body: ResearchRequest, request: Request, user: User = Depends(
         "model": answer.model,
         "usage": answer.usage,
         "tool_calls": [{"name": c.name, "input": c.input, "output_preview": c.output_preview} for c in answer.tool_calls],
+        "unverified_numbers": answer.unverified_numbers,  # local engine: figures in the answer no tool result carries (never empty silently)
     }

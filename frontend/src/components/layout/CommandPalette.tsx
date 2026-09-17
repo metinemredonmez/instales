@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Dialog } from "radix-ui"
-import { Globe, Languages, Search, SunMoon, Volume2 } from "lucide-react"
+import { Globe, Languages, Search, SunMoon, TextSearch, Volume2 } from "lucide-react"
 import { api, type AiNote, type Market, type SearchHit } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useI18n, type Lang } from "@/lib/i18n"
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { noteSpeechText } from "@/components/domain/AiNoteCard"
 import { ADMIN, MINE, NAV } from "./nav"
 import { usePickLang } from "./prefs"
-import { useSearch } from "./useSearch"
+import { TEXT_MIN, useSearch } from "./useSearch"
 
 type Command = { id: string; label: string; hint?: string; icon: React.ComponentType<{ className?: string }>; run: () => void; section: "pages" | "actions" }
 type Row = { id: string; hit?: SearchHit; cmd?: Command }
@@ -26,7 +26,9 @@ const LANG_NAME: Record<Lang, Key> = { tr: "menu.lang.tr", en: "menu.lang.en" }
  * ⌘K / Ctrl+K: one box for the header search (same hook as SearchBox) and the app's commands — pages, market,
  * theme, language, "listen to the brief". Arrow keys move (scrolling the active row into view), Enter runs the
  * highlighted row only — a query with no match is not guessed into a route here, the empty state offers that as an
- * explicit button — and Escape closes; Radix supplies the focus trap.
+ * explicit button — and Escape closes; Radix supplies the focus trap. From TEXT_MIN characters on, the last action is
+ * "search the texts" → /search?q=, the same row the header box appends; it never hides the empty state, which shows
+ * whenever no hit and no command matched (a fund code the index does not know yet still has its "try the page").
  */
 export function CommandPalette() {
   const { t, lang } = useI18n()
@@ -80,7 +82,11 @@ export function CommandPalette() {
 
   const needle = search.q.trim().toLocaleLowerCase(lang === "tr" ? "tr-TR" : "en")
   const matched = needle ? commands.filter((c) => c.label.toLocaleLowerCase(lang === "tr" ? "tr-TR" : "en").includes(needle)) : commands
-  const rows: Row[] = [...search.rows.map((h) => ({ id: `${h.kind}:${h.key}`, hit: h })), ...matched.map((c) => ({ id: c.id, cmd: c }))]
+  // Not label-filtered like the others: it exists for the query itself.
+  const textCmd: Command | null = search.debounced.length >= TEXT_MIN ? { id: "text-search", label: t("search.inTexts", { q: search.debounced }), icon: TextSearch, section: "actions", run: () => { search.goText() } } : null
+  const rows: Row[] = [...search.rows.map((h) => ({ id: `${h.kind}:${h.key}`, hit: h })), ...[...matched, ...(textCmd ? [textCmd] : [])].map((c) => ({ id: c.id, cmd: c }))]
+  // Nothing found for the query itself: the text-search row (if any) stays below the empty state, like the header box.
+  const noMatch = search.rows.length === 0 && matched.length === 0
   // Listbox children must be options or groups: one group per section (results / pages / actions), rows numbered globally.
   const sections: { label: string; rows: { row: Row; i: number }[] }[] = []
   rows.forEach((row, i) => {
@@ -139,7 +145,7 @@ export function CommandPalette() {
               className="h-12 w-full bg-transparent pl-10 pr-3 text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
-          {rows.length === 0 && (
+          {noMatch && (
             <div className="px-3.5 py-3 text-sm text-muted-foreground" aria-live="polite">
               {search.fetching ? t("search.searching") : needle ? <>{t("palette.empty")} — <button type="button" className="underline" onMouseDown={(e) => { e.preventDefault(); tryPage() }}>{t("search.tryPage", { q: search.q.trim().toUpperCase() })}</button></> : t("palette.empty")}
             </div>

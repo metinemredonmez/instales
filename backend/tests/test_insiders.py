@@ -785,7 +785,7 @@ def test_migration_creates_insider_tables_on_scratch_sqlite(tmp_path, monkeypatc
     assert {"row_hash"} in [set(u["column_names"]) for u in insp.get_unique_constraints("insider_transactions")]
     assert "ix_instruments_sec_cik" in {i["name"] for i in insp.get_indexes("instruments")}
     with eng.begin() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "e1f2a3b4c5d6"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "f2a3b4c5d6e7"  # the current head (searchable_texts)
         conn.execute(text("INSERT INTO sec_filings (instrument_id, form, filed_at, accession, url) VALUES (1, '8-K', '2026-07-30', '0000320193-26-000018', 'u')"))
         with pytest.raises(Exception):  # noqa: B017 — the unique key, whatever the driver calls the violation
             conn.execute(text("INSERT INTO sec_filings (instrument_id, form, filed_at, accession, url) VALUES (1, '8-K', '2026-07-30', '0000320193-26-000018', 'u')"))

@@ -475,6 +475,29 @@ export interface SearchHit {
   href: string
 }
 
+/** /search/text: full-text hits over disclosures, EDGAR filings, news and AI notes of one market (Postgres tsvector). */
+export type TextKind = "disclosure" | "filing" | "news" | "note"
+export interface TextHit {
+  kind: TextKind
+  id: number
+  title: string
+  /** ≤ 240 chars of plain text; the query terms come wrapped in «» so the UI can highlight them. */
+  snippet: string
+  date: string
+  symbols: string[]
+  /** "KAP" | "SEC" | the publisher | "InstiLens AI". */
+  source: string
+  /** The source page outside the app; null for AI notes. */
+  url: string | null
+  /** In-app route (e.g. /stocks/ASELS); null when the hit has no page of its own (AI notes: the page shows the current note). */
+  link: string | null
+  /** A disclosure a later correction replaced: kept, titled "Düzeltildi — / Superseded —", ranked after every live hit. */
+  superseded: boolean
+  score: number
+}
+/** `total` is the match count before the limit, capped at 500 by the API. */
+export interface TextSearch { q: string; market: Market; total: number; hits: TextHit[] }
+
 export interface ScreenerRow extends Omit<RadarRow, "confidence_multiplier" | "smart_money_score" | "consensus_score"> {
   smart_money_score: number
   consensus_score: number | null
@@ -537,6 +560,8 @@ export interface ResearchAnswer {
   model: string
   usage: Record<string, number>
   tool_calls: { name: string; input: Record<string, unknown>; output_preview: string }[]
+  /** Local engine only: figures in the answer no tool result carries (as the answer spells them); the answer text already opens with a sentence naming them and the page shows them in a warning band. Empty for Claude. */
+  unverified_numbers: string[]
 }
 
 export interface StockSeries {
@@ -685,6 +710,8 @@ export const api = {
   fund: (code: string) => get<FundDetail>(`/funds/${code}`),
   events: (market: Market, limit = 50) => get<TxEvent[]>("/events", { market, limit }),
   search: (market: Market, q: string) => get<SearchHit[]>("/search", { market, q }),
+  /** kinds null/empty = every kind; sent comma-joined (`kinds=news,note`). q is 2..128 chars, limit 1..50. */
+  searchText: (market: Market, q: string, kinds: TextKind[] | null = null, limit = 20) => get<TextSearch>("/search/text", { market, q, kinds: kinds?.length ? kinds.join(",") : null, limit }),
   quotes: () => get<QuotesResponse>("/quotes"),
   screener: (market: Market, f: ScreenerFilters) => get<ScreenerRow[]>("/screener", { market, ...f }),
   /** window null = the market's own window; fund narrows the rows to that fund's own position changes (404 if unknown). */

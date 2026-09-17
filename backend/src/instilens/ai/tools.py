@@ -1,7 +1,7 @@
 """Provider-agnostic tool functions. Each returns a compact JSON string built from our own tables.
 
 Bound to a SQLAlchemy session via `build_tools(session)`; the Claude engine wraps them with
-`@beta_tool`, a local engine would expose the same callables through its own tool protocol.
+`@beta_tool`, the local engine exposes the same callables as OpenAI function schemas (ai/openai_tools).
 """
 
 from __future__ import annotations
@@ -12,10 +12,11 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from instilens.services import analytics, fundamentals, insiders, ownership
+from instilens.services import analytics, fundamentals, insiders, ownership, search
 
 PeriodName = Literal["annual", "quarterly"]
 FilingForm = Literal["8-K", "10-K", "10-Q", "4", "4/A"]
+SearchKind = Literal["disclosure", "filing", "news", "note"]
 
 SignalName = Literal[
     "ACCUMULATION",
@@ -382,8 +383,31 @@ def build_tools(session: Session, market: str = "TR") -> list[Callable[..., str]
             return _dump({"error": f"unknown symbol {symbol}"})
         return _dump({k: data[k] for k in ("symbol", "name", "market", "as_of", "shares_outstanding", "totals", "crowding", "stale_holders")})
 
+    def search_texts(query: str, kinds: list[SearchKind] | None = None, limit: int = 8) -> str:
+        """Full-text search over the documents InstiLens stores for this market: KAP/SEC disclosures (share transaction
+        notices, fund portfolio reports, 13F, Form 4 with their footnotes), the EDGAR filing index (8-K/10-K/10-Q/4 with
+        the 8-K item titles), headlines (with their Turkish AI summary) and InstiLens' own AI notes (stock assessments,
+        daily briefs). Words match as typed (no stemming — try the Turkish word as it is written in a filing); quote a
+        phrase, put - before a word to exclude it, OR between alternatives. Each hit: kind, id, title, snippet (at most
+        240 characters of the document with the matched terms in «»), date, symbols, source (KAP, SEC, the publisher or
+        InstiLens AI), url (the document outside the app), link (its page in the app) and superseded (true for a notice
+        or filing a later correction replaced — its title starts with "Düzeltildi —" / "Superseded —"; cite the
+        correction, never a superseded document's figures as current). Cite a hit by its kind, date and url (a KAP #id
+        or an EDGAR accession appears in the title). Only the snippet is returned, never the whole document: state
+        what the snippet shows and nothing more — never claim a document says something that is not in the snippet.
+        Empty means no stored document contains every word, not that nothing happened.
+
+        Args:
+            query: Words to find, e.g. "10b5-1" or "Aselsan ihracat".
+            kinds: Restrict to some of disclosure | filing | news | note; omit for every kind.
+            limit: Max hits (default 8, at most 20).
+        """
+        hits = search.text_search(session, market, query, list(kinds) if kinds else None, max(1, min(limit, 20)))["hits"]
+        return _dump([{k: h[k] for k in ("kind", "id", "title", "snippet", "date", "symbols", "source", "url", "link", "superseded")} for h in hits])
+
     return [get_radar, get_stock, get_fund, list_events, screen_stocks, get_news,
             get_top_buys, get_top_sells, get_new_positions, get_sold_out_positions, get_fund_holdings, get_fund_holding_changes,
             get_income_statements, get_balance_sheets, get_cash_flow_statements, get_financial_metrics,
             get_insider_trades, get_filings,
-            get_stock_ownership, get_fund_overlap, get_crowding_score]
+            get_stock_ownership, get_fund_overlap, get_crowding_score,
+            search_texts]

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { Check, Download, Trash2, Undo2 } from "lucide-react"
-import { api, type DesktopRelease } from "@/lib/api"
+import { api, type DesktopFile, type DesktopRelease } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { fmtDateTime } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
@@ -10,7 +11,7 @@ import { cn } from "@/lib/utils"
 
 const fmtSize = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.round(n / 1e3)} KB`)
 
-/** Version management: one row per release, one column per platform; publish/withdraw/delete. */
+/** Version management: one row per release, one column per platform listing every artifact; publish/withdraw/delete. */
 export function AdminReleasesPage() {
   const { t } = useI18n()
   const qc = useQueryClient()
@@ -21,9 +22,12 @@ export function AdminReleasesPage() {
   const d = q.data
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("rel.title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("rel.sub")}</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("rel.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("rel.sub")}</p>
+        </div>
+        <Link to="/desktop" className="text-xs text-primary hover:underline">{t("rel.userPage")} →</Link>
       </div>
       {d && (!d.upload_key_set || !d.updater_pubkey_set) && (
         <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
@@ -61,16 +65,13 @@ function ReleaseCard({ r, platforms, notes, setNotes, patch, del }: { r: Desktop
     }>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
         {platforms.map((p) => {
+          // Every artifact of the platform (Linux: rpm + deb + AppImage; Windows: msi/exe + -setup.exe), the API's order.
           const files = r.files.filter((f) => f.platform === p.key)
-          const installer = files.find((f) => f.downloadable)
-          const update = files.find((f) => f.kind === "UPDATE" && f !== installer)
           return (
             <div key={p.key} className={cn("rounded-md border p-3 text-xs", files.length ? "border-border bg-card" : "border-dashed border-border/60 text-muted-foreground")}>
               <div className="font-medium text-foreground">{p.label}</div>
               {!files.length && <div className="mt-1">{t("rel.missing")}</div>}
-              {installer && <div className="mt-1.5 flex items-center gap-1.5"><Download className="size-3 text-primary" /><a href={installer.url} className="truncate hover:underline" title={installer.filename}>{installer.filename}</a><span className="num ml-auto shrink-0 text-muted-foreground">{fmtSize(installer.size)}</span></div>}
-              {update && <div className="mt-1 flex items-center gap-1.5 text-muted-foreground"><span className={cn("size-1.5 rounded-full", update.signed ? "bg-positive" : "bg-negative")} /><span className="truncate" title={update.filename}>{t("rel.updateBundle")} {update.signed ? t("rel.signed") : t("rel.unsigned")}</span></div>}
-              {installer && <div className="mt-1 num text-[10px] text-muted-foreground">{t("rel.downloads")}: {installer.downloads}</div>}
+              {files.length > 0 && <ul className="mt-1.5 space-y-1.5">{files.map((f) => <ArtifactRow key={f.id} f={f} />)}</ul>}
             </div>
           )
         })}
@@ -80,5 +81,24 @@ function ReleaseCard({ r, platforms, notes, setNotes, patch, del }: { r: Desktop
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== r.notes && patch({ notes })} rows={2} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring/40" placeholder="YENİ — … / DÜZELTME — …" />
       </div>
     </Section>
+  )
+}
+
+/** One artifact: name (links to the download), kind, the signature state of an update package, size, download count. */
+function ArtifactRow({ f }: { f: DesktopFile }) {
+  const { t } = useI18n()
+  return (
+    <li>
+      <div className="flex items-center gap-1.5">
+        {f.downloadable ? <Download className="size-3 shrink-0 text-primary" /> : <span className="size-3 shrink-0" />}
+        <a href={f.url} className="truncate hover:underline" title={f.filename}>{f.filename}</a>
+        <span className="num ml-auto shrink-0 text-muted-foreground">{fmtSize(f.size)}</span>
+      </div>
+      <div className="mt-0.5 flex items-center gap-1.5 pl-[18px] text-[10px] text-muted-foreground">
+        <span className="rounded-sm border border-border px-1 uppercase tracking-wider">{f.kind === "UPDATE" ? t("rel.kind.update") : t("rel.kind.installer")}</span>
+        {f.kind === "UPDATE" && <span title={f.signed ? t("rel.signed") : t("rel.unsigned")} className={f.signed ? "text-positive" : "text-negative"}>{f.signed ? "✓" : "—"} {f.signed ? t("rel.signed") : t("rel.unsigned")}</span>}
+        <span className="num ml-auto">{t("rel.downloads")}: {f.downloads}</span>
+      </div>
+    </li>
   )
 }

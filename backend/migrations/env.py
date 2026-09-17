@@ -24,6 +24,16 @@ from instilens.domain.models import Base
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
+
+def include_object(obj, name, type_, reflected, compare_to):
+    """The search vector of searchable_texts (generated tsvector column + GIN index, migration f2a3b4c5d6e7) exists on
+    Postgres only and is not mapped by the ORM: autogenerate must not propose dropping it."""
+    if type_ == "column" and name == "tsv" and obj.table.name == "searchable_texts":
+        return False
+    if type_ == "index" and name == "ix_searchable_texts_tsv":
+        return False
+    return True
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -48,6 +58,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -69,7 +80,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata, render_as_batch=True
+            connection=connection, target_metadata=target_metadata, render_as_batch=True, include_object=include_object
         )
 
         with context.begin_transaction():

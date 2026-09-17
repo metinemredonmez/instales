@@ -129,15 +129,26 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_tts_voice: str = "alloy"
 
-    # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`);
-    # "local" is reserved for a self-hosted model (phase 3).
+    # AI research engine. "claude" uses the Anthropic SDK (ANTHROPIC_API_KEY or `ant auth login`); "local" talks to a
+    # self-hosted OpenAI-compatible /v1/chat/completions server with tool calling (Ollama ≥ 0.4, vLLM, LM Studio) at
+    # ai_local_base_url with ai_local_model (ai/local_engine) — same tools, same prompt, every figure checked against
+    # the tool results before the answer goes out.
     ai_provider: str = "claude"
     # Read from backend/.env or the environment as ANTHROPIC_API_KEY (or INSTILENS_ANTHROPIC_API_KEY).
     anthropic_api_key: str | None = Field(None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "INSTILENS_ANTHROPIC_API_KEY"))
     ai_model: str = "claude-opus-5"  # briefs, stock notes, research
     ai_extract_model: str = "claude-haiku-4-5"  # KAP filing extraction: every number is validated against the source text, so the cheap model is enough
-    ai_local_base_url: str = "http://127.0.0.1:11434"
-    ai_local_model: str = ""
+    ai_local_base_url: str = "http://127.0.0.1:11434"  # origin or .../v1; the engine appends /v1/chat/completions
+    ai_local_model: str = ""  # e.g. "qwen2.5:14b" (Ollama) or the served model name (vLLM)
+    ai_local_api_key: str | None = None  # sent as a bearer token when the server wants one (vLLM --api-key, a gateway)
+    # One /research call end to end (every tool round); a call past it answers 503. A read timeout is never retried.
+    ai_local_deadline_s: int = 300
+    # Characters of conversation (system prompt, question, tool results — each clipped to 12 000) after which the engine
+    # stops calling tools and asks for the answer. Must fit the server's context: Ollama defaults to 4096 tokens and
+    # truncates the prompt from the head *silently* (the system prompt goes first) — run it with OLLAMA_CONTEXT_LENGTH=16384
+    # or more (or num_ctx in the model file); JSON tool output is roughly 3 characters per token, so 40 000 ≈ 13k tokens
+    # plus the 22 tool schemas.
+    ai_local_prompt_chars: int = 40_000
 
 
 settings = Settings()

@@ -4,9 +4,13 @@ import { useQuery } from "@tanstack/react-query"
 import { api, type SearchHit } from "@/lib/api"
 import { useMarket } from "@/lib/market"
 
+/** From this many characters on, the header box and the palette add a last row that opens the full-text page. */
+export const TEXT_MIN = 3
+
 /**
  * Typeahead state shared by the header SearchBox and the ⌘K palette: debounced /search of the active market,
- * plus the "open this hit" navigation with the shape-based fallback when nothing matched.
+ * plus the "open this hit" navigation with the shape-based fallback when nothing matched, and the jump to the
+ * full-text page (/search?q=) for a query long enough to be worth one.
  */
 export function useSearch() {
   const navigate = useNavigate()
@@ -39,5 +43,14 @@ export function useSearch() {
     return true
   }, [q, market, navigate, reset])
 
-  return { q, setQ, debounced, rows, fetching: hits.isFetching, go, reset, market }
+  /** Open the full-text page for the typed query. Returns false when it is shorter than TEXT_MIN (nothing opened). */
+  const goText = useCallback((): boolean => {
+    const s = q.trim()
+    if (s.length < TEXT_MIN) return false
+    navigate(`/search?q=${encodeURIComponent(s)}`)
+    reset()
+    return true
+  }, [q, navigate, reset])
+
+  return { q, setQ, debounced, rows, fetching: hits.isFetching, go, goText, reset, market }
 }

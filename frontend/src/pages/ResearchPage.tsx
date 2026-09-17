@@ -39,6 +39,10 @@ export function ResearchPage() {
       )}
       {m.data && (
         <>
+          {m.data.unverified_numbers.length > 0 && (
+            // Local engine: figures the answer states that no tool result carries — shown apart from the prose, never dropped.
+            <div role="alert" className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">{t("research.unverified", { list: m.data.unverified_numbers.join(", ") })}</div>
+          )}
           <Section title={t("research.answer")} hint={m.data.model}>
             <div className="whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed">{m.data.answer}</div>
           </Section>

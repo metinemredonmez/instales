@@ -708,3 +708,29 @@ class PushSubscription(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     last_ok_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class SearchableText(Base):
+    """One row per document the full-text search reads: a KAP/SEC disclosure, an EDGAR filing index entry, a
+    headline or an AI note, flattened to plain text by `services/search_index` (title + body, never HTML) and
+    queried by `services/search`. Rebuilt incrementally, so `updated_at` is when the row was last (re)written.
+    Postgres only: the migration adds a generated `tsv` tsvector column with a GIN index — the ORM does not map
+    it (SQLite has no such type; tests run there), the search service addresses it by name."""
+
+    __tablename__ = "searchable_texts"
+    __table_args__ = (UniqueConstraint("kind", "ref_id", name="uq_searchable_texts_ref"), Index("ix_searchable_texts_market_date", "market_code", "date"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12))  # disclosure / filing / news / note
+    ref_id: Mapped[int] = mapped_column(Integer)  # id in the source table of `kind`
+    market_code: Mapped[str] = mapped_column(String(2))
+    symbols: Mapped[list] = mapped_column(JSON, default=list)
+    title: Mapped[str] = mapped_column(String(512))
+    body: Mapped[str] = mapped_column(Text)
+    date: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(64))  # KAP / SEC / the publisher / InstiLens AI
+    url: Mapped[str | None] = mapped_column(String(512))  # the document outside the app
+    link: Mapped[str | None] = mapped_column(String(128))  # in-app route, e.g. /stocks/ASELS
+    # A disclosure replaced by a later correction (Disclosure.is_superseded): kept, titled as such, ranked after live rows.
+    superseded: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

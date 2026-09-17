@@ -7,6 +7,7 @@ Cadence (Europe/Istanbul):
   compute            after every ingest that stored something, and nightly 02:00 regardless
   fundamentals       weekly, Sunday 06:00 (TR then US; gated by the fundamentals_enabled setting)
   form4              daily 08:30 (after EDGAR's overnight window; gated by the sec_form4_enabled setting), then compute
+  search index       at the tail of compute, news_pull and briefs (services/search_index, incremental)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from instilens.db.session import get_engine, init_db, session_scope
 from instilens.ingestion.kap import build_kap_adapter
 from instilens.ingestion.prices import load_prices
 from instilens.ingestion.sec import build_sec_adapter
-from instilens.services import live, pipeline
+from instilens.services import live, pipeline, search_index
 from instilens.services.alerts import evaluate
 from instilens.services.notify import deliver_brief, deliver_pending
 from instilens.services.outcomes import compute_outcomes
@@ -41,6 +42,18 @@ def compute() -> None:
         log.info("outcomes %s", compute_outcomes(s))
         live.publish(s, "compute", payload={"scored": scored})  # open tabs refetch radar/stock/screener/watchlist
         live.prune(s)
+        reindex(s)
+
+
+def reindex(s) -> None:
+    """Search index tail of a job: new disclosures, filings, headlines and notes become searchable. Runs in a
+    savepoint and an indexing failure is logged, never raised — it must not roll back the job that just wrote the data."""
+    try:
+        with s.begin_nested():
+            counts = search_index.reindex(s)
+        log.info("search index %s", counts)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("search index failed: %s", exc)
 
 
 def ingest_kap() -> None:
@@ -80,6 +93,7 @@ def news_pull() -> None:
                     log.info("%s news ai-tagged %s", market, enrich(s, market))
                 except Exception as exc:  # AI is an enrichment; never break the feed
                     log.warning("news enrich failed: %s", exc)
+        reindex(s)
 
 
 def briefs() -> None:
@@ -101,6 +115,7 @@ def briefs() -> None:
                 log.info("%s tts warmed: %s files", market, warm(note, s) + warm(note_en, s))
             except Exception as exc:
                 log.warning("brief %s failed: %s", market, exc)
+        reindex(s)
 
 
 def prices(market: str) -> None:

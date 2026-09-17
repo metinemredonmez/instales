@@ -8,6 +8,7 @@ import { LivePage } from "@/pages/LivePage"
 import { MovesPage } from "@/pages/MovesPage"
 import { ScreenerPage } from "@/pages/ScreenerPage"
 import { ResearchPage } from "@/pages/ResearchPage"
+import { SearchPage } from "@/pages/SearchPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { WatchlistPage } from "@/pages/WatchlistPage"
 import { AlertsPage } from "@/pages/AlertsPage"
@@ -63,6 +64,8 @@ export default function App() {
         <Route path="/moves" element={<MovesPage />} />
         <Route path="/screener" element={<ScreenerPage />} />
         <Route path="/research" element={<ResearchPage />} />
+        {/* No sidebar entry: reached from the header box / ⌘K "search the texts" row */}
+        <Route path="/search" element={<SearchPage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

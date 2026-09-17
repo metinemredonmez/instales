@@ -201,8 +201,22 @@ def api(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None
 
 
 @app.command()
+def reindex(full: bool = typer.Option(False, "--full", help="drop and rebuild every row instead of only what changed since the last run"),
+            market: str = typer.Option("", help="TR or US; default both")) -> None:
+    """Bring the full-text search index (searchable_texts) up to date: disclosures, EDGAR filings, headlines, AI notes."""
+    from instilens.services.search_index import MARKETS
+    from instilens.services.search_index import reindex as reindex_texts
+
+    if market and market.upper() not in MARKETS:
+        raise typer.BadParameter(f"market must be one of {', '.join(MARKETS)}")
+    with session_scope() as s:
+        counts = reindex_texts(s, market.upper() or None, full=full)
+        typer.echo("search index: " + " · ".join(f"{k} {v}" for k, v in counts.items()))
+
+
+@app.command()
 def ask(question: str, market: str = "TR") -> None:
-    """Ask the research engine a question (needs ANTHROPIC_API_KEY or `ant auth login`)."""
+    """Ask the research engine a question (Claude: ANTHROPIC_API_KEY or `ant auth login`; local: INSTILENS_AI_PROVIDER=local + a model)."""
     from instilens.ai import build_engine
 
     with session_scope() as s:

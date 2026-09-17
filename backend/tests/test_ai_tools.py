@@ -14,7 +14,8 @@ def test_tools_have_schemas_and_return_json(session, pipeline_run):
                           "get_top_buys", "get_top_sells", "get_new_positions", "get_sold_out_positions", "get_fund_holdings", "get_fund_holding_changes",
                           "get_income_statements", "get_balance_sheets", "get_cash_flow_statements", "get_financial_metrics",
                           "get_insider_trades", "get_filings",
-                          "get_stock_ownership", "get_fund_overlap", "get_crowding_score"}
+                          "get_stock_ownership", "get_fund_overlap", "get_crowding_score",
+                          "search_texts"}
     schema = tools["screen_stocks"].to_dict()
     assert "max_price_change_30d_pct" in schema["input_schema"]["properties"]
     assert json.loads(tools["get_radar"].call({"limit": 3}))["accumulated"][0]["symbol"] == "THYAO"
