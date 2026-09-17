@@ -1,4 +1,5 @@
-"""Price provider interface: one contract behind the header quotes and the daily `market_prices` loader.
+"""Price provider interface: one contract behind the header quotes, the daily `market_prices` loader and the
+chart widget's intraday candles.
 
 A provider owns its symbol convention (Yahoo wants `ASELS.IS`, a vendor may want `ASELS.E`) and reports its
 own delay/entitlement honestly through `status()`. Two providers exist: Yahoo (delayed, unofficial — dev and
@@ -21,6 +22,8 @@ log = logging.getLogger("instilens.prices")
 
 PROVIDERS: tuple[str, ...] = ("yahoo", "matriks")
 DEFAULT_PROVIDER = "yahoo"
+# Bar sizes a provider is asked for below one day (services/candles adds "1d", which the table or `daily_bars` answers).
+INTRADAY_INTERVALS: tuple[str, ...] = ("5m", "15m", "1h")
 
 
 class ProviderUnavailable(RuntimeError):
@@ -40,6 +43,20 @@ class Bar:
     open: Decimal | None
     high: Decimal | None
     low: Decimal | None
+    close: Decimal
+    volume: int | None
+
+
+@dataclass(frozen=True)
+class Candle:
+    """One intraday OHLCV bar. `at` is the bar's open instant, tz-aware UTC (the API serialises it as epoch
+    seconds); the four prices are all present — a bar Yahoo left a hole in is dropped, never padded."""
+
+    symbol: str
+    at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
     close: Decimal
     volume: int | None
 
@@ -81,6 +98,12 @@ class PriceProvider(Protocol):
 
     def daily_bars(self, market: str, symbols: list[str], start: date) -> list[Bar]:
         """Daily OHLCV from `start` for instrument symbols of `market`; symbols it cannot map are skipped."""
+        ...
+
+    def intraday_bars(self, market: str, symbol: str, interval: str, lookback: int) -> list[Candle]:
+        """The latest `lookback` bars of `interval` (one of INTRADAY_INTERVALS) for one instrument symbol of
+        `market`, oldest first, regular session only. A symbol it cannot map yields []; an answer with no bars
+        at all is an outage (ProviderUnavailable), the same verdict `daily_bars` gives an empty frame."""
         ...
 
     def status(self) -> ProviderStatus: ...

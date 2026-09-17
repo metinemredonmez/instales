@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { SearchHit } from "@/lib/api"
+import { onOpenChart } from "@/lib/chart"
 
 const search = vi.fn<(market: string, q: string) => Promise<SearchHit[]>>()
 vi.mock("@/lib/api", () => ({ api: { search: (m: string, q: string) => search(m, q), ttsStatus: async () => ({ provider: null }) } }))
@@ -42,6 +43,20 @@ describe("CommandPalette", () => {
     await user.keyboard("{Enter}")
     expect(screen.getByTestId("where").textContent).toBe("/stocks/ASELS")
     expect(screen.queryByRole("combobox")).toBeNull()
+  })
+
+  it("a stock hit adds an “open chart” action that asks the chart window for that symbol in the active market", async () => {
+    const opened = vi.fn()
+    const off = onOpenChart(opened)
+    const user = setup()
+    await user.keyboard("{Meta>}k{/Meta}")
+    await user.type(await screen.findByRole("combobox"), "asel")
+    const action = await screen.findByRole("option", { name: /Grafik aç: ASELS/ })
+    expect(screen.getAllByRole("option").indexOf(action)).toBe(screen.getAllByRole("option").length - 2)   // just above the text search
+    await user.click(action)
+    expect(opened).toHaveBeenCalledWith({ symbol: "ASELS", market: "TR" })
+    expect(screen.queryByRole("combobox")).toBeNull()
+    off()
   })
 
   it("with three or more characters and no hit or command, the empty state keeps its “try the page” button above the text-search row", async () => {

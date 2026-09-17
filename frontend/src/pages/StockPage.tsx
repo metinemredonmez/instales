@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import { useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { CandlestickChart, ChevronDown } from "lucide-react"
 import { api, MARKET_WINDOW_DAYS, type PositionChange, type ScoreDetail } from "@/lib/api"
 import { useMarket } from "@/lib/market"
 import { useI18n, type T } from "@/lib/i18n"
@@ -17,6 +17,8 @@ import { StockChart } from "@/components/domain/StockChart"
 import { Timeline } from "@/components/domain/Timeline"
 import { AiNoteCard } from "@/components/domain/AiNoteCard"
 import { WatchButton } from "@/components/domain/WatchButton"
+import { Button } from "@/components/ui/button"
+import { openChart } from "@/lib/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -60,7 +62,12 @@ export function StockPage() {
             {d.scores.CROWDING && <CrowdingChip s={d.scores.CROWDING} />}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">{d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}<WatchButton symbol={d.symbol} market={market} /></div>
+        <div className="flex flex-wrap items-center gap-2">
+          {d.signals.map((s) => <SignalBadge key={s.type + s.window_end} type={s.type} />)}
+          {/* The floating candle window (ChartWidget) on this stock — intraday bars, the price series below stays the daily-with-holdings view. */}
+          <Button variant="outline" size="sm" onClick={() => openChart(d.symbol, market)}><CandlestickChart className="size-4" /> {t("nav.chart")}</Button>
+          <WatchButton symbol={d.symbol} market={market} />
+        </div>
       </div>
 
       <div className="rise-stagger grid gap-3 md:grid-cols-3">

@@ -624,6 +624,19 @@ export interface StockSeries {
 
 /** Which price provider a quote came from; Yahoo prints are ~15 min delayed, so `delayed` travels with every quote. */
 export type PriceSource = "yahoo" | "matriks"
+
+/** Bar size of /stocks/{symbol}/candles: intraday from the provider (5m/15m ≤ 60 days, 1h ≤ 730 days on Yahoo), daily from market_prices. */
+export type CandleInterval = "5m" | "15m" | "1h" | "1d"
+/** One OHLC bar; `t` is epoch seconds (UTC), `v` null when the source reports no volume for it. */
+export interface Candle { t: number; o: number; h: number; l: number; c: number; v: number | null }
+/**
+ * /stocks/{symbol}/candles — ascending bars, at most `lookback`. `source` / `delay` name whoever printed them and how far
+ * behind they are (Yahoo bars ~15 min; `eod` for daily rows from market_prices, last night's close), `as_of` is the fetch
+ * time and `tz` the market's own zone, which the widget renders in. `stale` is present (true) only when the server had
+ * to serve its last good answer through an outage, like a header quote. 404 unknown symbol; 503 "provider unavailable"
+ * while the provider slot cannot answer and nothing is remembered.
+ */
+export interface Candles { symbol: string; name: string; market: Market; currency: string; interval: CandleInterval; source: PriceSource; delay: ProviderStatus["delay"]; delayed: boolean; as_of: string; tz: string; bars: Candle[]; stale?: boolean }
 /** Header quote (the active price provider via the backend/feed). Absent from the list when the source failed; `stale` marks a cached value. */
 export interface Quote { key: string; label: string; price: number; change_pct: number | null; currency: string; updated_at: string; decimals: number; bar_date: string | null; stale?: boolean; source: PriceSource; delayed: boolean }
 export type MarketState = "open" | "closed" | "pre" | "post"
@@ -928,6 +941,8 @@ export const api = {
   moves: (market: Market, kind: MoveKind, window: number | null = null, fund: string | null = null, limit = 25) => get<Moves>("/moves", { market, kind, window, fund, limit }),
   research: (question: string, market: Market) => send<ResearchAnswer>("POST", "/research", { question, market }),
   series: (market: Market, symbol: string) => get<StockSeries>(`/stocks/${symbol}/series`, { market }),
+  /** lookback is a bar count (10..1000, the route bounds it); the API caps intraday ranges at what the provider keeps. */
+  candles: (market: Market, symbol: string, interval: CandleInterval = "1d", lookback = 300) => get<Candles>(`/stocks/${symbol}/candles`, { market, interval, lookback }),
   fundamentals: (market: Market, symbol: string, period: FundamentalsPeriod = "annual") => get<Fundamentals>(`/stocks/${symbol}/fundamentals`, { market, period }),
   insiders: (market: Market, symbol: string, days: InsiderWindow = 90) => get<Insiders>(`/stocks/${symbol}/insiders`, { market, days }),
   /** form null = every form type. */

@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom"
-import { PanelLeftClose, PanelLeftOpen, Shield, Tv } from "lucide-react"
+import { CandlestickChart, PanelLeftClose, PanelLeftOpen, Shield, Tv } from "lucide-react"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Mark } from "@/components/layout/Brand"
@@ -19,6 +19,8 @@ import { BellMenu } from "@/components/domain/BellMenu"
 import { UpdateBanner } from "@/components/domain/UpdateBanner"
 import { PushPrompt } from "@/components/domain/PushPrompt"
 import { LiveTvWidget } from "@/components/domain/LiveTvWidget"
+import { ChartWidget } from "@/components/domain/ChartWidget"
+import { useChartOpen } from "@/lib/chart"
 import { registerSw } from "@/lib/push"
 import { loadOneSignal, oneSignalExternalId, withOneSignal } from "@/lib/onesignal"
 import { api } from "@/lib/api"
@@ -48,6 +50,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Live TV never auto-opens on load — only position/size/channel are remembered (in the widget itself).
   const [tv, setTv] = useState(false)
   const toggleTv = () => setTv((o) => !o)
+  // Same for the chart window; any row's openChart() (lib/chart) also turns it on — the one instance lives here.
+  const chart = useChartOpen()
 
   const item = ({ to, key, icon: Icon, end }: NavItem) => (
     <NavLink
@@ -111,6 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <UpdateBanner />
       <PushPrompt />
       <LiveTvWidget open={tv} onClose={() => setTv(false)} />
+      <ChartWidget open={chart.open} onClose={() => chart.setOpen(false)} />
       <NewsTicker market={market} />
 
       <div className="mx-auto flex max-w-[1600px]">
@@ -118,6 +123,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <aside className={cn("sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-14 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/70 px-2 py-4 md:flex", wide && "lg:w-52 lg:px-3")}>
           {group("nav.group.market", true)}
           {NAV.map(item)}
+          <button onClick={chart.toggle} title={t("nav.chart")} aria-pressed={chart.open} className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition", chart.open ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>
+            <CandlestickChart className="size-4 shrink-0" /> {wide && <span className="hidden lg:inline">{t("nav.chart")}</span>}
+          </button>
           {group("nav.group.personal")}
           {MINE.map(item)}
           <button onClick={toggleTv} title={t("nav.liveTv")} className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition", tv ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground")}>

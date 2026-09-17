@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n"
 import { fmtDate, fmtLots, fmtMoney } from "@/lib/format"
 import { Section } from "@/components/layout/Section"
 import { ACT, ConfidenceBadge, Flow } from "@/components/domain/badges"
+import { ChartRowButton } from "@/components/domain/ChartWidget"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -100,6 +101,7 @@ function MovesTable({ rows, market }: { rows: MoveRow[]; market: Market }) {
           <tr key={r.symbol} className="border-b border-border/40 last:border-0 hover:bg-accent/40">
             <td className="px-4 py-2.5 align-top">
               <Link to={`/stocks/${r.symbol}`} className="font-semibold hover:underline">{r.symbol}</Link>
+              <ChartRowButton symbol={r.symbol} market={market} className="ml-1" />
               <div className="max-w-[12rem] truncate text-xs text-muted-foreground">{r.name}</div>
             </td>
             <td className="px-2 py-2.5 text-right align-top"><Flow value={r.net_flow_value} market={market} /></td>

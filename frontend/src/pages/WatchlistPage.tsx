@@ -7,6 +7,7 @@ import { useMarket } from "@/lib/market"
 import { useI18n } from "@/lib/i18n"
 import { Section } from "@/components/layout/Section"
 import { Flow, ScorePill } from "@/components/domain/badges"
+import { ChartRowButton } from "@/components/domain/ChartWidget"
 import { Button } from "@/components/ui/button"
 
 export function WatchlistPage() {
@@ -46,7 +47,7 @@ export function WatchlistPage() {
             <tbody>
               {stocks.map((i) => (
                 <tr key={i.id} className="border-b border-border/40 last:border-0 hover:bg-accent/40">
-                  <td className="px-4 py-2"><Link to={`/stocks/${i.ref}`} className="font-semibold hover:underline">{i.ref}</Link></td>
+                  <td className="px-4 py-2"><Link to={`/stocks/${i.ref}`} className="font-semibold hover:underline">{i.ref}</Link><ChartRowButton symbol={i.ref} market={market} className="ml-1" /></td>
                   <td className="px-2 py-2 text-right"><ScorePill value={i.smart_money_score} /></td>
                   <td className="num px-2 py-2 text-right"><span className="text-positive">{i.funds_increasing ?? "—"}</span> / <span className="text-negative">{i.funds_reducing ?? "—"}</span></td>
                   <td className="px-2 py-2 text-right"><Flow value={i.net_flow_value} market={market} /></td>

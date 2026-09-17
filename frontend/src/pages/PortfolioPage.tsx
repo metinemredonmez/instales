@@ -11,6 +11,7 @@ import { fmtCompact, fmtDate, fmtLots, fmtMoney, fmtNum, fmtPrice, fmtQty } from
 import { Section, Stat } from "@/components/layout/Section"
 import { ACT, ConfidenceBadge, CrowdingPill, Flow, ScorePill } from "@/components/domain/badges"
 import { PlanGate, limitMessage } from "@/components/domain/PlanGate"
+import { ChartRowButton } from "@/components/domain/ChartWidget"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -209,6 +210,7 @@ function PositionsTable({ rows, portfolio: p, onRemove }: { rows: PortfolioPosit
           <tr key={r.symbol} className="border-b border-border/40 last:border-0 hover:bg-accent/40">
             <td className="px-4 py-2 align-top">
               <Link to={`/stocks/${r.symbol}`} className="font-semibold hover:underline">{r.symbol}</Link>
+              <ChartRowButton symbol={r.symbol} market={p.market} className="ml-1" />
               <div className="max-w-[11rem] truncate text-xs text-muted-foreground">{r.name}</div>
             </td>
             <td className="num whitespace-nowrap px-2 py-2 text-right align-top">{fmtQty(r.quantity)}</td>
@@ -246,6 +248,7 @@ function MoveRowItem({ m, market }: { m: MoveRow; market: Market }) {
     <li className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link to={`/stocks/${m.symbol}`} className="font-semibold hover:underline">{m.symbol}</Link>
+        <ChartRowButton symbol={m.symbol} market={market} className="-ml-2" />
         <span className="text-muted-foreground">{t("pf.moves.line", { inc: m.funds_increasing, red: m.funds_reducing })}{extra.length ? ` · ${extra.join(" · ")}` : ""}</span>
         <Flow value={m.net_flow_value} market={market} className="text-xs" />
       </div>

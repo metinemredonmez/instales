@@ -2,23 +2,36 @@
 the beta; production plugs a licensed vendor into the same `PriceProvider` contract (see provider.py).
 
 Symbols: BIST tickers become `ASELS.IS`; US tickers are used as-is. Unknown/illiquid symbols (or unmapped
-CUSIP placeholders) are skipped, never guessed. `fetch_frame` / `fetch_history` are the only two functions
-that talk to Yahoo — tests monkeypatch them.
+CUSIP placeholders) are skipped, never guessed. `fetch_frame` / `fetch_history` / `fetch_intraday` are the only
+three functions that talk to Yahoo — tests monkeypatch them.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from math import ceil
 
-from instilens.ingestion.prices.provider import Bar, ProviderStatus, ProviderUnavailable, Tick
+from instilens.ingestion.prices.provider import (
+    INTRADAY_INTERVALS,
+    Bar,
+    Candle,
+    ProviderStatus,
+    ProviderUnavailable,
+    Tick,
+)
 
 log = logging.getLogger("instilens.prices.yahoo")
 
 NOTE = "Yahoo Finance — unofficial, ~15 min delayed"
 BATCH = 50  # tickers per yf.download call
+# Yahoo keeps intraday history for a bounded window only: 60 days for 5m/15m, 730 days for 1h (a request that
+# reaches further back is refused outright, not truncated).
+INTRADAY_MAX_DAYS = {"5m": 60, "15m": 60, "1h": 730}
+INTERVAL_SECONDS = {"5m": 300, "15m": 900, "1h": 3600}
+SESSION_SECONDS = int(6.5 * 3600)  # the NYSE core session; BIST's 8 h only yields more bars than asked, which the caller trims
 
 
 def yahoo_symbol(market: str, symbol: str) -> str | None:
@@ -40,6 +53,41 @@ def fetch_history(tickers: list[str], start: date):
     import yfinance as yf
 
     return yf.download(tickers, start=start.isoformat(), auto_adjust=False, progress=False, group_by="ticker", threads=True)
+
+
+def intraday_window_days(interval: str, lookback: int) -> int:
+    """Calendar days that hold `lookback` bars of `interval`: bars per session from the shorter (NYSE) session,
+    7/5 for weekends, a week on top for holidays — then two days inside Yahoo's window: one because the start
+    is taken at midnight in the exchange's zone, one because the server's calendar date (`date.today()`) can lag
+    the exchange's by a day (a UTC server after 21:00 is still on Istanbul's yesterday)."""
+    if interval not in INTRADAY_INTERVALS:
+        raise ValueError(f"unknown intraday interval {interval!r} (one of {', '.join(INTRADAY_INTERVALS)})")
+    per_session = SESSION_SECONDS / INTERVAL_SECONDS[interval]
+    days = ceil(lookback / per_session * 7 / 5) + 7
+    return min(days, INTRADAY_MAX_DAYS[interval] - 2)
+
+
+def fetch_intraday(ticker: str, interval: str, lookback: int):
+    """The latest `lookback` bars of `interval` for one ticker: a flat OHLCV frame over a tz-aware DatetimeIndex
+    in the exchange's zone, regular session only (no pre/post prints), no dividend/split columns. A symbol Yahoo
+    has nothing for raises `YFTickerMissingError` (see `_ticker_missing`) instead of coming back as an empty frame."""
+    import yfinance as yf
+
+    # Process-wide, like the fundamentals adapter: `yf.download` (fetch_frame / fetch_history) catches per ticker whatever the flag says.
+    yf.config.debug.hide_exceptions = False
+    start = date.today() - timedelta(days=intraday_window_days(interval, lookback))
+    return yf.Ticker(ticker).history(start=start.isoformat(), interval=interval, auto_adjust=False, prepost=False, actions=False)
+
+
+def _ticker_missing(exc: Exception) -> bool:
+    """yfinance's verdict that Yahoo answered and carries nothing for the symbol — delisted, unknown to Yahoo, no
+    bars at that interval (`YFTickerMissingError`: the prices-missing and tz-missing errors). Anything else is a
+    failure to answer — and a transport error is settled without importing yfinance at all."""
+    if not type(exc).__module__.startswith("yfinance"):
+        return False
+    from yfinance.exceptions import YFTickerMissingError
+
+    return isinstance(exc, YFTickerMissingError)
 
 
 def _ticker_frame(frame, ticker: str):
@@ -134,6 +182,32 @@ def parse_bars(frame, ticker: str, symbol: str) -> list[Bar]:
     return out
 
 
+def _utc(ts) -> datetime:
+    """A frame index entry as a tz-aware UTC datetime. yfinance stamps intraday rows in the exchange's zone; a
+    naive index (a daily frame, a test fixture) is read as UTC — pandas' own convention for `Timestamp.timestamp()`."""
+    dt = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def parse_candles(frame, symbol: str) -> list[Candle]:
+    """Intraday bars of a flat single-ticker frame, oldest first. A row with a hole in any of Open/High/Low/Close is
+    dropped (the chart draws four prices per candle, never a padded one); a missing Volume stays None."""
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    try:
+        table = frame.sort_index()
+    except (TypeError, AttributeError):
+        return []
+    out: list[Candle] = []
+    for ts, row in table.iterrows():
+        prices = [_money(row.get(field)) for field in ("Open", "High", "Low", "Close")]
+        if any(v is None for v in prices):
+            continue
+        o, h, lo, c = prices
+        out.append(Candle(symbol, _utc(ts), o, h, lo, c, _volume(row.get("Volume"))))
+    return out
+
+
 class YahooProvider:
     """`connected` means the last call to Yahoo was answered *with data*; there is no session to hold open.
     yfinance swallows per-ticker network errors (logged, never raised) and hands back a frame over an empty index,
@@ -197,6 +271,22 @@ class YahooProvider:
         self._connected, self._last_tick_at = True, datetime.now(UTC)
         self._error = f"history: {empty} of {batches} batches came back empty" if empty else None
         return bars
+
+    def intraday_bars(self, market: str, symbol: str, interval: str, lookback: int) -> list[Candle]:
+        ticker = yahoo_symbol(market, symbol)
+        if ticker is None:
+            return []  # a CUSIP placeholder: Yahoo was never asked, so nothing is claimed about the connection
+        try:
+            frame = fetch_intraday(ticker, interval, lookback)
+        except Exception as exc:  # noqa: BLE001 — any yfinance/network failure is "unavailable" to the caller
+            if _ticker_missing(exc):
+                return []  # Yahoo answered: nothing for this symbol at this interval — an answer, not a verdict on the connection
+            raise self._fail("intraday", exc) from exc
+        candles = parse_candles(frame, symbol)
+        if not candles:
+            raise self._fail("intraday", RuntimeError(f"no {interval} bars for {ticker}"))
+        self._connected, self._error, self._last_tick_at = True, None, datetime.now(UTC)
+        return candles[-lookback:]
 
     def status(self) -> ProviderStatus:
         return ProviderStatus(self.name, configured=True, connected=self._connected, delay="delayed", last_tick_at=self._last_tick_at, error=self._error, note=NOTE)

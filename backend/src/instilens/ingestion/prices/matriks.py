@@ -13,6 +13,7 @@ from datetime import date
 from instilens.config import settings
 from instilens.ingestion.prices.provider import (
     Bar,
+    Candle,
     ProviderNotConfigured,
     ProviderStatus,
     ProviderUnavailable,
@@ -36,6 +37,9 @@ class MatriksProvider:
         raise self._refuse()
 
     def daily_bars(self, market: str, symbols: list[str], start: date) -> list[Bar]:
+        raise self._refuse()
+
+    def intraday_bars(self, market: str, symbol: str, interval: str, lookback: int) -> list[Candle]:
         raise self._refuse()
 
     def status(self) -> ProviderStatus:

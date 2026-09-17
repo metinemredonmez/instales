@@ -13,7 +13,8 @@ from instilens.api.hardening import client_ip, hit
 from instilens.config import settings
 from instilens.db.session import session_scope
 from instilens.domain.models import User
-from instilens.services import analytics, live, search
+from instilens.ingestion.prices.provider import ProviderUnavailable
+from instilens.services import analytics, candles, live, search
 
 log = logging.getLogger("instilens.api")
 
@@ -346,6 +347,31 @@ def get_stock_timeline(symbol: str, market: str = MarketParam, session: Session 
 @router.get("/stocks/{symbol}/series")
 def get_stock_series(symbol: str, market: str = MarketParam, session: Session = Depends(get_session)):
     data = analytics.stock_series(session, market, symbol)
+    if data is None:
+        raise HTTPException(404, "instrument not found")
+    return data
+
+
+@router.get("/stocks/{symbol}/candles")
+def get_stock_candles(
+    symbol: str,
+    market: str = MarketParam,
+    interval: candles.Interval = Query("1d"),
+    lookback: int = Query(candles.LOOKBACK_DEFAULT, ge=candles.LOOKBACK_MIN, le=candles.LOOKBACK_MAX, description="most bars returned, oldest first"),
+    session: Session = Depends(get_session),
+):
+    """OHLCV bars for the chart widget: daily from `market_prices` when the table holds full OHLC for the range,
+    otherwise (and always below a day) from the active price provider, cached 60 s server-side with the last good
+    answer served through an outage. The payload names its `source` and says whether it is `delayed`; `t` is
+    epoch seconds UTC and `tz` the exchange's zone. 503 when the provider must answer and cannot."""
+    from instilens.services import runtime_settings
+
+    runtime_settings.apply(session)  # like /quotes: a provider switch may have landed on the other uvicorn worker
+    try:
+        data = candles.candles(session, market, symbol, interval, lookback)
+    except ProviderUnavailable as exc:
+        log.warning("candles %s %s %s: %s", market, symbol, interval, exc)
+        raise HTTPException(503, "provider unavailable") from exc
     if data is None:
         raise HTTPException(404, "instrument not found")
     return data

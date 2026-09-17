@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { api, type RadarRow } from "@/lib/api"
+import { api, type Market, type RadarRow } from "@/lib/api"
 import { useMarket } from "@/lib/market"
 import { useI18n, type T } from "@/lib/i18n"
 import { fmtDate } from "@/lib/format"
@@ -9,6 +9,7 @@ import { Section, Stat } from "@/components/layout/Section"
 import { Flow, Num, ScorePill, SignalBadge, ConfidenceBadge } from "@/components/domain/badges"
 import { EventRow } from "@/components/domain/EventRow"
 import { FreshnessBar } from "@/components/domain/Freshness"
+import { ChartRowButton } from "@/components/domain/ChartWidget"
 import { PipelineButton } from "@/components/domain/PipelineButton"
 import { AiNoteCard } from "@/components/domain/AiNoteCard"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -85,6 +86,7 @@ export function RadarPage() {
               {r.signals.map((s) => (
                 <li key={`${s.symbol}-${s.type}`} className="flex items-center gap-3 px-4 py-2.5">
                   <Link to={`/stocks/${s.symbol}`} className="w-14 font-semibold hover:underline">{s.symbol}</Link>
+                  <ChartRowButton symbol={s.symbol} market={market} className="-ml-1.5" />
                   <SignalBadge type={s.type} />
                   <span className="ml-auto num text-sm text-muted-foreground">{s.strength}</span>
                   <ConfidenceBadge value={s.confidence} />
@@ -114,7 +116,7 @@ function Ret({ v, last }: { v: number | null; last?: boolean }) {
   return <td className={cn("num py-1.5 text-right", last ? "px-4" : "px-1", v === null ? "text-muted-foreground" : v < 0 ? "text-negative" : "text-positive")}>{v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`}</td>
 }
 
-function FlowTable({ rows, market, negative }: { rows: RadarRow[]; market: string; negative?: boolean }) {
+function FlowTable({ rows, market, negative }: { rows: RadarRow[]; market: Market; negative?: boolean }) {
   const { t } = useI18n()
   if (rows.length === 0) return <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.noData")}</div>
   const max = Math.max(...rows.map((x) => Math.abs(x.net_flow_value)))
@@ -134,6 +136,7 @@ function FlowTable({ rows, market, negative }: { rows: RadarRow[]; market: strin
           <tr key={x.symbol} className="border-b border-border/40 last:border-0 hover:bg-accent/40">
             <td className="px-4 py-2.5">
               <Link to={`/stocks/${x.symbol}`} className="font-semibold hover:underline">{x.symbol}</Link>
+              <ChartRowButton symbol={x.symbol} market={market} className="ml-1" />
               <div className="relative mt-1 h-1 w-24 overflow-hidden rounded-full bg-muted">
                 <div className={cn("h-full", negative ? "bg-negative/70" : "bg-positive/70")} style={{ width: `${(Math.abs(x.net_flow_value) / max) * 100}%` }} />
               </div>

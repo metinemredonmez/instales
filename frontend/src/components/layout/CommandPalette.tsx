@@ -2,9 +2,10 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Dialog } from "radix-ui"
-import { Globe, Languages, Search, SunMoon, TextSearch, Volume2 } from "lucide-react"
+import { CandlestickChart, Globe, Languages, Search, SunMoon, TextSearch, Volume2 } from "lucide-react"
 import { api, type AiNote, type Market, type SearchHit } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { openChart } from "@/lib/chart"
 import { useI18n, type Lang } from "@/lib/i18n"
 import type { Key } from "@/i18n/tr"
 import { useMarket } from "@/lib/market"
@@ -29,6 +30,7 @@ const LANG_NAME: Record<Lang, Key> = { tr: "menu.lang.tr", en: "menu.lang.en" }
  * explicit button — and Escape closes; Radix supplies the focus trap. From TEXT_MIN characters on, the last action is
  * "search the texts" → /search?q=, the same row the header box appends; it never hides the empty state, which shows
  * whenever no hit and no command matched (a fund code the index does not know yet still has its "try the page").
+ * A query that matched a stock also gets "open chart: SYMBOL" — the floating chart window on that stock (lib/chart).
  */
 export function CommandPalette() {
   const { t, lang } = useI18n()
@@ -76,15 +78,18 @@ export function CommandPalette() {
       { id: "theme", label: t("palette.theme"), icon: SunMoon, section: "actions", run: toggle },
       { id: "lang", label: t("palette.lang", { l: t(LANG_NAME[otherLang]) }), icon: Languages, section: "actions", run: () => pickLang(otherLang) },
       { id: "brief", label: t("palette.listenBrief"), hint: t("palette.listenBriefHint"), icon: Volume2, section: "actions", run: () => { listenBrief() } },
+      { id: "chart", label: t("palette.chart"), hint: t("palette.chartHint"), icon: CandlestickChart, section: "actions", run: () => openChart() },
     ]
     return [...pages, ...actions]
   }, [t, user?.role, market, lang, navigate, setMarket, toggle, pickLang]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const needle = search.q.trim().toLocaleLowerCase(lang === "tr" ? "tr-TR" : "en")
   const matched = needle ? commands.filter((c) => c.label.toLocaleLowerCase(lang === "tr" ? "tr-TR" : "en").includes(needle)) : commands
-  // Not label-filtered like the others: it exists for the query itself.
+  // Not label-filtered like the others: they exist for the query itself — the chart of the first stock it matched, the text search of the words.
+  const stockHit = search.rows.find((h) => h.kind === "stock")
+  const chartCmd: Command | null = stockHit ? { id: `chart:${stockHit.key}`, label: t("chartw.openFor", { s: stockHit.label }), icon: CandlestickChart, section: "actions", run: () => openChart(stockHit.label, market) } : null
   const textCmd: Command | null = search.debounced.length >= TEXT_MIN ? { id: "text-search", label: t("search.inTexts", { q: search.debounced }), icon: TextSearch, section: "actions", run: () => { search.goText() } } : null
-  const rows: Row[] = [...search.rows.map((h) => ({ id: `${h.kind}:${h.key}`, hit: h })), ...[...matched, ...(textCmd ? [textCmd] : [])].map((c) => ({ id: c.id, cmd: c }))]
+  const rows: Row[] = [...search.rows.map((h) => ({ id: `${h.kind}:${h.key}`, hit: h })), ...[...matched, ...(chartCmd ? [chartCmd] : []), ...(textCmd ? [textCmd] : [])].map((c) => ({ id: c.id, cmd: c }))]
   // Nothing found for the query itself: the text-search row (if any) stays below the empty state, like the header box.
   const noMatch = search.rows.length === 0 && matched.length === 0
   // Listbox children must be options or groups: one group per section (results / pages / actions), rows numbered globally.
