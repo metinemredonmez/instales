@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from instilens.api.deps import current_user, get_session, require_plan
 from instilens.domain.models import Portfolio, User
-from instilens.services import portfolio
+from instilens.services import portfolio, portfolio_analysis
 
 router = APIRouter(prefix="/api/v1/portfolios", tags=["portfolio"], dependencies=[Depends(current_user), Depends(require_plan("portfolio"))])
 
@@ -98,6 +98,12 @@ def get_portfolio(portfolio_id: int, user: User = Depends(current_user), session
     scores, the funds' 30-day counts per symbol and the insiders' 90-day net (US), plus the 30-day moves on the held
     symbols and the transaction history. Reported positions and stored figures — never a recommendation."""
     return portfolio.detail(session, _portfolio(session, user, portfolio_id))
+
+
+@router.get("/{portfolio_id}/analysis")
+def analyze_portfolio(portfolio_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """Read-only diagnostics for the authenticated owner's portfolio; same plan gate as detail."""
+    return portfolio_analysis.analyze(session, _portfolio(session, user, portfolio_id))
 
 
 @router.put("/{portfolio_id}/positions", status_code=201)

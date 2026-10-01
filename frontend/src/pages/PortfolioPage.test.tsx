@@ -19,6 +19,12 @@ vi.mock("@/lib/api", async (orig) => ({
   api: {
     portfolios: () => portfolios(),
     portfolio: (id: number) => portfolio(id),
+    portfolioAnalysis: vi.fn().mockResolvedValue({
+      as_of: "2026-09-16", lookback_days: 366,
+      concentration: { priced_positions: 0, total_positions: 0, missing_symbols: [], stale_symbols: [], largest_weight_pct: null, top3_weight_pct: null, hhi: null, allocations: [] },
+      risk: { status: "empty", start: null, end: null, observations: 0, min_returns: 21, missing_dates: 0, invalid_symbols: [], price_change_pct: null, annualized_volatility_pct: null, max_drawdown_pct: null },
+      price_sources: [], common_funds: { total: 0, rows: [] },
+    }),
     search: (m: string, q: string) => search(m, q),
     upsertPosition: (id: number, body: Record<string, unknown>) => upsertPosition(id, body),
     deleteTransaction: (id: number, tx: number) => deleteTransaction(id, tx),

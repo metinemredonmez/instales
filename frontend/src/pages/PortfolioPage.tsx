@@ -12,6 +12,7 @@ import { Section, Stat } from "@/components/layout/Section"
 import { ACT, ConfidenceBadge, CrowdingPill, Flow, ScorePill } from "@/components/domain/badges"
 import { PlanGate, limitMessage } from "@/components/domain/PlanGate"
 import { ChartRowButton } from "@/components/domain/ChartWidget"
+import { PortfolioAnalysis } from "@/components/domain/PortfolioAnalysis"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -70,7 +71,7 @@ export function PortfolioPage() {
   const [dialog, setDialog] = useState<"create" | "rename" | "position" | "transaction" | null>(null)
   // The last failed removal, printed under the section it belongs to (a 400 on a buy whose sale would then oversell is a normal answer, not a crash).
   const [removeErr, setRemoveErr] = useState<string | null>(null)
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ["portfolios"] }); qc.invalidateQueries({ queryKey: ["portfolio"] }) }
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ["portfolios"] }); qc.invalidateQueries({ queryKey: ["portfolio"] }); qc.invalidateQueries({ queryKey: ["portfolio-analysis"] }) }
   const failed = (e: unknown) => setRemoveErr(errorText(t, e))
   const del = useMutation({ mutationFn: api.deletePortfolio, onSuccess: () => { setPicked(null); setRemoveErr(null); invalidate() }, onError: failed })
   const removePos = useMutation({ mutationFn: ({ id, pos }: { id: number; pos: number }) => api.deletePosition(id, pos), onSuccess: () => { setRemoveErr(null); invalidate() }, onError: failed })
@@ -137,6 +138,8 @@ function PortfolioBody({ d, onAddPosition, onAddTransaction, onRemovePosition, o
         <Stat label={t("pf.pnl")} value={fmtMoney(d.totals.pnl_value, fm)} tone={tone(d.totals.pnl_value)} />
         <Stat label={t("pf.pnlPct")} value={d.totals.pnl_pct === null ? "—" : `${fmtNum(d.totals.pnl_pct, 1, true)}%`} tone={tone(d.totals.pnl_pct)} />
       </div>
+
+      <PortfolioAnalysis portfolio={p} />
 
       <Section
         title={t("pf.positions")}

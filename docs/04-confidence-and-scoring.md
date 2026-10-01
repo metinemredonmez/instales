@@ -1,5 +1,47 @@
 # 04 · Confidence & scoring methodology
 
+## Portfolio analysis (Vantix-inspired diagnostics)
+
+`GET /api/v1/portfolios/{id}/analysis` requires the portfolio owner's session and the existing
+portfolio plan entitlement. It reads stored positions, prices and fund snapshots; it creates no
+facts, score rows or orders. This is a descriptive analysis, not an allocation recommendation.
+
+- **Concentration:** current quantity × latest valid stored close, over a 366-calendar-day
+  lookback ending today in Istanbul. Each priced position's weight is its value divided by the
+  total priced value. Largest weight, top-three weights and HHI = Σ(weight²) × 10,000 use the
+  unrounded Decimal values. HHI is a concentration statistic, not a new Smart Money component.
+  Missing prices are excluded with an explicit count and symbols: weights describe only the
+  priced subset. Prices older than seven calendar days are explicitly marked stale.
+- **Historical basket:** keep today's quantities constant, value them at each shared daily close,
+  then calculate r[t] = V[t]/V[t−1] − 1. Period price change = V[last]/V[first] − 1;
+  annual volatility = sample standard deviation(r) × √252; maximum drawdown =
+  max(1 − V[t]/max(V[0..t])). Percentages multiply these fractions by 100. All computation is
+  Decimal, converted to JSON numbers only after rounding at the response boundary.
+- **Coverage gates:** start at the latest first observation among the current positions, within
+  the 366-day window. Require at least 22 common closes (21 returns), prices for every position,
+  finite positive closes, no missing date for any position within the shared window, no gap
+  longer than seven calendar days, coverage of at least 80% of weekdays in the shared window
+  (so weekly data is not annualised as daily), and no latest price older than seven days. Otherwise metrics
+  are `null` with a reason, never zero. Dates, observation counts and price providers are returned.
+  The gap rule is deliberately conservative and may withhold metrics over a long market holiday.
+- **Interpretation:** this is historical price behaviour of the current basket, not the user's
+  realised return, a backtest of their transactions or a total-return index. Stored closes do not
+  guarantee split/dividend adjustment, and those effects can distort these statistics. The UI
+  states both limits next to the metrics. No Sharpe/Sortino or optimisation is exposed without the
+  required return-series and risk-free-rate decisions.
+- **Common institutional holders:** select each fund's latest published, parsed, non-superseded
+  snapshot first, then match positive holdings in at least two stocks currently owned by the user.
+  Exclude stale books using the existing TR 60 / US 182 calendar-day thresholds and GROUPED
+  snapshots. Each row includes `snapshot_id`, `disclosure_id`, `confidence` and report date.
+  No transaction event is allocated or added to a snapshot. Matching is by instrument ID and
+  market, not symbol alone. Rank by matched-stock count then fund code; return the first ten
+  with the full matching-fund count. The user can open the existing comparison for up to six.
+  These are reported co-holdings, not a look-through of fund units held by the user.
+
+Vantix's `factors.py` informed the metric selection. Its numpy calculations, hard-coded fund
+score and static Portfolio Doctor/demo values were not imported. HRP/CVaR optimisation,
+TEFAS fund-unit accounting, stress scenarios and broker execution remain separate future work.
+
 ## Confidence levels
 | Level | Meaning | Multiplier |
 |---|---|---|

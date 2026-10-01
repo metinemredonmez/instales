@@ -745,6 +745,26 @@ export interface PortfolioDetail {
   transactions: PortfolioTransaction[]
 }
 
+export interface PortfolioAnalysis {
+  as_of: string
+  lookback_days: number
+  concentration: {
+    priced_positions: number; total_positions: number; missing_symbols: string[]; stale_symbols: string[]
+    largest_weight_pct: number | null; top3_weight_pct: number | null; hhi: number | null
+    allocations: { symbol: string; weight_pct: number }[]
+  }
+  risk: {
+    status: "empty" | "missing_prices" | "invalid_prices" | "stale_prices" | "incomplete_history" | "insufficient_history" | "ready"
+    start: string | null; end: string | null; observations: number; min_returns: number; missing_dates: number
+    invalid_symbols: string[]; price_change_pct: number | null; annualized_volatility_pct: number | null; max_drawdown_pct: number | null
+  }
+  price_sources: { position_id: number; instrument_id: number; symbol: string; latest_date: string | null; providers: string[]; observations: number }[]
+  common_funds: {
+    total: number
+    rows: { code: string; name: string; as_of: string; snapshot_id: number; disclosure_id: number; confidence: Confidence; symbols: string[] }[]
+  }
+}
+
 /** INCOMPLETE = not paid for (an unpaid checkout, Stripe's incomplete / paused): recorded, grants nothing. The admin's grant note never travels here. */
 export type SubscriptionStatus = "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELED" | "INCOMPLETE"
 export const LIVE_STATUSES: readonly SubscriptionStatus[] = ["TRIALING", "ACTIVE", "PAST_DUE"]
@@ -972,6 +992,7 @@ export const api = {
   renamePortfolio: (id: number, name: string) => send<Portfolio>("PATCH", `/portfolios/${id}`, { name }),
   deletePortfolio: (id: number) => send<void>("DELETE", `/portfolios/${id}`),
   portfolio: (id: number) => get<PortfolioDetail>(`/portfolios/${id}`),
+  portfolioAnalysis: (id: number) => get<PortfolioAnalysis>(`/portfolios/${id}/analysis`),
   /** Upsert by symbol (one row per portfolio × instrument); avg_cost null = quantity only, no P&L. Refused (409) for a derived row. */
   upsertPosition: (id: number, body: { symbol: string; quantity: number; avg_cost?: number | null; opened_at?: string | null; note?: string | null }) => send<PortfolioPosition>("PUT", `/portfolios/${id}/positions`, body),
   deletePosition: (id: number, positionId: number) => send<void>("DELETE", `/portfolios/${id}/positions/${positionId}`),

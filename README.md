@@ -28,6 +28,7 @@ KAP disclosure → raw store → parser → entity resolution → normalized fac
 | 9 | Signal outcomes (+7/30/90D, max return, drawdown) + signal performance table | ✅ `services/outcomes.py` |
 | 10 | Timeline, Fund-vs-Fund overlap, Institution pages, Today/7D/3M windows, data-freshness badge | ✅ |
 | 11 | Admin: roles, user management, entity review (unverified instruments/funds), failed parses | ✅ `/admin` |
+| 12 | Portfolio analysis: concentration, historical basket price risk, common institutional holders with disclosure lineage | ✅ `/portfolios/{id}/analysis` · methodology in `docs/04-confidence-and-scoring.md` |
 | G | **Global: SEC EDGAR 13F** — live client (free, no contract) + 9 real filings as fixtures (Berkshire, Bridgewater, Renaissance), CUSIP→ticker via OpenFIGI | ✅ `ingestion/sec` |
 | — | Historical backfill (12 months TR), licensed price feeds, KAP official API mapping | ⏳ external inputs |
 
