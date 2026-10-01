@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react"
 import { Route, Routes, useLocation } from "react-router-dom"
 import { AppShell } from "@/components/layout/AppShell"
 import { NowSpeaking } from "@/components/domain/NowSpeaking"
@@ -33,6 +34,8 @@ import { NotFoundPage } from "@/pages/NotFoundPage"
 import { PublicFrame } from "@/components/layout/PublicFrame"
 import { useAuth } from "@/lib/auth"
 import { useI18n } from "@/lib/i18n"
+
+const IntegrationsPage = lazy(() => import("@/pages/IntegrationsPage"))
 
 // Reachable without a session: e-mail links (reset / verify) and the download page, which reads a public endpoint.
 const PUBLIC = ["/reset", "/verify"]
@@ -77,6 +80,7 @@ export default function App() {
         {/* The invitation mail's link; signed out it shows the login page first and keeps the token in the address */}
         <Route path="/org/accept" element={<OrgAcceptPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/integrations" element={<Suspense fallback={<p>Loading…</p>}><IntegrationsPage /></Suspense>} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/institutions" element={<InstitutionsPage />} />
         <Route path="/institutions/:code" element={<InstitutionPage />} />

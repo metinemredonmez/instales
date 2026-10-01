@@ -144,3 +144,16 @@ class DeliveryChannel(StrEnum):
     ONESIGNAL = "onesignal"
     TELEGRAM = "telegram"
     EMAIL = "email"
+
+
+class WebhookDirection(StrEnum):
+    INCOMING = "incoming"
+    OUTGOING = "outgoing"
+
+
+class WebhookStatus(StrEnum):
+    RECEIVED = "received"
+    PENDING = "pending"
+    DELIVERING = "delivering"
+    DELIVERED = "delivered"
+    FAILED = "failed"

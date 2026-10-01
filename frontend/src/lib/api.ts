@@ -888,7 +888,32 @@ async function send<T>(method: "POST" | "DELETE" | "PATCH" | "PUT", path: string
   )
 }
 
+export interface WebhookEndpoint {
+  id: string; name: string; target_url?: string | null; incoming_path: string; enabled: boolean; created_at: string
+  signing_secret?: string
+}
+export interface WebhookEvent { id: string; type: string; data: Record<string, unknown> }
+export interface WebhookMessage {
+  id: number; endpoint_id: string; event_id: string; event_type: string
+  direction: "incoming" | "outgoing"; status: "received" | "pending" | "delivering" | "delivered" | "failed"
+  attempts: number; created_at: string; next_attempt_at: string | null
+}
+export interface WebhookDetail extends WebhookMessage {
+  event: WebhookEvent
+  deliveries: { id: number; status_code: number | null; error: string | null; created_at: string }[]
+}
+
 export const api = {
+  openApi: () => get<Record<string, unknown>>("/openapi.json"),
+  webhookEndpoints: () => get<WebhookEndpoint[]>("/webhooks/endpoints"),
+  createWebhook: (name: string, target_url: string | null) => send<WebhookEndpoint>("POST", "/webhooks/endpoints", { name, target_url }),
+  enableWebhook: (id: string, enabled: boolean) => send<WebhookEndpoint>("PATCH", `/webhooks/endpoints/${id}`, { enabled }),
+  rotateWebhook: (id: string) => send<WebhookEndpoint>("POST", `/webhooks/endpoints/${id}/rotate`),
+  sendWebhook: (id: string, event: WebhookEvent) => send<WebhookMessage>("POST", `/webhooks/endpoints/${id}/send`, event),
+  testWebhook: (id: string) => send<WebhookMessage>("POST", `/webhooks/endpoints/${id}/test`),
+  webhookMessages: (id: string, before?: number) => get<WebhookMessage[]>(`/webhooks/endpoints/${id}/messages`, { before }),
+  webhookMessage: (id: number) => get<WebhookDetail>(`/webhooks/messages/${id}`),
+  retryWebhook: (id: number) => send<WebhookMessage>("POST", `/webhooks/messages/${id}/retry`),
   radar: (market: Market, limit = 20, window: number | null = null) => get<Radar>("/radar", { market, limit, window }),
   timeline: (market: Market, symbol: string) => get<TimelineItem[]>(`/stocks/${symbol}/timeline`, { market }),
   compare: (a: string, b: string) => get<FundCompare>(`/funds/${a}/compare/${b}`),

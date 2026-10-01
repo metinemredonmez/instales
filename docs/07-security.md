@@ -29,3 +29,5 @@ same status vocabulary: **Giderildi** (fixed + tested), **Güvenceye alındı** 
 | S22 | 7.17 | Limiter state per process | Giderildi | rate_hits table shared across uvicorn workers, fail-closed lockout on DB error; pipeline run lock row |
 
 Re-test: `uv run pytest -q` (auth tests cover S2–S5, S7–S10). Operational: run `harden-nginx.sh` once after deploy.
+
+Signed-in Swagger is available at `/integrations` using JWT-protected `/api/v1/openapi.json`, including production. Public `/docs` and `/openapi.json` stay disabled in production. Run the Alembic migration and scheduler for the generic webhook inbox/outbox; see [API and webhooks](10-api-and-webhooks.md).

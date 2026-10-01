@@ -354,6 +354,14 @@ def warehouse_list() -> None:
     typer.echo(f"latest.duckdb → {latest['built_at']}" if latest else "latest.duckdb missing")
 
 
+@app.command("webhooks-dispatch")
+def webhooks_dispatch(limit: int = typer.Option(10, min=1, max=50)):
+    """Deliver one batch from the webhook outbox (the scheduler also drains it every 30 seconds)."""
+    from instilens.services.webhooks import dispatch
+
+    typer.echo({"attempted": dispatch(limit=limit)})
+
+
 @app.command("releases-prune")
 def releases_prune() -> None:
     """Drop artifacts whose file name carries a different version than their release (leftovers from builds that

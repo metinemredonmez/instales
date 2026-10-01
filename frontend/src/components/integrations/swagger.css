@@ -1,0 +1,8 @@
+.instilens-swagger { color-scheme: light; overflow-wrap: anywhere; }
+.instilens-swagger .swagger-ui { color: #1e293b; }
+.instilens-swagger .swagger-ui input,
+.instilens-swagger .swagger-ui textarea,
+.instilens-swagger .swagger-ui select { color: #1e293b; background: #fff; }
+.instilens-swagger .swagger-ui .wrapper { padding: 0; }
+.instilens-swagger .swagger-ui .opblock-summary-path { min-width: 0; }
+.instilens-swagger .swagger-ui pre { max-width: 100%; overflow: auto; }

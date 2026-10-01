@@ -56,7 +56,7 @@ def test_type_mapping_and_excluded_columns():
     # The complement is pinned exactly: a new model breaks this until it is classified as exported or excluded (docs/08 lists both).
     assert set(Base.metadata.tables) - set(warehouse.TABLES) == {
         "users", "auth_tokens", "waitlist", "watchlists", "watchlist_items", "alert_rules", "notifications", "live_events", "brief_deliveries", "push_subscriptions",
-        "portfolios", "portfolio_positions", "portfolio_transactions", "organizations", "org_members", "subscriptions", "processed_webhooks",
+        "portfolios", "portfolio_positions", "portfolio_transactions", "organizations", "org_members", "subscriptions", "processed_webhooks", "webhook_endpoints", "webhook_messages", "webhook_attempts",
         "app_settings", "audit_events", "rate_hits", "pipeline_runs", "releases", "release_files", "news_items", "news_rules", "ai_notes", "searchable_texts", "fundamentals",
     }
     assert set(warehouse.TABLES) <= set(Base.metadata.tables)

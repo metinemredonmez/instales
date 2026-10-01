@@ -200,3 +200,5 @@ can be attached side by side to diff them (`ATTACH 'instilens-20260913.duckdb' A
 (the weekly job's default; the admin toggle overrides it at runtime). The `duckdb` and `pandas` wheels are ordinary
 dependencies (`uv sync`); nothing else to install. After a deploy that changes `warehouse.SCHEMA_VERSION`, run
 `instilens warehouse build` once so `latest.duckdb` carries the new views.
+
+Generic webhook transport is private too: `webhook_endpoints`, `webhook_messages` and `webhook_attempts` are excluded, including event payloads and secret seeds.

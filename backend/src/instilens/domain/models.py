@@ -29,7 +29,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from instilens.domain.enums import PipelineStatus
+from instilens.domain.enums import PipelineStatus, WebhookStatus
 
 Money = Numeric(20, 4)
 Pct = Numeric(9, 4)
@@ -790,6 +790,58 @@ class AppSetting(Base):
     value: Mapped[dict] = mapped_column(JSON)  # {"v": <json value>} so scalars round-trip through the JSON column
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_by: Mapped[str | None] = mapped_column(String(254))
+
+
+class WebhookEndpoint(Base):
+    """User-owned integration configuration. A seed derives a signing key with the server secret."""
+
+    __tablename__ = "webhook_endpoints"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    target_url: Mapped[str | None] = mapped_column(String(2048))
+    secret_seed: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class WebhookMessage(Base):
+    """Transport envelope only: untrusted payloads NEVER become financial facts or trigger trades."""
+
+    __tablename__ = "webhook_messages"
+    __table_args__ = (
+        UniqueConstraint("endpoint_id", "direction", "external_id"),
+        Index("ix_webhook_messages_dispatch", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    endpoint_id: Mapped[str] = mapped_column(ForeignKey("webhook_endpoints.id"), index=True)
+    direction: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(128))
+    event_type: Mapped[str] = mapped_column(String(80))
+    body: Mapped[str] = mapped_column(Text)
+    body_hash: Mapped[str] = mapped_column(String(64))
+    # Freeze the destination per message so editing an endpoint never redirects an already queued payload.
+    target_url: Mapped[str | None] = mapped_column(String(2048))
+    status: Mapped[str] = mapped_column(String(16), default=WebhookStatus.PENDING)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime)
+    lease_token: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class WebhookAttempt(Base):
+    """Append-only delivery log; no response bodies, credentials or signing keys."""
+
+    __tablename__ = "webhook_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("webhook_messages.id"), index=True)
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class AuditEvent(Base):

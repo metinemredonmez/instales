@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from instilens import __version__
 from instilens.ai.assess import AiUnavailable
+from instilens.api.deps import current_user
 from instilens.api.hardening import (
     AuthRateLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -18,6 +19,8 @@ from instilens.api.routes.portfolio import router as portfolio_router
 from instilens.api.routes.public import router as public_router
 from instilens.api.routes.userdata import router as userdata_router
 from instilens.api.routes.v1 import router, ticket_router
+from instilens.api.routes.webhooks import register_receiver
+from instilens.api.routes.webhooks import router as webhooks_router
 from instilens.config import settings
 from instilens.services.plans import PlanLimit
 
@@ -26,7 +29,7 @@ app = FastAPI(
     title="InstiLens API",
     version=__version__,
     description="Smart-money & institutional intelligence. Data, not advice.",
-    # Interactive docs are a dev convenience; in production they only enumerate the attack surface.
+    # Public docs are dev-only; production uses the signed-in frontend and authenticated schema.
     docs_url=None if _prod else "/docs",
     redoc_url=None,
     openapi_url=None if _prod else "/openapi.json",
@@ -38,7 +41,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-    allow_headers=["content-type", "authorization"],
+    allow_headers=["content-type", "authorization", "x-instilens-signature", "x-instilens-timestamp"],
 )
 app.include_router(auth_router)
 app.include_router(router)
@@ -50,6 +53,14 @@ app.include_router(billing_router)
 app.include_router(billing_webhook_router)
 app.include_router(admin_router)
 app.include_router(public_router)
+app.include_router(webhooks_router)
+register_receiver(app)
+
+
+@app.get("/api/v1/openapi.json", include_in_schema=False, dependencies=[Depends(current_user)])
+def authenticated_openapi():
+    """Production schema for the signed-in Swagger page; never exposed anonymously."""
+    return JSONResponse(app.openapi(), headers={"Cache-Control": "no-store"})
 
 
 @app.exception_handler(PlanLimit)

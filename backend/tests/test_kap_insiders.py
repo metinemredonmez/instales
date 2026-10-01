@@ -558,7 +558,7 @@ def test_migration_adds_the_kap_columns_on_scratch_sqlite(tmp_path, monkeypatch)
     assert {"kap_disclosure_index", "party_kind", "post_pct_stake"} <= set(cols) and all(cols[c]["nullable"] for c in ("kap_disclosure_index", "party_kind", "post_pct_stake"))
     assert str(cols["party_kind"]["type"]) == "VARCHAR(12)" and str(cols["post_pct_stake"]["type"]) == "NUMERIC(9, 4)" and str(cols["kap_disclosure_index"]["type"]) == "INTEGER"
     with eng.begin() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "b4c5d6e7f8a9"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "053423e43464"
     eng.dispose()
     command.downgrade(cfg, "a3b4c5d6e7f8")
     eng = create_engine(url)

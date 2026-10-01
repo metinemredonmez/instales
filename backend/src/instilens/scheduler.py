@@ -206,6 +206,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     init_db(get_engine())
     sched = BlockingScheduler(timezone=TZ, job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 600})
+    from instilens.services.webhooks import dispatch as dispatch_webhooks
+
+    sched.add_job(dispatch_webhooks, "interval", seconds=30, id="webhook_outbox")
     sched.add_job(_fresh(ingest_kap), CronTrigger(day_of_week="mon-fri", hour="17-22", minute="*/5", timezone=TZ), id="kap_rush")
     sched.add_job(_fresh(ingest_kap), CronTrigger(hour="0-16,23", minute="*/30", timezone=TZ), id="kap_offpeak")
     sched.add_job(_fresh(ingest_sec), CronTrigger(hour=8, minute=0, timezone=TZ), id="sec_daily")

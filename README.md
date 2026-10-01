@@ -30,6 +30,7 @@ KAP disclosure → raw store → parser → entity resolution → normalized fac
 | 11 | Admin: roles, user management, entity review (unverified instruments/funds), failed parses | ✅ `/admin` |
 | 12 | Portfolio analysis: concentration, historical basket price risk, common institutional holders with disclosure lineage | ✅ `/portfolios/{id}/analysis` · methodology in `docs/04-confidence-and-scoring.md` |
 | G | **Global: SEC EDGAR 13F** — live client (free, no contract) + 9 real filings as fixtures (Berkshire, Bridgewater, Renaissance), CUSIP→ticker via OpenFIGI | ✅ `ingestion/sec` |
+| 13 | Signed-in Swagger, generic HMAC webhook inbox/outbox, delivery retries and history | ✅ `/integrations` · `docs/10-api-and-webhooks.md` |
 | — | Historical backfill (12 months TR), licensed price feeds, KAP official API mapping | ⏳ external inputs |
 
 ## Quickstart
@@ -49,7 +50,7 @@ trusted proxies, ElevenLabs voices, live TV channels, desktop releases, backup p
 production refuses to start until `INSTILENS_JWT_SECRET` is replaced (≥ 32 random chars). `ANTHROPIC_API_KEY` keeps its plain name.
 
 Toolchain: Python 3.12 + `uv`; **Node 22** (CI, the desktop workflow and `server-setup.sh` all use 22 — `frontend/package.json`
-should carry `"engines": { "node": ">=22" }` so an older local Node fails loudly instead of at build time).
+declares `"engines": { "node": ">=22" }`).
 
 Real KAP (prototype, polite): `INSTILENS_KAP_ADAPTER=public uv run instilens ingest && uv run instilens parse && uv run instilens compute` — transactions + weekly fund portfolio PDFs.
 Prices (prototype, Yahoo): `uv run instilens prices --market TR` / `--market US`.
@@ -82,3 +83,5 @@ licensed Veri Yayın Servisi is signed), SEC EDGAR (free), Yahoo Finance prices 
 - `docs/04-confidence-and-scoring.md` — EXACT / GROUPED / INFERRED and the score formulas
 - `docs/05-roadmap.md` — phases and acceptance criteria
 - `docs/06-decisions.md` — where this design deliberately differs from the first draft
+
+- `docs/10-api-and-webhooks.md` — Swagger, API auth and signed incoming/outgoing webhook setup

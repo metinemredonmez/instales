@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 
-from fastapi import Depends, HTTPException, Query, Request
+from fastapi import Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from instilens.db.session import session_scope
@@ -13,11 +14,11 @@ def get_session() -> Iterator[Session]:
         yield session
 
 
-def _bearer(request: Request) -> str | None:
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("bearer "):
-        return header[7:].strip()
-    return None
+bearer = HTTPBearer(auto_error=False, scheme_name="BearerAuth", description="JWT from POST /api/v1/auth/login (complete MFA when enabled).")
+
+
+def _bearer(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str | None:
+    return credentials.credentials.strip() if credentials else None
 
 
 def current_user(session: Session = Depends(get_session), token: str | None = Depends(_bearer)) -> User:

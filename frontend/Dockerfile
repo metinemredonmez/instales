@@ -1,5 +1,5 @@
 # Static SPA served by nginx; /api is proxied to the api container (see nginx.conf).
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     jwt_secret: str = "dev-only-change-me"
     jwt_ttl_minutes: int = 60 * 24 * 7
+    webhook_signing_key: str | None = Field(None, min_length=32)  # defaults to jwt_secret; changing it invalidates endpoint secrets
     allow_registration: bool = True  # open beta; flip off for invite-only
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost"]
     auth_rate_limit_per_minute: int = 10  # per client IP on /auth/login and /auth/register
