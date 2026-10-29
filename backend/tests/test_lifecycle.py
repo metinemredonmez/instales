@@ -100,6 +100,38 @@ def test_reset_token_expires(session):
     assert auth.consume_email_token(session, "RESET", t2).id == user.id
 
 
+def test_cli_set_password_recovers_without_smtp(client, session, monkeypatch):
+    """The way back in when no reset mail can arrive: policy applies, old sessions die, a lockout is cleared."""
+    import contextlib
+
+    from typer.testing import CliRunner
+
+    from instilens.cli import app
+
+    hardening.reset_rate_limits()
+    monkeypatch.setattr("instilens.cli.session_scope", lambda: contextlib.nullcontext(session))
+    old = client.post("/api/v1/auth/register", json={"email": "ops@example.com", "password": "correct-horse", "name": "Ops"}).json()["access_token"]
+    for _ in range(8):
+        client.post("/api/v1/auth/login", json={"email": "ops@example.com", "password": "wrong-password-x"})
+    hardening.reset_rate_limits()  # the per-IP cap only; the account lock lives in its own counter
+    for _ in range(8):
+        client.post("/api/v1/auth/login", json={"email": "ops@example.com", "password": "wrong-password-x"})
+    assert client.post("/api/v1/auth/login", json={"email": "ops@example.com", "password": "correct-horse"}).status_code == 429
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["users", "set-password", "ops@example.com"], input="aaaaaaaa\naaaaaaaa\n")
+    assert r.exit_code != 0 and "repetitive" in r.output  # policy applies on the shell too
+    assert runner.invoke(app, ["users", "set-password", "nobody@example.com"], input="battery staple horse\nbattery staple horse\n").exit_code != 0
+    r = runner.invoke(app, ["users", "set-password", "OPS@example.com"], input="battery staple horse\nbattery staple horse\n")
+    assert r.exit_code == 0, r.output
+    assert "ops@example.com" in runner.invoke(app, ["users", "list"]).output
+
+    hardening.reset_rate_limits()
+    assert client.get("/api/v1/auth/me", headers={"authorization": f"Bearer {old}"}).status_code == 401  # sessions revoked
+    assert client.post("/api/v1/auth/login", json={"email": "ops@example.com", "password": "correct-horse"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"email": "ops@example.com", "password": "battery staple horse"}).status_code == 200  # lock cleared
+
+
 # ---------------------------------------------------------------- TOTP MFA
 def test_mfa_enrol_login_and_disable(client, session, outbox):
     tok = _register(client)

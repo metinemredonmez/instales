@@ -50,6 +50,41 @@ def users_set_role(email: str, role: str) -> None:
         typer.echo(f"{user.email} → {role}")
 
 
+@users_app.command("list")
+def users_list() -> None:
+    """Every account with role, plan and last login — which address to recover when the e-mail is forgotten too."""
+    from sqlalchemy import select
+
+    from instilens.domain.models import User
+
+    with session_scope() as s:
+        for u in s.scalars(select(User).order_by(User.id)):
+            last = u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "never"
+            typer.echo(f"{u.email}\t{u.role}\t{u.plan}\t{'active' if u.is_active else 'disabled'}\tlast login {last}")
+
+
+@users_app.command("set-password")
+def users_set_password(
+    email: str,
+    password: str = typer.Option(..., prompt=True, hide_input=True, confirmation_prompt=True),
+) -> None:
+    """Set a new password without the e-mailed link (works with no SMTP); revokes every session, clears a lockout."""
+    from sqlalchemy import select
+
+    from instilens.domain.models import User
+    from instilens.services import auth
+
+    with session_scope() as s:
+        user = s.scalar(select(User).where(User.email == email.strip().lower()))
+        if user is None:
+            raise typer.BadParameter(f"no user {email}")
+        try:
+            auth.set_password(s, user, password)
+        except auth.AuthError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        typer.echo(f"{user.email}: password set, every session signed out")
+
+
 @db_app.command("init")
 def db_init() -> None:
     init_db(get_engine())

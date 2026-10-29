@@ -144,6 +144,17 @@ def change_password(session: Session, user: User, current: str, new: str, ip: st
     audit(session, "auth.password_changed", actor=user.email, ip=ip)
 
 
+def set_password(session: Session, user: User, new: str) -> None:
+    """Operator recovery from the server shell (`instilens users set-password`): shell access is the proof, so neither
+    the old password nor a mailed link is asked for — the way back in when SMTP is not configured. Policy still applies;
+    every session dies and an account lockout is cleared, exactly as an e-mailed reset does."""
+    check_password_policy(new, user.email)
+    user.password_hash = hash_password(new)
+    user.token_version = (user.token_version or 1) + 1
+    reset_key(_lock_key(user.email))
+    audit(session, "auth.password_set_cli", actor="cli", subject=user.email)
+
+
 def logout_everywhere(session: Session, user: User, ip: str | None = None) -> None:
     user.token_version = (user.token_version or 1) + 1
     audit(session, "auth.logout_all", actor=user.email, ip=ip)
