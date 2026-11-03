@@ -32,7 +32,7 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.10.1",
-    "shadcn": "^4.21.0",
+    "shadcn": "^4.23.0",
     "swagger-ui-react": "5.33.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
